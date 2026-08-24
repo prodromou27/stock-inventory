@@ -17,4 +17,6 @@
   {% if user_is_administrator or "StockManager" in user_role_groups %}
     <p><a href="{% url 'inventory:movements_hub' %}">Movements (transfer, reserve, assign, deliver, dispose…)</a></p>
   {% endif %}
+  <p><a href="{% url 'inventory:transaction_list' %}">Browse transactions</a></p>
+  <p><a href="{% url 'reporting:hub' %}">Reports</a> (includes low stock — empty unless a product has a threshold configured)</p>
 {% endblock %}

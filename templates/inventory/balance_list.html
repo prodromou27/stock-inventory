@@ -4,6 +4,24 @@
 
 {% block content %}
   <h1>Stock balances</h1>
+  <p><a href="?{{ request.GET.urlencode }}&format=csv">Export CSV</a></p>
+
+  <form method="get" class="location-filters">
+    <input type="text" name="q" value="{{ filters.q }}" placeholder="Search brand, model, SKU, type">
+    <select name="location">
+      <option value="">All locations</option>
+      {% for location in locations %}
+        <option value="{{ location.pk }}" {% if filters.location == location.pk|stringformat:"s" %}selected{% endif %}>
+          {{ location.name }} ({{ location.get_level_display }})
+        </option>
+      {% endfor %}
+    </select>
+    <input type="text" name="brand" placeholder="Brand" value="{{ filters.brand }}">
+    <input type="text" name="model" placeholder="Model" value="{{ filters.model }}">
+    <input type="text" name="sku" placeholder="SKU" value="{{ filters.sku }}">
+    <input type="text" name="type" placeholder="Type" value="{{ filters.type }}">
+    <button type="submit">Filter</button>
+  </form>
 
   {% if balances %}
     <table>

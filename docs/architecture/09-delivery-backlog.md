@@ -146,13 +146,40 @@ after a sanitized copy of the real legacy workbook is available (prompt pack not
 **Acceptance**: acceptance criterion §21.14; fixture-workbook tests for malformed headers, duplicate rows/serials,
 mixed date formats, interrupted/retried batches.
 
-### Prompt 7 — Dashboard, search, reports, disposal reporting
+### Prompt 7 — Dashboard, search, reports, disposal reporting — done
 
 Depends on Prompt 4 (movements exist to report on) and Prompt 5 (documents referenced from transaction/report
-views). Delivers: all filters from spec §14, all reports from spec §15, low-stock threshold config/dashboard
-(disabled unless configured), disposed-HDD-optimized report.
+views). Ran ahead of Prompt 6 (Excel/CSV import), which the prompt pack itself notes is best sequenced after a
+sanitized copy of the real legacy workbook is available — that hasn't been provided yet, so Prompt 6 remains open
+below.
 
-**Acceptance**: acceptance criteria §21.10, §21.15; query-count/perf tests against the 8,000+-row seed dataset.
+Delivered `apps/inventory/filters.py` (`filter_unit_assets()`/`filter_stock_balances()` covering every filter in
+spec §14: free-text `q`, brand, model, SKU, type, serial, status, project reference, final customer, supplier,
+invoice number, arrival/removal date ranges, location — using the existing `ltree` descendant-or-self lookup so a
+location filter includes everything under it — and a `duplicate_serial` flag reusing `services/duplicates.py`'s
+logic); `apps.core.csv_export.CSVExportMixin`, a small `ListView` mixin adding `?format=csv` to any list view without
+duplicating pagination/scoping logic; a new `TransactionListView` (`apps.inventory.access.scope_transaction_queryset()`
+extends the Phase 5 header-or-line scope check to a queryset filter, reusable to also give `AssetStatusHistory` scoped
+access); the whole `apps.reporting` app — 11 report queries plus a low-stock-balances query, all scope-aware from the
+start (every query takes `user` and filters through the same location-scoping layer as everything else, not just the
+list views) — covering every report in spec §15 (current stock, stock by location, reserved stock, employee
+assignments, customer deliveries, stock by project reference, temporary assignments, damaged/lost/disposed assets,
+movement history, low stock) plus a disposed-items report with a type filter aimed at reviewing disposed HDDs (spec
+§9); a new `apps.audit` list view (Administrator-only, event-type/actor/object-type/date filters) exposing the audit
+trail that previously had no UI; and `seed_bulk_inventory`, a `bulk_create`-based, DEBUG-gated, idempotent management
+command that seeds 8,000+ unit assets for realistic pagination/perf testing (deliberately bypassing the service layer
+— running 8,000 rows through `receive_stock()` would be far slower than the data is worth for a synthetic perf
+fixture, and no ledger/audit trail is needed for it).
+
+**One real bug found and fixed while building `stock_by_location`**: the initial aggregation used
+`.values_list(...).annotate(count=Sum(1))`, a non-idiomatic pattern that doesn't reliably group the way `.values(...)
+.annotate(count=Count("id"))` does. Caught before it reached tests; corrected to the standard `.values().annotate()
+.values_list()` shape for both the per-location unit count and the per-location balance-quantity sum.
+
+**Acceptance**: acceptance criteria §21.10 (every spec §14 filter, scoped) and §21.15 (responsive at 8,000+ records —
+`tests/test_performance.py` asserts bounded query counts via `django_assert_max_num_queries` and correct pagination
+against the 8,200-row bulk-seeded fixture) — both verified by tests and a live end-to-end run against real
+PostgreSQL. 294 tests pass (up from 249).
 
 ## Phase 4 — Migration and hardening
 

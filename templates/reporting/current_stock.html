@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}Current Stock — Stock Inventory{% endblock %}
+
+{% block content %}
+  <h1>Current stock</h1>
+
+  <h2>Units in stock</h2>
+  {% if units %}
+    <table>
+      <thead>
+        <tr><th>Product</th><th>Serial</th><th>Location</th></tr>
+      </thead>
+      <tbody>
+        {% for asset in units %}
+          <tr>
+            <td><a href="{{ asset.get_absolute_url }}">{{ asset.product }}</a></td>
+            <td>{{ asset.vendor_serial|default:"—" }}</td>
+            <td>{{ asset.current_location|default:"—" }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>No units currently in stock.</p>
+  {% endif %}
+
+  <h2>Quantity balances (on hand)</h2>
+  {% if balances %}
+    <table>
+      <thead>
+        <tr><th>Product</th><th>Location</th><th>On hand</th><th>Available</th></tr>
+      </thead>
+      <tbody>
+        {% for balance in balances %}
+          <tr>
+            <td><a href="{{ balance.get_absolute_url }}">{{ balance.product }}</a></td>
+            <td>{{ balance.location }}</td>
+            <td>{{ balance.on_hand_quantity }}</td>
+            <td>{{ balance.available_quantity }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>No quantity stock on hand.</p>
+  {% endif %}
+{% endblock %}

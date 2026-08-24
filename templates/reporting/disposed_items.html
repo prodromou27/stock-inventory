@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}Disposed Items — Stock Inventory{% endblock %}
+
+{% block content %}
+  <h1>Disposed items</h1>
+  <p>Includes HDD disposal records — never deleted, always searchable.</p>
+  <p><a href="?{{ request.GET.urlencode }}&format=csv">Export CSV</a></p>
+
+  <form method="get" class="location-filters">
+    <input type="text" name="type" placeholder="Type (e.g. HDD)" value="{{ type_filter }}">
+    <button type="submit">Filter</button>
+  </form>
+
+  {% if assets %}
+    <table>
+      <thead>
+        <tr>
+          <th>Product</th>
+          <th>Type</th>
+          <th>Serial</th>
+          <th>Project reference</th>
+          <th>Final customer</th>
+          <th>Disposal date</th>
+          <th>Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for asset in assets %}
+          <tr>
+            <td><a href="{{ asset.get_absolute_url }}">{{ asset.product }}</a></td>
+            <td>{{ asset.product.product_type }}</td>
+            <td>{{ asset.vendor_serial|default:"—" }}</td>
+            <td>{{ asset.project_reference }}</td>
+            <td>{{ asset.final_customer }}</td>
+            <td>{{ asset.last_removal_date|default:"—" }}</td>
+            <td>{{ asset.notes }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if is_paginated %}
+      <nav class="pagination">
+        {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">Previous</a>{% endif %}
+        <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+        {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">Next</a>{% endif %}
+      </nav>
+    {% endif %}
+  {% else %}
+    <p>No disposed items found in your authorized scope.</p>
+  {% endif %}
+{% endblock %}

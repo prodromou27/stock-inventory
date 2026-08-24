@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}Reserved Stock — Stock Inventory{% endblock %}
+
+{% block content %}
+  <h1>Reserved stock</h1>
+
+  <h2>Reserved units</h2>
+  {% if units %}
+    <table>
+      <thead>
+        <tr><th>Product</th><th>Serial</th><th>Location</th><th>Project reference</th></tr>
+      </thead>
+      <tbody>
+        {% for asset in units %}
+          <tr>
+            <td><a href="{{ asset.get_absolute_url }}">{{ asset.product }}</a></td>
+            <td>{{ asset.vendor_serial|default:"—" }}</td>
+            <td>{{ asset.current_location|default:"—" }}</td>
+            <td>{{ asset.project_reference }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>No reserved units.</p>
+  {% endif %}
+
+  <h2>Reserved quantities</h2>
+  {% if reservations %}
+    <table>
+      <thead>
+        <tr><th>Product</th><th>Location</th><th>Quantity</th><th>Project reference</th></tr>
+      </thead>
+      <tbody>
+        {% for reservation in reservations %}
+          <tr>
+            <td><a href="{{ reservation.get_absolute_url }}">{{ reservation.product }}</a></td>
+            <td>{{ reservation.location }}</td>
+            <td>{{ reservation.quantity }}</td>
+            <td>{{ reservation.project_reference }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>No active quantity reservations.</p>
+  {% endif %}
+{% endblock %}

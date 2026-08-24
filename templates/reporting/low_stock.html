@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}Low Stock — Stock Inventory{% endblock %}
+
+{% block content %}
+  <h1>Low stock</h1>
+  <p>Only products with a low-stock threshold configured are considered.</p>
+
+  {% if balances %}
+    <table>
+      <thead>
+        <tr><th>Product</th><th>Location</th><th>Available</th><th>Threshold</th></tr>
+      </thead>
+      <tbody>
+        {% for balance in balances %}
+          <tr>
+            <td><a href="{{ balance.get_absolute_url }}">{{ balance.product }}</a></td>
+            <td>{{ balance.location }}</td>
+            <td>{{ balance.available_quantity }}</td>
+            <td>{{ balance.product.low_stock_threshold }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if is_paginated %}
+      <nav class="pagination">
+        {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">Previous</a>{% endif %}
+        <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+        {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">Next</a>{% endif %}
+      </nav>
+    {% endif %}
+  {% else %}
+    <p>Nothing below its configured threshold right now (or no product has a threshold configured).</p>
+  {% endif %}
+{% endblock %}

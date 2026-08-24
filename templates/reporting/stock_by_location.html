@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block title %}Stock by Location — Stock Inventory{% endblock %}
+
+{% block content %}
+  <h1>Stock by room/location</h1>
+  {% if rows %}
+    <table>
+      <thead>
+        <tr><th>Location</th><th>Level</th><th>Units in stock</th><th>Quantity on hand</th></tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td><a href="{{ row.location.get_absolute_url }}">{{ row.location.name }}</a></td>
+            <td>{{ row.location.get_level_display }}</td>
+            <td>{{ row.unit_count }}</td>
+            <td>{{ row.quantity_total }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>No stock found in your authorized scope.</p>
+  {% endif %}
+{% endblock %}

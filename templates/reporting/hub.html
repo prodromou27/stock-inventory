@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block title %}Reports — Stock Inventory{% endblock %}
+
+{% block content %}
+  <h1>Reports</h1>
+  <ul>
+    <li><a href="{% url 'reporting:current_stock' %}">Current stock</a></li>
+    <li><a href="{% url 'reporting:stock_by_location' %}">Stock by room/location</a></li>
+    <li><a href="{% url 'reporting:reserved_stock' %}">Reserved stock</a></li>
+    <li><a href="{% url 'reporting:employee_assignments' %}">Employee assignments</a></li>
+    <li><a href="{% url 'reporting:customer_deliveries' %}">Customer deliveries</a></li>
+    <li><a href="{% url 'reporting:stock_by_project_reference' %}">Stock by Project Reference</a></li>
+    <li><a href="{% url 'reporting:temporary_assignments' %}">Temporary assignments</a></li>
+    <li><a href="{% url 'reporting:damaged_assets' %}">Damaged assets</a></li>
+    <li><a href="{% url 'reporting:lost_assets' %}">Lost assets</a></li>
+    <li><a href="{% url 'reporting:disposed_items' %}">Disposed items (including HDDs)</a></li>
+    <li><a href="{% url 'reporting:movement_history' %}">Complete asset movement history</a></li>
+    <li><a href="{% url 'reporting:low_stock' %}">Low stock</a> (empty unless a product has a threshold configured)</li>
+  </ul>
+{% endblock %}

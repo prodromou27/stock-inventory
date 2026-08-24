@@ -14,9 +14,11 @@ on top of it) gets it right.
 """
 
 from django.core.exceptions import PermissionDenied
+from django.db.models import Q
 
+from apps.core.authorization import is_administrator
 from apps.locations.models import Location
-from apps.locations.scoping import require_location_access
+from apps.locations.scoping import granted_location_paths, require_location_access
 
 
 def transaction_locations(txn):
@@ -59,3 +61,50 @@ def require_transaction_access(user, txn):
             continue
 
     raise PermissionDenied("You do not have access to this transaction.")
+
+
+def scope_transaction_queryset(user, queryset):
+    """The list-view equivalent of require_transaction_access() — filters a
+    queryset of InventoryTransaction to rows touching (header *or* line
+    level) a location the user can access. Used by the "Transactions and
+    documents" screen (spec §14) and by reporting queries built on
+    InventoryTransaction.
+
+    Built from the user's *granted* paths directly (not the fully expanded
+    accessible_locations() set) to keep the OR'd clause list small — a user
+    typically has only a handful of grants.
+    """
+    if is_administrator(user):
+        return queryset.distinct()
+
+    paths = granted_location_paths(user)
+    if not paths:
+        return queryset.none()
+
+    query = Q()
+    for path in paths:
+        query |= Q(source_location__path__descendant_or_self=path)
+        query |= Q(destination_location__path__descendant_or_self=path)
+        query |= Q(lines__from_location__path__descendant_or_self=path)
+        query |= Q(lines__to_location__path__descendant_or_self=path)
+    return queryset.filter(query).distinct()
+
+
+def scope_asset_status_history_queryset(user, queryset):
+    """Same idea as scope_transaction_queryset() but for AssetStatusHistory
+    (the "Complete asset movement history" report, spec §15) — scoped via
+    its own from_location/to_location rather than joining back to a
+    transaction's lines.
+    """
+    if is_administrator(user):
+        return queryset
+
+    paths = granted_location_paths(user)
+    if not paths:
+        return queryset.none()
+
+    query = Q()
+    for path in paths:
+        query |= Q(from_location__path__descendant_or_self=path)
+        query |= Q(to_location__path__descendant_or_self=path)
+    return queryset.filter(query)

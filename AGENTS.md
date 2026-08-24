@@ -66,7 +66,10 @@ that generates a PDF (`apps.documents.pdf`) fails at import time with an `OSErro
 `seed_dev_data` and `seed_locations` both refuse to run unless `DEBUG=True` — they exist for local/dev use only.
 `seed_dev_data` creates one user per role (`devadmin`/`devmanager`/`devreadonly`), with generated passwords printed
 to stdout unless `SEED_ADMIN_PASSWORD`/etc. are set. `seed_locations` (run after `seed_dev_data`, which it needs an
-Administrator from) creates a sample Country > Site > Floor > Storage Room > Rack > Shelf tree.
+Administrator from) creates a sample Country > Site > Floor > Storage Room > Rack > Shelf tree. `seed_bulk_inventory`
+(also `DEBUG=True`-gated, run after both of the above) `bulk_create`s 8,000+ unit assets plus a quantity balance for
+exercising pagination/filters/reports at realistic volume (spec §21.15); idempotent and safe to re-run, and pass
+`--count` to change the target.
 
 ## Settings
 

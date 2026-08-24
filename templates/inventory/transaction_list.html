@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block title %}Transactions — Stock Inventory{% endblock %}
+
+{% block content %}
+  <h1>Transactions</h1>
+
+  <form method="get" class="location-filters">
+    <select name="movement_type">
+      <option value="">All movement types</option>
+      {% for value, label in movement_types %}
+        <option value="{{ value }}" {% if selected_movement_type == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <input type="text" name="project_reference" placeholder="Project reference" value="{{ request.GET.project_reference }}">
+    <input type="text" name="final_customer" placeholder="Final customer" value="{{ request.GET.final_customer }}">
+    <label>From <input type="date" name="occurred_after" value="{{ request.GET.occurred_after }}"></label>
+    <label>To <input type="date" name="occurred_before" value="{{ request.GET.occurred_before }}"></label>
+    <button type="submit">Filter</button>
+  </form>
+
+  {% if transactions %}
+    <table>
+      <thead>
+        <tr>
+          <th>Number</th>
+          <th>Type</th>
+          <th>Date</th>
+          <th>Performed by</th>
+          <th>Project reference</th>
+          <th>Final customer</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for transaction in transactions %}
+          <tr>
+            <td><a href="{{ transaction.get_absolute_url }}">{{ transaction.transaction_number }}</a></td>
+            <td>{{ transaction.get_movement_type_display }}</td>
+            <td>{{ transaction.occurred_at }}</td>
+            <td>{{ transaction.performed_by }}</td>
+            <td>{{ transaction.project_reference }}</td>
+            <td>{{ transaction.final_customer }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {% if is_paginated %}
+      <nav class="pagination">
+        {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">Previous</a>{% endif %}
+        <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+        {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">Next</a>{% endif %}
+      </nav>
+    {% endif %}
+  {% else %}
+    <p>No transactions found in your authorized scope.</p>
+  {% endif %}
+{% endblock %}

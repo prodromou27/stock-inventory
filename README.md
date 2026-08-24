@@ -21,13 +21,17 @@ console by `seed_dev_data`).
 
 ## Status
 
-Phases 1–5 are in place: Docker/PostgreSQL foundation and auth; the `Location` hierarchy and role/location-scope
-authorization; the product catalog with duplicate-Brand/Model/SKU detection; the full inventory ledger (receiving,
-bulk transfer, reservation/release, employee assignment, customer delivery, partial/complete returns with
-assessment, marking assets damaged/lost/disposed, and Administrator corrections/reversals, all as an immutable
-`InventoryTransaction`/`InventoryTransactionLine` ledger); and printable assignment/delivery PDFs (WeasyPrint,
-immutable snapshots) plus scanned-signature attachment upload/download. See
-[`docs/architecture/09-delivery-backlog.md`](docs/architecture/09-delivery-backlog.md) for the full delivery plan;
-Excel/CSV import and reporting/search begin in Phase 6+.
+Phases 1–5 and Phase 7 are in place: Docker/PostgreSQL foundation and auth; the `Location` hierarchy and
+role/location-scope authorization; the product catalog with duplicate-Brand/Model/SKU detection; the full inventory
+ledger (receiving, bulk transfer, reservation/release, employee assignment, customer delivery, partial/complete
+returns with assessment, marking assets damaged/lost/disposed, and Administrator corrections/reversals, all as an
+immutable `InventoryTransaction`/`InventoryTransactionLine` ledger); printable assignment/delivery PDFs (WeasyPrint,
+immutable snapshots) plus scanned-signature attachment upload/download; and full filtering/search, CSV export, an
+audit-log viewer, and every report from spec §15 (current stock, stock by location, reserved stock, employee
+assignments, customer deliveries, stock by project reference, temporary assignments, damaged/lost/disposed assets —
+including a disposed-HDD-focused view — movement history, and low stock), verified for responsiveness at 8,000+
+seeded records. See [`docs/architecture/09-delivery-backlog.md`](docs/architecture/09-delivery-backlog.md) for the
+full delivery plan; Excel/CSV import (Prompt 6) is the remaining "build" item, best sequenced once a sanitized copy
+of the real legacy workbook is available.
 
 PDF generation needs the GTK3 native runtime outside Docker — see `CLAUDE.md` if running without Docker on Windows.

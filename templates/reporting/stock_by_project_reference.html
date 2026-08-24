@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block title %}Stock by Project Reference — Stock Inventory{% endblock %}
+
+{% block content %}
+  <h1>Stock by Project Reference</h1>
+
+  <form method="get" class="location-filters">
+    <input type="text" name="project_reference" placeholder="Project reference" value="{{ project_reference }}">
+    <button type="submit">Search</button>
+  </form>
+
+  {% if project_reference %}
+    <h2>Units for "{{ project_reference }}"</h2>
+    {% if units %}
+      <table>
+        <thead><tr><th>Product</th><th>Serial</th><th>Status</th><th>Location</th></tr></thead>
+        <tbody>
+          {% for asset in units %}
+            <tr>
+              <td><a href="{{ asset.get_absolute_url }}">{{ asset.product }}</a></td>
+              <td>{{ asset.vendor_serial|default:"—" }}</td>
+              <td>{{ asset.get_status_display }}</td>
+              <td>{{ asset.current_location|default:"—" }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p>No units for this project reference.</p>
+    {% endif %}
+
+    <h2>Reservations for "{{ project_reference }}"</h2>
+    {% if reservations %}
+      <table>
+        <thead><tr><th>Product</th><th>Location</th><th>Quantity</th><th>Status</th></tr></thead>
+        <tbody>
+          {% for reservation in reservations %}
+            <tr>
+              <td><a href="{{ reservation.get_absolute_url }}">{{ reservation.product }}</a></td>
+              <td>{{ reservation.location }}</td>
+              <td>{{ reservation.quantity }}</td>
+              <td>{{ reservation.get_status_display }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p>No reservations for this project reference.</p>
+    {% endif %}
+  {% else %}
+    <h2>Known project references</h2>
+    {% if distinct_references %}
+      <ul>
+        {% for ref in distinct_references %}
+          <li><a href="?project_reference={{ ref|urlencode }}">{{ ref }}</a></li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p>No project references recorded yet.</p>
+    {% endif %}
+  {% endif %}
+{% endblock %}

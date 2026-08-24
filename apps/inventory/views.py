@@ -8,9 +8,11 @@ from django.views.generic import DetailView, ListView
 
 from apps.catalog.models import Product
 from apps.core.authorization import ADMINISTRATOR, STOCK_MANAGER, RoleRequiredMixin
-from apps.locations.scoping import require_location_access, scope_queryset
+from apps.core.csv_export import CSVExportMixin
+from apps.locations.scoping import accessible_locations, require_location_access, scope_queryset
 
-from .access import require_transaction_access
+from .access import require_transaction_access, scope_transaction_queryset
+from .filters import filter_stock_balances, filter_unit_assets
 from .forms import (
     AdminCorrectBalanceForm,
     AdminCorrectUnitForm,
@@ -103,34 +105,63 @@ class ReceiveStockView(LoginRequiredMixin, RoleRequiredMixin, View):
         return redirect(txn.get_absolute_url())
 
 
-class UnitAssetListView(LoginRequiredMixin, ListView):
+class UnitAssetListView(LoginRequiredMixin, CSVExportMixin, ListView):
     model = UnitAsset
     template_name = "inventory/asset_list.html"
     context_object_name = "assets"
     paginate_by = 50
+    csv_filename = "assets.csv"
+    csv_headers = [
+        "Brand",
+        "Model",
+        "SKU",
+        "Type",
+        "Serial",
+        "Status",
+        "Location",
+        "Project Reference",
+        "Final Customer",
+        "Arrival Date",
+        "Removal Date",
+    ]
 
     def get_queryset(self):
         queryset = scope_queryset(
             self.request.user,
-            UnitAsset.objects.select_related("product", "product__brand", "current_location"),
+            UnitAsset.objects.select_related(
+                "product", "product__brand", "product__product_type", "current_location"
+            ),
             location_field="current_location",
         )
         product_id = self.request.GET.get("product")
         if product_id:
             queryset = queryset.filter(product_id=product_id)
-        status = self.request.GET.get("status")
-        if status:
-            queryset = queryset.filter(status=status)
-        query = self.request.GET.get("q", "").strip()
-        if query:
-            queryset = queryset.filter(normalized_serial__icontains=query.upper())
+        queryset = filter_unit_assets(queryset, self.request.GET)
         return queryset.order_by("-created_at")
+
+    def csv_rows(self, queryset):
+        for asset in queryset:
+            yield [
+                asset.product.brand.name,
+                asset.product.model,
+                asset.product.sku,
+                asset.product.product_type.name,
+                asset.vendor_serial,
+                asset.get_status_display(),
+                str(asset.current_location or ""),
+                asset.project_reference,
+                asset.final_customer,
+                asset.arrival_date.isoformat() if asset.arrival_date else "",
+                asset.last_removal_date.isoformat() if asset.last_removal_date else "",
+            ]
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["query"] = self.request.GET.get("q", "")
         context["selected_status"] = self.request.GET.get("status", "")
         context["statuses"] = UnitStatus.choices
+        context["locations"] = accessible_locations(self.request.user).order_by("level", "name")
+        context["filters"] = self.request.GET
         return context
 
 
@@ -155,22 +186,46 @@ class UnitAssetDetailView(LoginRequiredMixin, DetailView):
         return context
 
 
-class StockBalanceListView(LoginRequiredMixin, ListView):
+class StockBalanceListView(LoginRequiredMixin, CSVExportMixin, ListView):
     model = StockBalance
     template_name = "inventory/balance_list.html"
     context_object_name = "balances"
     paginate_by = 50
+    csv_filename = "stock_balances.csv"
+    csv_headers = ["Brand", "Model", "SKU", "Type", "Location", "On Hand", "Reserved", "Available"]
 
     def get_queryset(self):
         queryset = scope_queryset(
             self.request.user,
-            StockBalance.objects.select_related("product", "product__brand", "location"),
+            StockBalance.objects.select_related(
+                "product", "product__brand", "product__product_type", "location"
+            ),
             location_field="location",
         )
         product_id = self.request.GET.get("product")
         if product_id:
             queryset = queryset.filter(product_id=product_id)
+        queryset = filter_stock_balances(queryset, self.request.GET)
         return queryset.order_by("product__brand__name", "product__model", "location__name")
+
+    def csv_rows(self, queryset):
+        for balance in queryset:
+            yield [
+                balance.product.brand.name,
+                balance.product.model,
+                balance.product.sku,
+                balance.product.product_type.name,
+                str(balance.location),
+                balance.on_hand_quantity,
+                balance.reserved_quantity,
+                balance.available_quantity,
+            ]
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["locations"] = accessible_locations(self.request.user).order_by("level", "name")
+        context["filters"] = self.request.GET
+        return context
 
 
 class StockBalanceDetailView(LoginRequiredMixin, DetailView):
@@ -194,6 +249,40 @@ class StockBalanceDetailView(LoginRequiredMixin, DetailView):
             .select_related("transaction")
             .order_by("transaction__occurred_at", "transaction__transaction_number")
         )
+        return context
+
+
+class TransactionListView(LoginRequiredMixin, ListView):
+    """The "Transactions and documents" screen (spec §14)."""
+
+    model = InventoryTransaction
+    template_name = "inventory/transaction_list.html"
+    context_object_name = "transactions"
+    paginate_by = 50
+
+    def get_queryset(self):
+        queryset = scope_transaction_queryset(
+            self.request.user,
+            InventoryTransaction.objects.select_related(
+                "performed_by", "source_location", "destination_location"
+            ),
+        )
+        if movement_type := self.request.GET.get("movement_type", "").strip():
+            queryset = queryset.filter(movement_type=movement_type)
+        if project_reference := self.request.GET.get("project_reference", "").strip():
+            queryset = queryset.filter(project_reference__icontains=project_reference)
+        if final_customer := self.request.GET.get("final_customer", "").strip():
+            queryset = queryset.filter(final_customer__icontains=final_customer)
+        if occurred_after := self.request.GET.get("occurred_after", "").strip():
+            queryset = queryset.filter(occurred_at__gte=occurred_after)
+        if occurred_before := self.request.GET.get("occurred_before", "").strip():
+            queryset = queryset.filter(occurred_at__lte=occurred_before)
+        return queryset.order_by("-occurred_at", "-transaction_number")
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["movement_types"] = MovementType.choices
+        context["selected_movement_type"] = self.request.GET.get("movement_type", "")
         return context
 
 

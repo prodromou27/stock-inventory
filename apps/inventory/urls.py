@@ -17,6 +17,7 @@ urlpatterns = [
         views.AdminCorrectBalanceView.as_view(),
         name="balance_correct",
     ),
+    path("transactions/", views.TransactionListView.as_view(), name="transaction_list"),
     path(
         "transactions/<uuid:pk>/", views.TransactionDetailView.as_view(), name="transaction_detail"
     ),

@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}Movement History — Stock Inventory{% endblock %}
+
+{% block content %}
+  <h1>Complete asset movement history</h1>
+  <p><a href="?{{ request.GET.urlencode }}&format=csv">Export CSV</a></p>
+
+  {% if events %}
+    <table>
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>Asset</th>
+          <th>Serial</th>
+          <th>From status</th>
+          <th>To status</th>
+          <th>From location</th>
+          <th>To location</th>
+          <th>Transaction</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for event in events %}
+          <tr>
+            <td>{{ event.occurred_at }}</td>
+            <td><a href="{{ event.unit_asset.get_absolute_url }}">{{ event.unit_asset.product }}</a></td>
+            <td>{{ event.unit_asset.vendor_serial|default:"—" }}</td>
+            <td>{{ event.from_status|default:"—" }}</td>
+            <td>{{ event.to_status }}</td>
+            <td>{{ event.from_location|default:"—" }}</td>
+            <td>{{ event.to_location|default:"—" }}</td>
+            <td><a href="{{ event.transaction.get_absolute_url }}">{{ event.transaction.transaction_number }}</a></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if is_paginated %}
+      <nav class="pagination">
+        {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">Previous</a>{% endif %}
+        <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+        {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">Next</a>{% endif %}
+      </nav>
+    {% endif %}
+  {% else %}
+    <p>No movement history found in your authorized scope.</p>
+  {% endif %}
+{% endblock %}

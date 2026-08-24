@@ -4,16 +4,47 @@
 
 {% block content %}
   <h1>Assets</h1>
+  <p><a href="?{{ request.GET.urlencode }}&format=csv">Export CSV</a></p>
 
   <form method="get" class="location-filters">
-    <input type="text" name="q" value="{{ query }}" placeholder="Search serial">
+    <input type="text" name="q" value="{{ query }}" placeholder="Search brand, model, SKU, type, serial, project, customer">
     <select name="status">
       <option value="">All statuses</option>
       {% for value, label in statuses %}
         <option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>
       {% endfor %}
     </select>
+    <select name="location">
+      <option value="">All locations</option>
+      {% for location in locations %}
+        <option value="{{ location.pk }}" {% if filters.location == location.pk|stringformat:"s" %}selected{% endif %}>
+          {{ location.name }} ({{ location.get_level_display }})
+        </option>
+      {% endfor %}
+    </select>
     <button type="submit">Filter</button>
+  </form>
+  <form method="get" class="location-filters">
+    <input type="text" name="brand" placeholder="Brand" value="{{ filters.brand }}">
+    <input type="text" name="model" placeholder="Model" value="{{ filters.model }}">
+    <input type="text" name="sku" placeholder="SKU" value="{{ filters.sku }}">
+    <input type="text" name="type" placeholder="Type" value="{{ filters.type }}">
+    <input type="text" name="project_reference" placeholder="Project reference" value="{{ filters.project_reference }}">
+    <input type="text" name="final_customer" placeholder="Final customer" value="{{ filters.final_customer }}">
+    <input type="text" name="supplier" placeholder="Supplier" value="{{ filters.supplier }}">
+    <input type="text" name="invoice_number" placeholder="Invoice number" value="{{ filters.invoice_number }}">
+    <label>
+      <input type="checkbox" name="duplicate_serial" value="1" {% if filters.duplicate_serial == "1" %}checked{% endif %}>
+      Duplicate serials only
+    </label>
+    <button type="submit">Apply</button>
+  </form>
+  <form method="get" class="location-filters">
+    <label>Arrival from <input type="date" name="arrival_after" value="{{ filters.arrival_after }}"></label>
+    <label>to <input type="date" name="arrival_before" value="{{ filters.arrival_before }}"></label>
+    <label>Removal from <input type="date" name="removal_after" value="{{ filters.removal_after }}"></label>
+    <label>to <input type="date" name="removal_before" value="{{ filters.removal_before }}"></label>
+    <button type="submit">Apply</button>
   </form>
 
   {% if assets %}

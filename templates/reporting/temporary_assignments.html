@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}Temporary Assignments — Stock Inventory{% endblock %}
+
+{% block content %}
+  <h1>Temporary assignments</h1>
+  <p>Expected return dates are informational only — no overdue automation.</p>
+
+  {% if transactions %}
+    <table>
+      <thead>
+        <tr><th>Transaction</th><th>Date</th><th>Employee</th><th>Expected return date</th></tr>
+      </thead>
+      <tbody>
+        {% for txn in transactions %}
+          <tr>
+            <td><a href="{{ txn.get_absolute_url }}">{{ txn.transaction_number }}</a></td>
+            <td>{{ txn.occurred_at }}</td>
+            <td>{{ txn.employee_name }}</td>
+            <td>{{ txn.expected_return_date|default:"—" }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if is_paginated %}
+      <nav class="pagination">
+        {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">Previous</a>{% endif %}
+        <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+        {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">Next</a>{% endif %}
+      </nav>
+    {% endif %}
+  {% else %}
+    <p>No temporary assignments found in your authorized scope.</p>
+  {% endif %}
+{% endblock %}

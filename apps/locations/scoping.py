@@ -16,7 +16,13 @@ from django.db.models import Q
 from apps.core.authorization import is_administrator
 
 
-def _granted_paths(user):
+def granted_location_paths(user):
+    """The `path` of every Location directly granted to `user` (not
+    expanded to descendants — there are only ever a handful of these per
+    user, unlike accessible_locations()'s full expanded set, which is why
+    apps.inventory.access uses this directly for its own multi-field OR
+    query rather than iterating every accessible Location).
+    """
     from apps.accounts.models import UserLocationAccess
 
     return list(
@@ -41,7 +47,7 @@ def scope_queryset(user, queryset, location_field=None):
     if is_administrator(user):
         return queryset
 
-    paths = _granted_paths(user)
+    paths = granted_location_paths(user)
     if not paths:
         return queryset.none()
 
@@ -60,7 +66,7 @@ def require_location_access(user, location):
         return
 
     location_path = str(location.path)
-    for granted_path in _granted_paths(user):
+    for granted_path in granted_location_paths(user):
         if location_path == granted_path or location_path.startswith(f"{granted_path}."):
             return
 

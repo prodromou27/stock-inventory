@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}Customer Deliveries — Stock Inventory{% endblock %}
+
+{% block content %}
+  <h1>Customer deliveries</h1>
+  <p><a href="?{{ request.GET.urlencode }}&format=csv">Export CSV</a></p>
+
+  {% if transactions %}
+    <table>
+      <thead>
+        <tr><th>Transaction</th><th>Date</th><th>Final customer</th><th>Project reference</th></tr>
+      </thead>
+      <tbody>
+        {% for txn in transactions %}
+          <tr>
+            <td><a href="{{ txn.get_absolute_url }}">{{ txn.transaction_number }}</a></td>
+            <td>{{ txn.occurred_at }}</td>
+            <td>{{ txn.final_customer }}</td>
+            <td>{{ txn.project_reference }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if is_paginated %}
+      <nav class="pagination">
+        {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">Previous</a>{% endif %}
+        <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+        {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">Next</a>{% endif %}
+      </nav>
+    {% endif %}
+  {% else %}
+    <p>No customer deliveries found in your authorized scope.</p>
+  {% endif %}
+{% endblock %}

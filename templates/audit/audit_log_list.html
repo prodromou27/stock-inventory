@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}Audit Log — Stock Inventory{% endblock %}
+
+{% block content %}
+  <h1>Audit log</h1>
+
+  <form method="get" class="location-filters">
+    <select name="event_type">
+      <option value="">All event types</option>
+      {% for value, label in event_types %}
+        <option value="{{ value }}" {% if selected_event_type == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <input type="text" name="actor" placeholder="Actor username" value="{{ request.GET.actor }}">
+    <input type="text" name="object_type" placeholder="Object type" value="{{ request.GET.object_type }}">
+    <label>From <input type="date" name="after" value="{{ request.GET.after }}"></label>
+    <label>To <input type="date" name="before" value="{{ request.GET.before }}"></label>
+    <button type="submit">Filter</button>
+  </form>
+
+  {% if events %}
+    <table>
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>Event</th>
+          <th>Actor</th>
+          <th>Object</th>
+          <th>Summary</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for event in events %}
+          <tr>
+            <td>{{ event.occurred_at }}</td>
+            <td>{{ event.get_event_type_display }}</td>
+            <td>{{ event.actor|default:"—" }}</td>
+            <td>{{ event.object_type }}{% if event.object_id %} ({{ event.object_id }}){% endif %}</td>
+            <td>{{ event.summary }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {% if is_paginated %}
+      <nav class="pagination">
+        {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">Previous</a>{% endif %}
+        <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+        {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">Next</a>{% endif %}
+      </nav>
+    {% endif %}
+  {% else %}
+    <p>No audit events found.</p>
+  {% endif %}
+{% endblock %}
