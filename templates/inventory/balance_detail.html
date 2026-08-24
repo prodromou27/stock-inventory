@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}{{ balance.product }} @ {{ balance.location }} — Stock Inventory{% endblock %}
+
+{% block content %}
+  <h1>{{ balance.product }} @ {{ balance.location }}</h1>
+  <p>On hand: {{ balance.on_hand_quantity }}</p>
+  <p>Reserved: {{ balance.reserved_quantity }}</p>
+  <p>Available: {{ balance.available_quantity }}</p>
+
+  <h2>Ledger</h2>
+  {% if lines %}
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Transaction</th>
+          <th>Movement</th>
+          <th>Quantity</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for line in lines %}
+          <tr>
+            <td>{{ line.transaction.occurred_at }}</td>
+            <td><a href="{{ line.transaction.get_absolute_url }}">{{ line.transaction.transaction_number }}</a></td>
+            <td>{{ line.transaction.get_movement_type_display }}</td>
+            <td>{{ line.quantity_delta }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>No ledger lines.</p>
+  {% endif %}
+{% endblock %}

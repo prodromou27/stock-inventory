@@ -21,7 +21,11 @@ console by `seed_dev_data`).
 
 ## Status
 
-Phase 2 (locations, users, scoped permissions) — project skeleton, Docker/PostgreSQL environment, authentication,
-health check, seed data, the `Location` hierarchy, role/location-scope authorization, and a user-access management
-screen are in place. See [`docs/architecture/09-delivery-backlog.md`](docs/architecture/09-delivery-backlog.md) for
-the full delivery plan; the product/inventory ledger begins in Phase 3.
+Phase 2 (locations/users/permissions) and Phase 3 (product catalog and inventory ledger) are in place: the
+`Location` hierarchy, role/location-scope authorization, a user-access management screen, the product catalog
+(with duplicate-Brand/Model/SKU detection), and receiving stock — both serialized (`UnitAsset`, with duplicate
+vendor-serial detection/acknowledgement) and quantity-tracked (`StockBalance`) — onto an immutable
+`InventoryTransaction`/`InventoryTransactionLine` ledger. See
+[`docs/architecture/09-delivery-backlog.md`](docs/architecture/09-delivery-backlog.md) for the full delivery plan;
+the remaining movement workflows (transfer, reservation, assignment, delivery, return, damage/loss/disposal,
+corrections) begin in Phase 4.

@@ -49,3 +49,42 @@ def other_location_tree(administrator):
         level=Location.Level.SITE, name="Other HQ", parent=country, user=administrator
     )
     return {"country": country, "site": site}
+
+
+@pytest.fixture
+def stock_manager_with_room_access(stock_manager, administrator, location_tree):
+    from apps.accounts.services import grant_location_access
+
+    grant_location_access(
+        user=stock_manager, location=location_tree["room"], granted_by=administrator
+    )
+    return stock_manager
+
+
+@pytest.fixture
+def unit_product(administrator):
+    from apps.catalog.models import TrackingMethod
+    from apps.catalog.services import create_product
+
+    return create_product(
+        user=administrator,
+        brand_name="Fortinet",
+        model="FG-100F",
+        product_type_name="Firewall",
+        tracking_method=TrackingMethod.UNIT,
+    )
+
+
+@pytest.fixture
+def quantity_product(administrator):
+    from apps.catalog.models import TrackingMethod
+    from apps.catalog.services import create_product
+
+    return create_product(
+        user=administrator,
+        brand_name="HP",
+        model="26A",
+        product_type_name="Toner",
+        tracking_method=TrackingMethod.QUANTITY,
+        low_stock_threshold=5,
+    )

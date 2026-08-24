@@ -11,6 +11,12 @@
     <div class="app-header__brand">Stock Inventory</div>
     <nav class="app-header__nav">
       {% if user.is_authenticated %}
+        <a href="{% url 'catalog:product_list' %}">Products</a>
+        <a href="{% url 'inventory:asset_list' %}">Assets</a>
+        <a href="{% url 'inventory:balance_list' %}">Stock Balances</a>
+        {% if user_is_administrator or "StockManager" in user_role_groups %}
+          <a href="{% url 'inventory:receive_stock' %}">Receive Stock</a>
+        {% endif %}
         <a href="{% url 'locations:list' %}">Locations</a>
         {% if user_is_administrator %}
           <a href="{% url 'accounts:user_access_list' %}">Manage Access</a>

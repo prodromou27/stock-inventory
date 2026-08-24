@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}Receive Stock — Stock Inventory{% endblock %}
+
+{% block content %}
+  <h1>Receive stock</h1>
+
+  {% if form.non_field_errors %}
+    <p class="messages__item messages__item--error">{{ form.non_field_errors|join:" " }}</p>
+  {% endif %}
+
+  {% if show_duplicate_warning %}
+    <div class="messages__item messages__item--warning">
+      <p>A unit asset with a matching serial already exists:</p>
+      <ul>
+        {% for match in duplicate_matches %}
+          <li>
+            <a href="{{ match.get_absolute_url }}">{{ match.product }}</a>
+            — status: {{ match.get_status_display }}, location: {{ match.current_location|default:"—" }}
+          </li>
+        {% endfor %}
+      </ul>
+      <p>Submit again to confirm this is a separate, legitimate item.</p>
+    </div>
+  {% endif %}
+
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    {% if show_duplicate_warning %}
+      <p>
+        <label>
+          <input type="checkbox" name="duplicate_serial_acknowledged" value="true" checked>
+          I confirm this is a separate, legitimate item.
+        </label>
+      </p>
+    {% endif %}
+    <button type="submit">Receive</button>
+  </form>
+{% endblock %}

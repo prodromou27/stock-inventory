@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block title %}{{ product }} — Stock Inventory{% endblock %}
+
+{% block content %}
+  <h1>{{ product }}</h1>
+  <p>Type: {{ product.product_type.name }}</p>
+  <p>Tracking method: {{ product.get_tracking_method_display }}</p>
+  {% if product.description %}<p>{{ product.description }}</p>{% endif %}
+  {% if product.supplier %}<p>Supplier: {{ product.supplier }}</p>{% endif %}
+  {% if product.low_stock_threshold %}<p>Low-stock threshold: {{ product.low_stock_threshold }}</p>{% endif %}
+  <p>Status: {% if product.is_active %}Active{% else %}Inactive{% endif %}</p>
+
+  {% if user_is_administrator or "StockManager" in user_role_groups %}
+    <p>
+      <a href="{% url 'catalog:product_update' product.pk %}">Edit</a>
+      &nbsp;
+      <a href="{% url 'inventory:receive_stock' %}?product={{ product.pk }}">Receive stock</a>
+    </p>
+  {% endif %}
+
+  {% if product.tracking_method == "unit" %}
+    <p><a href="{% url 'inventory:asset_list' %}?product={{ product.pk }}">View units of this product</a></p>
+  {% else %}
+    <p><a href="{% url 'inventory:balance_list' %}?product={{ product.pk }}">View stock balances of this product</a></p>
+  {% endif %}
+{% endblock %}

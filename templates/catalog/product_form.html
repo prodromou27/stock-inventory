@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}{% if product %}Edit product{% else %}New product{% endif %} — Stock Inventory{% endblock %}
+
+{% block content %}
+  <h1>{% if product %}Edit '{{ product }}'{% else %}New product{% endif %}</h1>
+
+  {% if form.non_field_errors %}
+    <p class="messages__item messages__item--error">{{ form.non_field_errors|join:" " }}</p>
+  {% endif %}
+
+  {% if show_duplicate_warning %}
+    <div class="messages__item messages__item--warning">
+      <p>A product with a matching Brand/Model/SKU already exists:</p>
+      <ul>
+        {% for match in duplicate_matches %}
+          <li><a href="{{ match.get_absolute_url }}">{{ match }}</a></li>
+        {% endfor %}
+      </ul>
+      <p>Submit again to confirm this is a separate, legitimate product.</p>
+    </div>
+  {% endif %}
+
+  {% if locked %}
+    <p class="messages__item messages__item--warning">
+      Tracking method is locked — this product already has recorded movements.
+    </p>
+  {% endif %}
+
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    {% if show_duplicate_warning %}
+      <p>
+        <label>
+          <input type="checkbox" name="duplicate_acknowledged" value="true" checked>
+          I confirm this is a separate, legitimate product.
+        </label>
+      </p>
+    {% endif %}
+    <button type="submit">{% if product %}Save{% else %}Create{% endif %}</button>
+  </form>
+{% endblock %}

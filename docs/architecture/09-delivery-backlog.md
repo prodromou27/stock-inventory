@@ -4,7 +4,7 @@ Expands spec §20's four phases into concrete backlog items with dependencies an
 the prompt pack's Prompts 1–9 (each prompt below = one reviewed increment; per spec §23.1, none of these are run as
 one unattended change).
 
-## Phase 1 — Foundation (prompt pack Prompt 1)
+## Phase 1 — Foundation (prompt pack Prompt 1) — done
 
 | Item | Depends on |
 |---|---|
@@ -23,7 +23,7 @@ missing `SECRET_KEY`.
 
 ## Phase 2 — Inventory operations
 
-### Prompt 2 — Locations, users, scoped permissions
+### Prompt 2 — Locations, users, scoped permissions — done
 
 Depends on Phase 1. Delivers: the `audit` app (`AuditEvent`, `record_event()`, append-only enforcement — this was
 listed under spec §20's Phase 1 but not carried into this backlog's Phase 1 table; built here instead, as the first
@@ -37,16 +37,27 @@ change.
 a referenced location keeps it visible in history; seed data (`seed_locations` management command) includes a
 realistic one-country/one-building/second-floor/room/rack/shelf tree.
 
-### Prompt 3 — Product catalog and inventory ledger
+### Prompt 3 — Product catalog and inventory ledger — done
 
-Depends on Prompt 2 (needs `Location`, scoping, roles). Delivers: `Brand`, `ProductType`, `Product`,
-duplicate-product detection, `UnitAsset` + duplicate-serial detection/acknowledgement, `StockBalance`,
-`InventoryTransaction`/`InventoryTransactionLine` ledger tables and the shared `ledger.py` writer, receipt as the
-first working movement (needed to get any data into the system at all), product/asset admin and list/detail/history
-UI.
+Depends on Prompt 2 (needs `Location`, scoping, roles). Delivered: `apps.catalog` (`Brand`/`ProductType` as
+get-or-create lookups from free-text input, `Product`, `check_duplicate_products()`, the tracking-method lock in
+`update_product()`); `apps.inventory` (`UnitAsset`, `AssetStatusHistory`, `StockBalance`,
+`InventoryTransaction`/`InventoryTransactionLine`, `services/ledger.py` as the sole writer, `services/receipts.py`'s
+`receive_stock()` for both tracking methods, `services/duplicates.py`'s scope-aware `check_duplicate_serial()`);
+list/detail views for products, assets, stock balances, and transactions, plus the receive-stock form with the
+duplicate-serial acknowledgement flow. Also promoted the append-only save()/delete() guard from `apps.audit` into a
+shared `apps.core.models.AppendOnlyModel`/`AppendOnlyQuerySet` mixin, reused by `InventoryTransaction`,
+`InventoryTransactionLine`, and `AssetStatusHistory`.
+
+`receive_stock()` writes one line per call (not the multi-line-per-transaction shape doc 02 describes for
+InventoryTransaction generally) — multi-line transactions are deferred to Prompt 4, which is where the spec actually
+requires them (assignment/delivery), so that's where the multi-line UI/service pattern gets built. `ProductService.
+migrate_tracking_method()` (doc 02) was **not** implemented — only the lock that makes it necessary was; the
+migration operation itself remains open per doc 10's open item #8.
 
 **Acceptance**: acceptance criteria §21.1 (receive both tracking types) and §21.2 (duplicate serial acknowledgement
-visible and audited); tracking-method lock enforced by test.
+visible and audited) — verified by tests and a live end-to-end run against real PostgreSQL; tracking-method lock
+enforced by test.
 
 ### Prompt 4 — Movement workflows
 

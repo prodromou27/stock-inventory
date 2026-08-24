@@ -1,31 +1,19 @@
 """AuditEvent — the append-only audit trail described in
 docs/architecture/02-data-model.md and docs/architecture/08-nonfunctional-plan.md.
 
-Append-only is enforced here at the ORM layer (save()/delete() below refuse to
-modify or remove an existing row). Full defense-in-depth via a separate,
-low-privilege runtime database role with UPDATE/DELETE revoked is a Phase 8
-hardening item (docs/architecture/09-delivery-backlog.md) — the migration-owning
-role is necessarily the same role the app connects as today, so a same-role
-REVOKE would have no effect (table owners bypass GRANT/REVOKE in PostgreSQL).
+Append-only is enforced by AppendOnlyModel/AppendOnlyQuerySet (apps.core.models)
+at the ORM layer. Full defense-in-depth via a separate, low-privilege runtime
+database role with UPDATE/DELETE revoked is a Phase 8 hardening item — see
+that base class's docstring for why a same-role REVOKE wouldn't help today.
 """
-
-import uuid
 
 from django.conf import settings
 from django.db import models
 
-
-class AuditEventQuerySet(models.QuerySet):
-    """Blocks the bulk-operation paths that bypass Model.save()/delete()."""
-
-    def update(self, **kwargs):
-        raise ValueError("AuditEvent rows are append-only; bulk update() is not permitted.")
-
-    def delete(self):
-        raise ValueError("AuditEvent rows are append-only; bulk delete() is not permitted.")
+from apps.core.models import AppendOnlyModel, AppendOnlyQuerySet, UUIDPrimaryKeyModel
 
 
-class AuditEvent(models.Model):
+class AuditEvent(UUIDPrimaryKeyModel, AppendOnlyModel):
     class EventType(models.TextChoices):
         LOGIN_SUCCESS = "login_success", "Login success"
         LOGIN_FAILURE = "login_failure", "Login failure"
@@ -49,7 +37,6 @@ class AuditEvent(models.Model):
         ADMIN_CORRECTION = "admin_correction", "Administrator correction"
         ADMIN_REVERSAL = "admin_reversal", "Administrator reversal"
 
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     occurred_at = models.DateTimeField(auto_now_add=True)
     actor = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -66,7 +53,7 @@ class AuditEvent(models.Model):
     metadata = models.JSONField(default=dict, blank=True)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
 
-    objects = AuditEventQuerySet.as_manager()
+    objects = AppendOnlyQuerySet.as_manager()
 
     class Meta:
         ordering = ["-occurred_at"]
@@ -79,13 +66,3 @@ class AuditEvent(models.Model):
 
     def __str__(self):
         return f"{self.get_event_type_display()} — {self.summary}"[:120]
-
-    def save(self, *args, **kwargs):
-        if not self._state.adding:
-            raise ValueError(
-                "AuditEvent rows are append-only and cannot be updated after creation."
-            )
-        super().save(*args, **kwargs)
-
-    def delete(self, *args, **kwargs):
-        raise ValueError("AuditEvent rows are append-only and cannot be deleted.")

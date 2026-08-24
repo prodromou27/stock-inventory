@@ -1,8 +1,4 @@
-"""Shared abstract base models, per docs/architecture/01-repository-structure.md.
-
-Not used by any concrete model yet — Phase 2 (locations/accounts) is the first
-app to build on these.
-"""
+"""Shared abstract base models, per docs/architecture/01-repository-structure.md."""
 
 import uuid
 
@@ -41,3 +37,42 @@ class UUIDPrimaryKeyModel(models.Model):
 
     class Meta:
         abstract = True
+
+
+class AppendOnlyQuerySet(models.QuerySet):
+    """Blocks the bulk-operation paths that bypass AppendOnlyModel.save()/delete()."""
+
+    def update(self, **kwargs):
+        raise ValueError("These rows are append-only; bulk update() is not permitted.")
+
+    def delete(self):
+        raise ValueError("These rows are append-only; bulk delete() is not permitted.")
+
+
+class AppendOnlyModel(models.Model):
+    """Rows are INSERT-only from the application's perspective — ledger and
+    audit tables (docs/architecture/02-data-model.md's deletion policy: "Never
+    deleted; append-only"). Full defense-in-depth via a separate, low-privilege
+    runtime database role with UPDATE/DELETE revoked is a Phase 8 hardening
+    item — the migration-owning role is necessarily the same role the app
+    connects as today, so a same-role REVOKE would have no effect (table
+    owners bypass GRANT/REVOKE in PostgreSQL).
+
+    Subclasses must set `objects = AppendOnlyQuerySet.as_manager()` to also
+    block bulk update()/delete() (this class alone only guards the
+    instance-level save()/delete() path).
+    """
+
+    class Meta:
+        abstract = True
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValueError(
+                f"{self._meta.object_name} rows are append-only and cannot be updated "
+                "after creation."
+            )
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError(f"{self._meta.object_name} rows are append-only and cannot be deleted.")

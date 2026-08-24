@@ -11,5 +11,7 @@
     <p class="messages__item messages__item--warning">No role group assigned yet. Contact an Administrator.</p>
   {% endif %}
   <p><a href="{% url 'locations:list' %}">Browse locations</a></p>
-  <p>Inventory workflows will appear here starting in Phase 3.</p>
+  <p><a href="{% url 'catalog:product_list' %}">Browse products</a></p>
+  <p><a href="{% url 'inventory:asset_list' %}">Browse assets</a></p>
+  <p><a href="{% url 'inventory:balance_list' %}">Browse stock balances</a></p>
 {% endblock %}

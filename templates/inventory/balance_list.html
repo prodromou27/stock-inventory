@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Stock Balances — Stock Inventory{% endblock %}
+
+{% block content %}
+  <h1>Stock balances</h1>
+
+  {% if balances %}
+    <table>
+      <thead>
+        <tr>
+          <th>Product</th>
+          <th>Location</th>
+          <th>On hand</th>
+          <th>Reserved</th>
+          <th>Available</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for balance in balances %}
+          <tr>
+            <td><a href="{{ balance.get_absolute_url }}">{{ balance.product }}</a></td>
+            <td>{{ balance.location }}</td>
+            <td>{{ balance.on_hand_quantity }}</td>
+            <td>{{ balance.reserved_quantity }}</td>
+            <td>{{ balance.available_quantity }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {% if is_paginated %}
+      <nav class="pagination">
+        {% if page_obj.has_previous %}
+          <a href="?page={{ page_obj.previous_page_number }}">Previous</a>
+        {% endif %}
+        <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+        {% if page_obj.has_next %}
+          <a href="?page={{ page_obj.next_page_number }}">Next</a>
+        {% endif %}
+      </nav>
+    {% endif %}
+  {% else %}
+    <p>No stock balances found in your authorized scope.</p>
+  {% endif %}
+{% endblock %}

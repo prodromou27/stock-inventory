@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}{{ asset.product }} — Stock Inventory{% endblock %}
+
+{% block content %}
+  <h1>{{ asset.product }}</h1>
+  <p>Serial: {{ asset.vendor_serial|default:"—" }}</p>
+  <p>Status: {{ asset.get_status_display }}</p>
+  <p>Location: {{ asset.current_location|default:"—" }}</p>
+  <p>Condition: {{ asset.get_condition_display }}</p>
+  {% if asset.accessories %}<p>Accessories: {{ asset.accessories }}</p>{% endif %}
+  {% if asset.project_reference %}<p>Project reference: {{ asset.project_reference }}</p>{% endif %}
+  {% if asset.final_customer %}<p>Final customer: {{ asset.final_customer }}</p>{% endif %}
+  {% if asset.supplier %}<p>Supplier: {{ asset.supplier }}</p>{% endif %}
+  {% if asset.invoice_number %}<p>Invoice number: {{ asset.invoice_number }}</p>{% endif %}
+  <p>Arrival date: {{ asset.arrival_date }}</p>
+  {% if asset.last_removal_date %}<p>Last removal date: {{ asset.last_removal_date }}</p>{% endif %}
+  {% if asset.notes %}<p>Notes: {{ asset.notes }}</p>{% endif %}
+
+  <h2>History</h2>
+  {% if history %}
+    <table>
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>Transaction</th>
+          <th>From status</th>
+          <th>To status</th>
+          <th>From location</th>
+          <th>To location</th>
+          <th>By</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for event in history %}
+          <tr>
+            <td>{{ event.occurred_at }}</td>
+            <td><a href="{{ event.transaction.get_absolute_url }}">{{ event.transaction.transaction_number }}</a></td>
+            <td>{{ event.from_status|default:"—" }}</td>
+            <td>{{ event.to_status }}</td>
+            <td>{{ event.from_location|default:"—" }}</td>
+            <td>{{ event.to_location|default:"—" }}</td>
+            <td>{{ event.recorded_by }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>No history.</p>
+  {% endif %}
+{% endblock %}

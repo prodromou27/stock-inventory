@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}{{ transaction.transaction_number }} — Stock Inventory{% endblock %}
+
+{% block content %}
+  <h1>Transaction {{ transaction.transaction_number }}</h1>
+  <p>Type: {{ transaction.get_movement_type_display }}</p>
+  <p>Date: {{ transaction.occurred_at }}</p>
+  <p>Performed by: {{ transaction.performed_by }}</p>
+  {% if transaction.source_location %}<p>Source location: {{ transaction.source_location }}</p>{% endif %}
+  {% if transaction.destination_location %}<p>Destination location: {{ transaction.destination_location }}</p>{% endif %}
+  {% if transaction.project_reference %}<p>Project reference: {{ transaction.project_reference }}</p>{% endif %}
+  {% if transaction.final_customer %}<p>Final customer: {{ transaction.final_customer }}</p>{% endif %}
+  {% if transaction.notes %}<p>Notes: {{ transaction.notes }}</p>{% endif %}
+  {% if transaction.duplicate_serial_acknowledged %}
+    <p class="messages__item messages__item--warning">A duplicate serial was acknowledged on this transaction.</p>
+  {% endif %}
+
+  <h2>Lines</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Product</th>
+        <th>Serial</th>
+        <th>Quantity</th>
+        <th>Condition</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for line in lines %}
+        <tr>
+          <td>{{ line.line_number }}</td>
+          <td>
+            {% if line.unit_asset %}
+              <a href="{{ line.unit_asset.get_absolute_url }}">{{ line.brand_snapshot }} {{ line.model_snapshot }}</a>
+            {% else %}
+              {{ line.brand_snapshot }} {{ line.model_snapshot }}
+            {% endif %}
+          </td>
+          <td>{{ line.serial_snapshot|default:"—" }}</td>
+          <td>{{ line.quantity_delta }}</td>
+          <td>{{ line.condition_snapshot|default:"—" }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}

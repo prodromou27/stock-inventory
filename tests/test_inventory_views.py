@@ -1,0 +1,251 @@
+from datetime import date
+
+import pytest
+from django.urls import reverse
+
+from apps.inventory.models import StockBalance, UnitAsset
+from apps.inventory.services.receipts import receive_stock
+
+
+@pytest.mark.django_db
+class TestReceiveStockView:
+    def test_anonymous_redirected_to_login(self, client):
+        response = client.get(reverse("inventory:receive_stock"))
+        assert response.status_code == 302
+
+    def test_read_only_user_forbidden(self, client, read_only_user):
+        client.force_login(read_only_user)
+        response = client.get(reverse("inventory:receive_stock"))
+        assert response.status_code == 403
+
+    def test_stock_manager_can_receive_unit_stock(
+        self, client, stock_manager_with_room_access, unit_product, location_tree
+    ):
+        client.force_login(stock_manager_with_room_access)
+        response = client.post(
+            reverse("inventory:receive_stock"),
+            {
+                "product": unit_product.pk,
+                "location": location_tree["room"].pk,
+                "occurred_at": date.today().isoformat(),
+                "vendor_serial": "SN-VIEW-1",
+            },
+        )
+        assert response.status_code == 302
+        assert UnitAsset.objects.filter(vendor_serial="SN-VIEW-1").exists()
+
+    def test_stock_manager_can_receive_quantity_stock(
+        self, client, stock_manager_with_room_access, quantity_product, location_tree
+    ):
+        client.force_login(stock_manager_with_room_access)
+        response = client.post(
+            reverse("inventory:receive_stock"),
+            {
+                "product": quantity_product.pk,
+                "location": location_tree["room"].pk,
+                "occurred_at": date.today().isoformat(),
+                "quantity": 15,
+            },
+        )
+        assert response.status_code == 302
+        balance = StockBalance.objects.get(product=quantity_product, location=location_tree["room"])
+        assert balance.on_hand_quantity == 15
+
+    def test_location_field_only_offers_accessible_locations(
+        self, client, stock_manager_with_room_access, location_tree, other_location_tree
+    ):
+        client.force_login(stock_manager_with_room_access)
+        response = client.get(reverse("inventory:receive_stock"))
+        location_choices = list(response.context["form"].fields["location"].queryset)
+        assert location_tree["room"] in location_choices
+        assert other_location_tree["country"] not in location_choices
+
+    def test_duplicate_serial_shows_warning_page(
+        self, client, stock_manager_with_room_access, unit_product, location_tree
+    ):
+        receive_stock(
+            user=stock_manager_with_room_access,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-VIEW-DUP",
+        )
+
+        client.force_login(stock_manager_with_room_access)
+        response = client.post(
+            reverse("inventory:receive_stock"),
+            {
+                "product": unit_product.pk,
+                "location": location_tree["room"].pk,
+                "occurred_at": date.today().isoformat(),
+                "vendor_serial": "SN-VIEW-DUP",
+            },
+        )
+        assert response.status_code == 200
+        assert response.context["show_duplicate_warning"] is True
+        assert UnitAsset.objects.filter(vendor_serial="SN-VIEW-DUP").count() == 1
+
+
+@pytest.mark.django_db
+class TestUnitAssetListAndDetail:
+    def test_list_scoped_to_accessible_locations(
+        self,
+        client,
+        administrator,
+        stock_manager_with_room_access,
+        unit_product,
+        location_tree,
+        other_location_tree,
+    ):
+        from apps.locations.models import Location
+        from apps.locations.services import create_location
+
+        other_floor = create_location(
+            level=Location.Level.FLOOR,
+            name="X Floor",
+            parent=other_location_tree["site"],
+            user=administrator,
+        )
+        other_room = create_location(
+            level=Location.Level.STORAGE_ROOM, name="X Room", parent=other_floor, user=administrator
+        )
+
+        receive_stock(
+            user=stock_manager_with_room_access,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-IN-SCOPE",
+        )
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=other_room,
+            occurred_at=date.today(),
+            vendor_serial="SN-OUT-OF-SCOPE",
+        )
+
+        client.force_login(stock_manager_with_room_access)
+        response = client.get(reverse("inventory:asset_list"))
+        serials = {asset.vendor_serial for asset in response.context["assets"]}
+        assert "SN-IN-SCOPE" in serials
+        assert "SN-OUT-OF-SCOPE" not in serials
+
+    def test_detail_denied_outside_scope(
+        self,
+        client,
+        administrator,
+        stock_manager_with_room_access,
+        unit_product,
+        other_location_tree,
+    ):
+        from apps.locations.models import Location
+        from apps.locations.services import create_location
+
+        other_floor = create_location(
+            level=Location.Level.FLOOR,
+            name="Y Floor",
+            parent=other_location_tree["site"],
+            user=administrator,
+        )
+        other_room = create_location(
+            level=Location.Level.STORAGE_ROOM, name="Y Room", parent=other_floor, user=administrator
+        )
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=other_room,
+            occurred_at=date.today(),
+            vendor_serial="SN-DENY",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-DENY")
+
+        client.force_login(stock_manager_with_room_access)
+        response = client.get(reverse("inventory:asset_detail", kwargs={"pk": asset.pk}))
+        assert response.status_code == 403
+
+
+@pytest.mark.django_db
+class TestStockBalanceListAndDetail:
+    def test_list_scoped_to_accessible_locations(
+        self, client, stock_manager_with_room_access, quantity_product, location_tree
+    ):
+        receive_stock(
+            user=stock_manager_with_room_access,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=3,
+        )
+
+        client.force_login(stock_manager_with_room_access)
+        response = client.get(reverse("inventory:balance_list"))
+        assert len(response.context["balances"]) == 1
+
+    def test_detail_shows_ledger_lines(
+        self, client, stock_manager_with_room_access, quantity_product, location_tree
+    ):
+        receive_stock(
+            user=stock_manager_with_room_access,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=3,
+        )
+        balance = StockBalance.objects.get(product=quantity_product, location=location_tree["room"])
+
+        client.force_login(stock_manager_with_room_access)
+        response = client.get(reverse("inventory:balance_detail", kwargs={"pk": balance.pk}))
+        assert response.status_code == 200
+        assert len(response.context["lines"]) == 1
+
+
+@pytest.mark.django_db
+class TestTransactionDetailView:
+    def test_accessible_when_destination_in_scope(
+        self, client, stock_manager_with_room_access, unit_product, location_tree
+    ):
+        txn = receive_stock(
+            user=stock_manager_with_room_access,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-TXN-1",
+        )
+
+        client.force_login(stock_manager_with_room_access)
+        response = client.get(reverse("inventory:transaction_detail", kwargs={"pk": txn.pk}))
+        assert response.status_code == 200
+        assert len(response.context["lines"]) == 1
+
+    def test_denied_when_destination_out_of_scope(
+        self,
+        client,
+        administrator,
+        stock_manager_with_room_access,
+        unit_product,
+        other_location_tree,
+    ):
+        from apps.locations.models import Location
+        from apps.locations.services import create_location
+
+        other_floor = create_location(
+            level=Location.Level.FLOOR,
+            name="Z Floor",
+            parent=other_location_tree["site"],
+            user=administrator,
+        )
+        other_room = create_location(
+            level=Location.Level.STORAGE_ROOM, name="Z Room", parent=other_floor, user=administrator
+        )
+        txn = receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=other_room,
+            occurred_at=date.today(),
+            vendor_serial="SN-TXN-2",
+        )
+
+        client.force_login(stock_manager_with_room_access)
+        response = client.get(reverse("inventory:transaction_detail", kwargs={"pk": txn.pk}))
+        assert response.status_code == 403
