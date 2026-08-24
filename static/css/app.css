@@ -1,0 +1,67 @@
+:root {
+  color-scheme: light dark;
+  --border-color: #d0d7de;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  line-height: 1.5;
+}
+
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.app-header__nav {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.app-header__logout button {
+  background: none;
+  border: none;
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+}
+
+.app-main {
+  padding: 1.5rem;
+  max-width: 60rem;
+  margin: 0 auto;
+}
+
+.messages {
+  list-style: none;
+  padding: 0;
+}
+
+.messages__item {
+  padding: 0.5rem 0.75rem;
+  border-radius: 4px;
+  margin-bottom: 0.75rem;
+}
+
+.messages__item--error {
+  background: #ffe0e0;
+}
+
+.messages__item--warning {
+  background: #fff6d8;
+}
+
+.messages__item--success {
+  background: #dff5e1;
+}

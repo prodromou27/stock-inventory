@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard — Stock Inventory{% endblock %}
+
+{% block content %}
+  <h1>Dashboard</h1>
+  <p>Signed in as {{ user.get_username }}.</p>
+  {% if role_groups %}
+    <p>Role: {{ role_groups|join:", " }}</p>
+  {% else %}
+    <p class="messages__item messages__item--warning">No role group assigned yet. Contact an Administrator.</p>
+  {% endif %}
+  <p>Inventory workflows will appear here starting in Phase 2.</p>
+{% endblock %}
