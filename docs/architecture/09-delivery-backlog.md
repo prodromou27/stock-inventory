@@ -59,15 +59,46 @@ migration operation itself remains open per doc 10's open item #8.
 visible and audited) — verified by tests and a live end-to-end run against real PostgreSQL; tracking-method lock
 enforced by test.
 
-### Prompt 4 — Movement workflows
+### Prompt 4 — Movement workflows — done
 
-Depends on Prompt 3. Delivers: reservation, reservation release, bulk transfer, employee assignment, customer
-delivery, partial/complete return, return assessment, mark damaged, mark lost, disposal, admin correction,
-reversal — all via `inventory/services/`, all row-locked, all producing confirmation pages showing the transaction
-number.
+Depends on Prompt 3. Delivered all twelve movement services (`apps/inventory/services/`): `transfers.bulk_transfer()`,
+`reservations.reserve_stock()`/`release_reservation()`, `assignments.assign_to_employee()`/`deliver_to_customer()`
+(sharing an internal `_issue_stock()`), `returns.return_stock()`/`assess_return()`, `disposition.mark_damaged()`/
+`mark_lost()`/`dispose()`, and `corrections.correct_unit_status()`/`correct_balance()`/`reverse_transaction()`
+(Administrator-only). `services/ledger.py` grew shared `write_unit_line()`/`write_quantity_line()`/`adjust_balance()`/
+`adjust_reserved()` primitives that every one of these builds on — receipts.py's create-a-new-asset path stayed on
+its own hand-written lines (deliberately: receiving has no "from" state to transition out of, so it doesn't fit the
+shared transition-based helpers). `StockReservation` (deferred from Phase 3) was added here, where it's first used.
+Also added `apps/inventory/transitions.py`, making the status-transition table (doc 03) into an enforced function
+every service calls before writing anything.
 
-**Acceptance**: acceptance criteria §21.4–§21.9, §21.11, §21.12; the full status-transition table (doc 03) covered
-by tests including every invalid-transition rejection.
+Every workflow got a UI screen (checkbox asset picker + a single optional quantity line + the workflow's own fields
+— see `templates/inventory/`), reachable from a new "Movements" hub page rather than growing the top nav further.
+Administrator correction/reversal live on the asset/balance/transaction detail pages, gated by `user_is_administrator`.
+
+**Scope simplifications, deliberate:**
+- The UI exposes exactly one quantity line per submission (any number of unit-asset checkboxes, but a single
+  product/location/quantity for the quantity side) — the services underneath accept full lists and are tested
+  that way; a true multi-quantity-line UI (dynamic add-row) wasn't built to keep this already-large phase bounded.
+- Reservation *consumption* during assignment/delivery (drawing from an existing `StockReservation` rather than
+  general available stock) isn't wired into the UI — `StockReservation.consuming_transaction` exists in the schema
+  for this but nothing sets it yet.
+- `return_stock()` doesn't cap a quantity return at what was originally issued minus what's already been returned
+  on that transaction — a partial-then-partial-again quantity return isn't validated against the original amount.
+- Damaged -> In Stock ("after repair," spec §8) is reachable only through an Administrator correction, not a
+  dedicated "repair" workflow — the prompt pack's twelve named workflows don't include one.
+
+**Two real bugs found and fixed while testing** (both confirmed by a failing test before the fix, not just found by
+inspection): the transition table originally included `IN_STOCK -> IN_STOCK` and `RESERVED -> RESERVED` self-loops
+to let transfer keep an asset's status unchanged while its location moves. Reusing that same table for reservation
+and return-assessment made "reserve an already-reserved asset" and "assess an asset that was never returned" both
+incorrectly succeed, since both compare a status against itself. Fixed by giving transfer its own
+`validate_transferable()` check instead of overloading the shared transition table — see `transitions.py`.
+
+**Acceptance**: acceptance criteria §21.4–§21.9, §21.11, §21.12 — verified by 207 passing tests (up from 130) and a
+live end-to-end run of every service, then every new view, against real PostgreSQL. The full status-transition
+table (doc 03) is covered by tests including invalid-transition rejection, insufficient-quantity rejection, and
+scope-violation rejection for every workflow.
 
 ## Phase 3 — Documents and reporting
 

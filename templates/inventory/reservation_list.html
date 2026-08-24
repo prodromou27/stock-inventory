@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}Reservations — Stock Inventory{% endblock %}
+
+{% block content %}
+  <h1>Reservations</h1>
+  <p><a href="{% url 'inventory:reserve' %}">+ New reservation</a></p>
+
+  <form method="get" class="location-filters">
+    <label>
+      <input type="checkbox" name="show_all" value="1" {% if request.GET.show_all == "1" %}checked{% endif %}>
+      Show released/consumed
+    </label>
+    <button type="submit">Filter</button>
+  </form>
+
+  {% if reservations %}
+    <table>
+      <thead>
+        <tr>
+          <th>Product</th>
+          <th>Location</th>
+          <th>Quantity</th>
+          <th>Project reference</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for reservation in reservations %}
+          <tr>
+            <td><a href="{{ reservation.get_absolute_url }}">{{ reservation.product }}</a></td>
+            <td>{{ reservation.location }}</td>
+            <td>{{ reservation.quantity }}</td>
+            <td>{{ reservation.project_reference }}</td>
+            <td>{{ reservation.get_status_display }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {% if is_paginated %}
+      <nav class="pagination">
+        {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">Previous</a>{% endif %}
+        <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+        {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">Next</a>{% endif %}
+      </nav>
+    {% endif %}
+  {% else %}
+    <p>No reservations found in your authorized scope.</p>
+  {% endif %}
+{% endblock %}

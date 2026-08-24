@@ -15,6 +15,24 @@
   {% if transaction.duplicate_serial_acknowledged %}
     <p class="messages__item messages__item--warning">A duplicate serial was acknowledged on this transaction.</p>
   {% endif %}
+  {% if transaction.related_transaction %}
+    <p>Related to:
+      <a href="{{ transaction.related_transaction.get_absolute_url }}">{{ transaction.related_transaction.transaction_number }}</a>
+    </p>
+  {% endif %}
+
+  <p>
+    {% if can_return and not already_reversed %}
+      <a href="{% url 'inventory:return_stock' transaction.pk %}">Record a return against this transaction</a>
+    {% endif %}
+    {% if user_is_administrator and is_reversal_target %}
+      {% if already_reversed %}
+        <span>Already reversed.</span>
+      {% else %}
+        &nbsp;<a href="{% url 'inventory:transaction_reverse' transaction.pk %}">Reverse this transaction</a>
+      {% endif %}
+    {% endif %}
+  </p>
 
   <h2>Lines</h2>
   <table>

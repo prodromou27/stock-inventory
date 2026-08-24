@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+{% block title %}Correct Balance — Stock Inventory{% endblock %}
+
+{% block content %}
+  <h1>Administrator correction — {{ balance.product }} @ {{ balance.location }}</h1>
+  <p>Current on-hand: {{ balance.on_hand_quantity }}, reserved: {{ balance.reserved_quantity }}</p>
+  {% if form.non_field_errors %}
+    <p class="messages__item messages__item--error">{{ form.non_field_errors|join:" " }}</p>
+  {% endif %}
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Apply correction</button>
+  </form>
+{% endblock %}

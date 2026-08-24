@@ -1,0 +1,27 @@
+<h2>Select assets</h2>
+{% if assets %}
+  <table>
+    <thead>
+      <tr>
+        <th></th>
+        <th>Product</th>
+        <th>Serial</th>
+        <th>Status</th>
+        <th>Location</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for asset in assets %}
+        <tr>
+          <td><input type="checkbox" name="unit_asset_ids" value="{{ asset.pk }}"></td>
+          <td>{{ asset.product }}</td>
+          <td>{{ asset.vendor_serial|default:"—" }}</td>
+          <td>{{ asset.get_status_display }}</td>
+          <td>{{ asset.current_location|default:"—" }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <p>No eligible assets found in your authorized scope.</p>
+{% endif %}

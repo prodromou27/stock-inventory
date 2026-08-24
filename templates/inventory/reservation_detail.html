@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{% block title %}Reservation — Stock Inventory{% endblock %}
+
+{% block content %}
+  <h1>{{ reservation.product }} @ {{ reservation.location }}</h1>
+  <p>Quantity: {{ reservation.quantity }}</p>
+  <p>Project reference: {{ reservation.project_reference }}</p>
+  {% if reservation.final_customer %}<p>Final customer: {{ reservation.final_customer }}</p>{% endif %}
+  <p>Status: {{ reservation.get_status_display }}</p>
+  <p>Created by: {{ reservation.created_by }} on {{ reservation.created_at }}</p>
+
+  {% if reservation.status == "active" %}
+    <form method="post" action="{% url 'inventory:release_reservation' reservation.pk %}">
+      {% csrf_token %}
+      <button type="submit">Release</button>
+    </form>
+  {% endif %}
+{% endblock %}

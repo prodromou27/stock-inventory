@@ -48,7 +48,7 @@ intervening movement — it will tell the Administrator to use a correction inst
 | **Customer delivery** | `status → Delivered`, `current_location → NULL` | Same as assignment | **Yes** | Stock Manager, Administrator |
 | **Return** | `status → Returned`, `current_location →` receiving location | `on_hand_quantity += n` at the returning location, pending assessment (see note) | No (prior Removal Date preserved in history) | Stock Manager, Administrator |
 | **Return assessment** | `status → In Stock / Damaged / Disposed` | N/A (quantity returns don't carry a per-unit "awaiting assessment" state — see doc 10) | No | Stock Manager, Administrator |
-| **Mark damaged** | `status → Damaged`, location unchanged | `on_hand_quantity -= n` moved to a damaged holding bucket, or a status flag — see doc 10 | **Yes** (loss/damage counts as leaving usable storage per §8) | Stock Manager, Administrator |
+| **Mark damaged** | `status → Damaged`, location unchanged | `on_hand_quantity -= n` moved to a damaged holding bucket, or a status flag — see doc 10 | No (location unchanged — spec §8 lists only assignments, deliveries, loss, and disposal) | Stock Manager, Administrator |
 | **Mark lost** | `status → Lost`, `current_location → NULL` | `on_hand_quantity -= n` (write-off) | **Yes** | Stock Manager, Administrator |
 | **Disposal** | `status → Disposed`, `current_location → NULL` | `on_hand_quantity -= n` (write-off) | **Yes** | Stock Manager, Administrator |
 | **Admin correction** | Any field/status forced with reason | Adjust balance directly (may cross zero temporarily as an explicit, audited correction) | n/a | **Administrator only** |

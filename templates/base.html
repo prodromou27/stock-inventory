@@ -15,7 +15,7 @@
         <a href="{% url 'inventory:asset_list' %}">Assets</a>
         <a href="{% url 'inventory:balance_list' %}">Stock Balances</a>
         {% if user_is_administrator or "StockManager" in user_role_groups %}
-          <a href="{% url 'inventory:receive_stock' %}">Receive Stock</a>
+          <a href="{% url 'inventory:movements_hub' %}">Movements</a>
         {% endif %}
         <a href="{% url 'locations:list' %}">Locations</a>
         {% if user_is_administrator %}

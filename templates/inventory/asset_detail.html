@@ -17,6 +17,10 @@
   {% if asset.last_removal_date %}<p>Last removal date: {{ asset.last_removal_date }}</p>{% endif %}
   {% if asset.notes %}<p>Notes: {{ asset.notes }}</p>{% endif %}
 
+  {% if user_is_administrator %}
+    <p><a href="{% url 'inventory:asset_correct' asset.pk %}">Administrator correction</a></p>
+  {% endif %}
+
   <h2>History</h2>
   {% if history %}
     <table>

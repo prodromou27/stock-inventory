@@ -257,6 +257,64 @@ class InventoryTransaction(UUIDPrimaryKeyModel, AppendOnlyModel):
         return reverse("inventory:transaction_detail", kwargs={"pk": self.pk})
 
 
+class ReservationStatus(models.TextChoices):
+    ACTIVE = "active", "Active"
+    RELEASED = "released", "Released"
+    CONSUMED = "consumed", "Consumed"
+
+
+class StockReservation(UUIDPrimaryKeyModel):
+    """Tracks *why* a slice of a StockBalance is reserved, carrying Project
+    Reference/Final Customer without fragmenting StockBalance itself — see
+    docs/architecture/02-data-model.md and doc 10's open item #1. Mutable
+    (status transitions active -> released/consumed), unlike the ledger
+    tables, but only ever written by apps.inventory.services.
+    """
+
+    product = models.ForeignKey(
+        "catalog.Product", on_delete=models.PROTECT, related_name="reservations"
+    )
+    location = models.ForeignKey(
+        "locations.Location", on_delete=models.PROTECT, related_name="reservations"
+    )
+    quantity = models.PositiveIntegerField()
+    project_reference = models.CharField(max_length=120, blank=True)
+    final_customer = models.CharField(max_length=120, blank=True)
+    status = models.CharField(
+        max_length=20, choices=ReservationStatus.choices, default=ReservationStatus.ACTIVE
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    reservation_transaction = models.ForeignKey(
+        InventoryTransaction, on_delete=models.PROTECT, related_name="+"
+    )
+    consuming_transaction = models.ForeignKey(
+        InventoryTransaction, null=True, blank=True, on_delete=models.PROTECT, related_name="+"
+    )
+
+    class Meta:
+        indexes = [
+            models.Index(
+                fields=["product", "location", "status"], name="reservation_loc_status_idx"
+            ),
+            models.Index(fields=["project_reference"], name="reservation_project_ref_idx"),
+            models.Index(fields=["final_customer"], name="reservation_final_cust_idx"),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(quantity__gt=0), name="reservation_quantity_positive"
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.quantity} x {self.product} @ {self.location} ({self.get_status_display()})"
+
+    def get_absolute_url(self):
+        return reverse("inventory:reservation_detail", kwargs={"pk": self.pk})
+
+
 class InventoryTransactionLine(UUIDPrimaryKeyModel, AppendOnlyModel):
     transaction = models.ForeignKey(
         InventoryTransaction, on_delete=models.PROTECT, related_name="lines"

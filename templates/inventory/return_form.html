@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}Return — Stock Inventory{% endblock %}
+
+{% block content %}
+  <h1>Return against {{ original_transaction.transaction_number }}</h1>
+  <p>{{ original_transaction.get_movement_type_display }} to
+    {% if original_transaction.employee_name %}{{ original_transaction.employee_name }}{% else %}{{ original_transaction.final_customer }}{% endif %}
+  </p>
+
+  {% if form.non_field_errors %}
+    <p class="messages__item messages__item--error">{{ form.non_field_errors|join:" " }}</p>
+  {% endif %}
+
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+
+    <h2>Outstanding lines</h2>
+    {% if lines %}
+      <table>
+        <thead>
+          <tr>
+            <th></th>
+            <th>Product</th>
+            <th>Serial</th>
+            <th>Quantity issued</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for line in lines %}
+            <tr>
+              <td>
+                {% if line.unit_asset %}
+                  <input type="checkbox" name="unit_asset_ids" value="{{ line.unit_asset.pk }}">
+                {% endif %}
+              </td>
+              <td>{{ line.brand_snapshot }} {{ line.model_snapshot }}</td>
+              <td>{{ line.serial_snapshot|default:"—" }}</td>
+              <td>{% if not line.unit_asset %}{{ line.quantity_delta|cut:"-" }}{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p>No outstanding lines.</p>
+    {% endif %}
+
+    <button type="submit">Record return</button>
+  </form>
+{% endblock %}

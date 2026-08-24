@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block title %}Reverse Transaction — Stock Inventory{% endblock %}
+
+{% block content %}
+  <h1>Reverse {{ original_transaction.transaction_number }}</h1>
+  <p>{{ original_transaction.get_movement_type_display }}, {{ original_transaction.occurred_at }}</p>
+  <p class="messages__item messages__item--warning">
+    This creates a new transaction that undoes every line of {{ original_transaction.transaction_number }}.
+    The original transaction is preserved, never edited or deleted.
+  </p>
+  {% if form.non_field_errors %}
+    <p class="messages__item messages__item--error">{{ form.non_field_errors|join:" " }}</p>
+  {% endif %}
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Reverse</button>
+  </form>
+{% endblock %}

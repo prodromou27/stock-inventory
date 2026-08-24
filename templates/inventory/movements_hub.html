@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block title %}Movements — Stock Inventory{% endblock %}
+
+{% block content %}
+  <h1>Movements</h1>
+  <ul>
+    <li><a href="{% url 'inventory:receive_stock' %}">Receive stock</a></li>
+    <li><a href="{% url 'inventory:transfer' %}">Bulk location transfer</a></li>
+    <li><a href="{% url 'inventory:reserve' %}">Reserve stock</a></li>
+    <li><a href="{% url 'inventory:reservation_list' %}">Reservations</a></li>
+    <li><a href="{% url 'inventory:assign' %}">Assign to employee</a></li>
+    <li><a href="{% url 'inventory:deliver' %}">Deliver to customer</a></li>
+    <li><a href="{% url 'inventory:assess_return' %}">Assess returned assets</a></li>
+    <li><a href="{% url 'inventory:mark_damaged' %}">Mark damaged</a></li>
+    <li><a href="{% url 'inventory:mark_lost' %}">Mark lost</a></li>
+    <li><a href="{% url 'inventory:dispose' %}">Dispose</a></li>
+  </ul>
+  <p>To record a return, open the original assignment/delivery transaction and use "Record a return."</p>
+{% endblock %}

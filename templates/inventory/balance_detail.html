@@ -8,6 +8,10 @@
   <p>Reserved: {{ balance.reserved_quantity }}</p>
   <p>Available: {{ balance.available_quantity }}</p>
 
+  {% if user_is_administrator %}
+    <p><a href="{% url 'inventory:balance_correct' balance.pk %}">Administrator correction</a></p>
+  {% endif %}
+
   <h2>Ledger</h2>
   {% if lines %}
     <table>
