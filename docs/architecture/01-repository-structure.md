@@ -46,15 +46,17 @@ stock_inventory/
 
 | App | Owns | Depends on |
 |---|---|---|
-| `core` | Abstract base models (`TimestampedModel`, `UserStampedModel`), the scope-checking query layer, health/readiness endpoint, shared exceptions, pagination helpers | — |
-| `accounts` | `User` (Django's, extended via a `Profile` for display name only — **not** for role), Groups (`Administrator`, `StockManager`, `ReadOnlyUser`), `UserLocationAccess` | `core`, `locations` |
-| `locations` | `Location` hierarchy, activation/deactivation, hierarchy validation | `core` |
+| `core` | Abstract base models (`TimestampedModel`, `UserStampedModel`, `UUIDPrimaryKeyModel`), role/Group authorization helpers (`authorization.py`: `is_administrator`, `require_role`, `RoleRequiredMixin`), a template context processor exposing role info for nav hiding, health/readiness endpoint | — |
+| `accounts` | `User` (Django's, extended via a `Profile` for display name only if ever needed — **not** for role), Groups (`Administrator`, `StockManager`, `ReadOnlyUser`), `UserLocationAccess`, login success/failure audit signals | `core`, `locations`, `audit` |
+| `locations` | `Location` hierarchy, activation/deactivation, hierarchy validation, **and the location-scope authorization layer** (`scoping.py`: `accessible_locations`, `scope_queryset`, `require_location_access`) | `core`, `accounts` (imported narrowly, inside function bodies, to read `UserLocationAccess`) |
 | `catalog` | `Brand`, `ProductType`, `Product`, duplicate-product detection service | `core` |
 | `inventory` | `UnitAsset`, `StockBalance`, `StockReservation`, `InventoryTransaction`, `InventoryTransactionLine`, `AssetStatusHistory`, and every movement service (receipt, transfer, reservation, assignment, delivery, return, damage, loss, disposal, correction, reversal) | `core`, `locations`, `catalog`, `accounts`, `audit` |
 | `documents` | `GeneratedDocument`, `Attachment`, HTML→PDF rendering, protected download views | `core`, `inventory`, `accounts`, `audit` |
 | `imports` | `ImportBatch`, `ImportRow`, staging/validation/execution services for the legacy Excel format | `core`, `catalog`, `locations`, `inventory`, `audit` |
-| `audit` | `AuditEvent` model and the `record_event(...)` service every other app calls; append-only enforcement | `core`, `accounts` |
+| `audit` | `AuditEvent` model and the `record_event(...)` service every other app calls; append-only enforcement (blocks instance and bulk update/delete at the ORM layer) | `core` |
 | `reporting` | List/filter/report/export views and query objects; **no models of its own** — only reads through the scope layer | all of the above (read-only) |
+
+The scope-checking layer described below as "`core.scoping`" in the original plan was implemented as `apps.locations.scoping` instead — it necessarily depends on `Location` and `UserLocationAccess`, and keeping `core` free of that dependency (per this table) mattered more than keeping the name literally matching the plan. `locations` and `accounts` have a small mutual dependency (`accounts.UserLocationAccess` FKs to `locations.Location`; `locations.scoping` reads `accounts.UserLocationAccess`) — resolved by importing `UserLocationAccess` inside `scoping.py`'s function bodies rather than at module load time, so there's no import-time circularity.
 
 ### Why this split
 

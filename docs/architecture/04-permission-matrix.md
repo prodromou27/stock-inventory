@@ -10,7 +10,7 @@ Every authorization check is the AND of two independent checks:
    `Administrator`, `StockManager`, `ReadOnlyUser` (exactly one per user; enforced by a form/admin validation, not a
    DB constraint, since Django doesn't make "exactly one group" trivial to express as a constraint).
 2. **Location scope** — which `Location` subtrees the user may see/act on, from `UserLocationAccess` rows (doc 02),
-   except Administrators, who may be granted `all_locations=true` instead of one row per country.
+   except Administrators, who need no grant rows at all — `is_administrator(user)` alone grants every location.
 
 A request is authorized only if the role permits the *type* of action **and** every `Location` touched by the
 request is within the user's granted scope (self or a descendant, via the `ltree` `path` column).
@@ -44,15 +44,26 @@ management and audit log are global, not location-scoped, since they're about th
 
 ## Enforcement: one scope layer, called everywhere
 
-`core.scoping` provides:
+Role checks and location-scope checks are split across two small modules (see doc 01's dependency-table note for
+why this ended up as two modules instead of one `core.scoping`):
 
+`apps.core.authorization` provides:
+- `is_administrator(user)`, `has_role(user, *group_names)`, `require_role(user, *group_names)` — raises
+  `PermissionDenied`.
+- `RoleRequiredMixin` — class-based-view mixin reading `allowed_roles`.
+
+`apps.locations.scoping` provides:
 - `accessible_locations(user) -> QuerySet[Location]` — every `Location` in the user's granted subtrees (or all, for
-  `all_locations` Administrators).
-- `scope_queryset(user, queryset, location_field="current_location")` — wraps any queryset (inventory, transactions,
-  reports) with `WHERE <location_field>__path <@ ANY(accessible_paths)`, using the `ltree` ancestor operator so this
-  is a single indexed filter, not a per-row Python check.
-- `require_location_access(user, location)` — raises `PermissionDenied` for use before any write.
-- `require_role(user, *allowed_groups)` — decorator/mixin for view classes.
+  Administrators, per `is_administrator`).
+- `scope_queryset(user, queryset, location_field=None)` — wraps any queryset (inventory, transactions, reports)
+  with one `path <@ <granted path>` clause per grant, OR'd together, using the custom `descendant_or_self` ORM
+  lookup registered on `LtreeField` (`apps/locations/fields.py`) — a handful of grants per user means a handful of
+  OR'd clauses, still a single indexed query, not a per-row Python check. (The original plan described this as a
+  single `<@ ANY(accessible_paths)` array-operator query; the OR'd-clauses form was simpler to express through the
+  Django ORM and is equivalent at the scale this app targets.)
+- `require_location_access(user, location)` — raises `PermissionDenied` for use before any write; compares the
+  target location's already-loaded `path` string against granted paths in Python (dot-prefix check), avoiding an
+  extra query when the location object is already in hand.
 
 **Every** list view, detail view, report, export, and attachment/document download calls `scope_queryset` or
 `require_location_access` — there is no view that queries `UnitAsset`/`StockBalance`/`InventoryTransaction`/

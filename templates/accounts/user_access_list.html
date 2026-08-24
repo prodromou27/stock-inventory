@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Access — Stock Inventory{% endblock %}
+
+{% block content %}
+  <h1>Manage Access</h1>
+  <p><a href="{% url 'accounts:grant_access' %}">+ Grant access</a></p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>User</th>
+        <th>Role</th>
+        <th>Granted locations</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+        <tr>
+          <td>{{ u.username }}</td>
+          <td>{{ u.groups.all|join:", " }}</td>
+          <td>
+            {% for access in u.location_access_grants.all %}
+              {{ access.location.name }}
+              <form method="post" action="{% url 'accounts:revoke_access' access.pk %}" class="inline-form">
+                {% csrf_token %}
+                <button type="submit">Revoke</button>
+              </form>
+            {% empty %}
+              <span>No explicit grants{% if u.is_superuser %} (superuser — implicit full access){% endif %}</span>
+            {% endfor %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}

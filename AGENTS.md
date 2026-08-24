@@ -18,8 +18,10 @@ inventing a new rule (spec §23.10) — do not silently invent business rules.
 
 - Business logic lives in each app's `services.py`/`services/` module, called by views — never in views, forms,
   signals, or templates (architecture doc 01).
-- Once `apps.core.scoping` exists (Phase 2+), every read/write that touches inventory, locations, or reports must
-  go through it — no view queries `UnitAsset`/`StockBalance`/`InventoryTransaction` directly.
+- Every read/write that touches locations, inventory, or reports must go through `apps.locations.scoping`
+  (`accessible_locations`/`scope_queryset`/`require_location_access`) and `apps.core.authorization`
+  (`require_role`/`RoleRequiredMixin`) — no view queries `Location`/`UnitAsset`/`StockBalance`/
+  `InventoryTransaction` directly.
 - Ledger tables (`InventoryTransaction`, `InventoryTransactionLine`, `AssetStatusHistory`, `AuditEvent`) are
   append-only. Never add code that updates or deletes rows in those tables.
 - Implement one delivery-backlog phase at a time (`docs/architecture/09-delivery-backlog.md`); do not jump ahead to
@@ -36,6 +38,7 @@ cp .env.example .env
 docker compose -f deploy/docker-compose.yml up
 docker compose -f deploy/docker-compose.yml exec web python manage.py migrate
 docker compose -f deploy/docker-compose.yml exec web python manage.py seed_dev_data
+docker compose -f deploy/docker-compose.yml exec web python manage.py seed_locations
 docker compose -f deploy/docker-compose.yml exec web python manage.py createsuperuser
 docker compose -f deploy/docker-compose.yml exec web pytest
 docker compose -f deploy/docker-compose.yml exec web ruff check .
@@ -49,14 +52,16 @@ Without Docker (requires a local PostgreSQL 16+ with the `ltree` extension avail
 ```
 python manage.py migrate
 python manage.py seed_dev_data
+python manage.py seed_locations
 pytest
 ruff check .
 black --check .
 ```
 
-`seed_dev_data` refuses to run unless `DEBUG=True` — it exists for local/dev use only and creates one user per
-role (`devadmin`/`devmanager`/`devreadonly`), with generated passwords printed to stdout unless
-`SEED_ADMIN_PASSWORD`/etc. are set.
+`seed_dev_data` and `seed_locations` both refuse to run unless `DEBUG=True` — they exist for local/dev use only.
+`seed_dev_data` creates one user per role (`devadmin`/`devmanager`/`devreadonly`), with generated passwords printed
+to stdout unless `SEED_ADMIN_PASSWORD`/etc. are set. `seed_locations` (run after `seed_dev_data`, which it needs an
+Administrator from) creates a sample Country > Site > Floor > Storage Room > Rack > Shelf tree.
 
 ## Settings
 

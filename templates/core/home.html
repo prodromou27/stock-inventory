@@ -5,10 +5,11 @@
 {% block content %}
   <h1>Dashboard</h1>
   <p>Signed in as {{ user.get_username }}.</p>
-  {% if role_groups %}
-    <p>Role: {{ role_groups|join:", " }}</p>
+  {% if user_role_groups %}
+    <p>Role: {{ user_role_groups|join:", " }}</p>
   {% else %}
     <p class="messages__item messages__item--warning">No role group assigned yet. Contact an Administrator.</p>
   {% endif %}
-  <p>Inventory workflows will appear here starting in Phase 2.</p>
+  <p><a href="{% url 'locations:list' %}">Browse locations</a></p>
+  <p>Inventory workflows will appear here starting in Phase 3.</p>
 {% endblock %}

@@ -25,12 +25,17 @@ missing `SECRET_KEY`.
 
 ### Prompt 2 — Locations, users, scoped permissions
 
-Depends on Phase 1. Delivers: `Location` model + hierarchy validation trigger, `UserLocationAccess`, the three
-Groups, `core.scoping` layer, location admin/list/detail screens, audit events for location/role/access changes.
+Depends on Phase 1. Delivers: the `audit` app (`AuditEvent`, `record_event()`, append-only enforcement — this was
+listed under spec §20's Phase 1 but not carried into this backlog's Phase 1 table; built here instead, as the first
+thing Prompt 2 needs), `Location` model + hierarchy validation trigger, `UserLocationAccess`, the three Groups
+(created in Phase 1), the `apps.core.authorization` / `apps.locations.scoping` layer (see doc 04's note on why this
+ended up as two modules rather than one `core.scoping`), location list/detail/create/deactivate screens, a
+user-access management screen, login success/failure audit signals, and audit events for every location/access
+change.
 
 **Acceptance**: acceptance criterion §21.3 test suite (direct-URL scope bypass attempts fail) passes; deactivating
-a referenced location keeps it visible in history; seed data includes a realistic one-country/one-building/second-
-floor/room/rack/shelf tree.
+a referenced location keeps it visible in history; seed data (`seed_locations` management command) includes a
+realistic one-country/one-building/second-floor/room/rack/shelf tree.
 
 ### Prompt 3 — Product catalog and inventory ledger
 

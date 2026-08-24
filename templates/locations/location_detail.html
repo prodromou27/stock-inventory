@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}{{ location.name }} — Stock Inventory{% endblock %}
+
+{% block content %}
+  {% if ancestors %}
+    <p class="breadcrumbs">
+      {% for ancestor in ancestors %}
+        <a href="{{ ancestor.get_absolute_url }}">{{ ancestor.name }}</a> /
+      {% endfor %}
+      {{ location.name }}
+    </p>
+  {% endif %}
+
+  <h1>{{ location.name }}</h1>
+  <p>Level: {{ location.get_level_display }}</p>
+  {% if location.code %}<p>Code: {{ location.code }}</p>{% endif %}
+  <p>Status: {% if location.is_active %}Active{% else %}Inactive{% endif %}</p>
+
+  {% if user_is_administrator %}
+    <p>
+      <a href="{% url 'locations:create' %}?parent={{ location.pk }}">+ Add child location</a>
+      &nbsp;
+      <a href="{% url 'locations:toggle_active' location.pk %}">
+        {% if location.is_active %}Deactivate{% else %}Reactivate{% endif %}
+      </a>
+    </p>
+  {% endif %}
+
+  <h2>Children</h2>
+  {% if children %}
+    <ul>
+      {% for child in children %}
+        <li>
+          <a href="{{ child.get_absolute_url }}">{{ child.name }}</a>
+          ({{ child.get_level_display }}{% if not child.is_active %}, inactive{% endif %})
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p>No child locations.</p>
+  {% endif %}
+{% endblock %}

@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block title %}Locations — Stock Inventory{% endblock %}
+
+{% block content %}
+  <h1>Locations</h1>
+
+  {% if user_is_administrator %}
+    <p><a href="{% url 'locations:create' %}">+ New location</a></p>
+  {% endif %}
+
+  <form method="get" class="location-filters">
+    <label for="id_level">Level</label>
+    <select name="level" id="id_level">
+      <option value="">All levels</option>
+      {% for value, label in levels %}
+        <option value="{{ value }}" {% if selected_level == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <label>
+      <input type="checkbox" name="show_inactive" value="1" {% if show_inactive %}checked{% endif %}>
+      Show inactive
+    </label>
+    <button type="submit">Filter</button>
+  </form>
+
+  {% if locations %}
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Level</th>
+          <th>Parent</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for location in locations %}
+          <tr>
+            <td><a href="{{ location.get_absolute_url }}">{{ location.name }}</a></td>
+            <td>{{ location.get_level_display }}</td>
+            <td>{% if location.parent %}{{ location.parent.name }}{% else %}—{% endif %}</td>
+            <td>{% if location.is_active %}Active{% else %}Inactive{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {% if is_paginated %}
+      <nav class="pagination">
+        {% if page_obj.has_previous %}
+          <a href="?page={{ page_obj.previous_page_number }}">Previous</a>
+        {% endif %}
+        <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+        {% if page_obj.has_next %}
+          <a href="?page={{ page_obj.next_page_number }}">Next</a>
+        {% endif %}
+      </nav>
+    {% endif %}
+  {% else %}
+    <p>No locations found in your authorized scope.</p>
+  {% endif %}
+{% endblock %}

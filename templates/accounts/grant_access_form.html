@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+
+{% block title %}Grant Access — Stock Inventory{% endblock %}
+
+{% block content %}
+  <h1>Grant access</h1>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Grant</button>
+  </form>
+{% endblock %}

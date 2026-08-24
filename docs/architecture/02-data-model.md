@@ -103,9 +103,10 @@ supported way to retire a location; it remains visible in history and reports.
 
 `UNIQUE (user_id, location_id)`. Role (Administrator / Stock Manager / Read-only) is **not** stored here — it comes
 from Django `Group` membership. This table only answers "which locations." See
-[04-permission-matrix.md](04-permission-matrix.md) for how the two combine. Administrators additionally may be
-flagged `all_locations=true` on the group/user rather than requiring one grant row per country, to avoid needing a
-grant update every time a new country is added.
+[04-permission-matrix.md](04-permission-matrix.md) for how the two combine. Administrators need no grant rows at
+all: `is_administrator(user)` (membership in the `Administrator` group, or `is_superuser`) grants access to every
+location directly, so there's no separate `all_locations` flag to keep in sync and no grant update needed when a
+new country is added.
 
 ### `Brand`
 

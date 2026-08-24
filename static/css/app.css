@@ -65,3 +65,38 @@ body {
 .messages__item--success {
   background: #dff5e1;
 }
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1rem 0;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.breadcrumbs {
+  color: #57606a;
+  font-size: 0.9rem;
+}
+
+.location-filters {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
+.inline-form {
+  display: inline;
+}
+
+.pagination {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
