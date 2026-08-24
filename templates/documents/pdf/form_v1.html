@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ document_number }}</title>
+<style>
+  @page { size: A4; margin: 2cm; }
+  body { font-family: "DejaVu Sans", Arial, sans-serif; font-size: 10.5pt; color: #111; }
+  h1 { font-size: 16pt; margin-bottom: 0.2em; }
+  .meta p { margin: 0.15em 0; }
+  table { width: 100%; border-collapse: collapse; margin-top: 1em; }
+  th, td { border: 1px solid #444; padding: 4px 6px; text-align: left; font-size: 9pt; vertical-align: top; }
+  th { background: #eee; }
+  .notes { margin-top: 1em; }
+  .signatures { margin-top: 3em; width: 100%; }
+  .signatures td { border: none; padding: 0 1em 0 0; width: 50%; }
+  .signature-line { border-bottom: 1px solid #000; height: 2.5em; }
+  .signature-caption { margin-top: 0.3em; font-size: 9pt; }
+</style>
+</head>
+<body>
+  <h1>{{ movement_type_display }}</h1>
+  <div class="meta">
+    <p>Document number: {{ document_number }}</p>
+    <p>Transaction number: {{ transaction_number }}</p>
+    <p>Date: {{ occurred_at }}</p>
+    {% if employee_name %}<p>Employee: {{ employee_name }}</p>{% endif %}
+    {% if final_customer %}<p>Final customer: {{ final_customer }}</p>{% endif %}
+    {% if project_reference %}<p>Project reference: {{ project_reference }}</p>{% endif %}
+    <p>Source location(s): {% if source_locations %}{{ source_locations|join:", " }}{% else %}—{% endif %}</p>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Brand</th>
+        <th>Model</th>
+        <th>SKU</th>
+        <th>Type / Description</th>
+        <th>Serial</th>
+        <th>Qty</th>
+        <th>Condition</th>
+        <th>Accessories</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for line in lines %}
+        <tr>
+          <td>{{ line.brand }}</td>
+          <td>{{ line.model }}</td>
+          <td>{{ line.sku }}</td>
+          <td>{{ line.type }}{% if line.description %} — {{ line.description }}{% endif %}</td>
+          <td>{{ line.serial }}</td>
+          <td>{{ line.quantity }}</td>
+          <td>{{ line.condition }}</td>
+          <td>{{ line.accessories }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if notes %}
+    <div class="notes"><strong>Notes:</strong> {{ notes }}</div>
+  {% endif %}
+
+  <p style="margin-top: 1.5em;">Prepared by: {{ prepared_by }}</p>
+
+  <table class="signatures">
+    <tr>
+      <td>
+        <div class="signature-line"></div>
+        <div class="signature-caption">Delivered by (signature) — Date: ______________</div>
+      </td>
+      <td>
+        <div class="signature-line"></div>
+        <div class="signature-caption">Received by (signature) — Date: ______________</div>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

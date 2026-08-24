@@ -42,7 +42,8 @@ file — satisfying "the new template applies only to newly generated documents 
    'document_generated')`, all in one transaction.
 
 A "regenerate" action (e.g., if the first PDF render had a template bug) creates a **new** `GeneratedDocument` row
-with a fresh `document_number` and a note referencing the superseded one; nothing is overwritten in place.
+with a fresh `document_number` and a `supersedes` foreign key pointing back at the one it replaces (implemented as
+a real self-FK rather than a free-text note, for queryability); nothing is overwritten in place.
 
 ## Attachments
 

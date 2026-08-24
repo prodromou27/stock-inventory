@@ -21,11 +21,13 @@ console by `seed_dev_data`).
 
 ## Status
 
-Phases 1–4 are in place: Docker/PostgreSQL foundation and auth; the `Location` hierarchy and role/location-scope
-authorization; the product catalog with duplicate-Brand/Model/SKU detection; and the full inventory ledger —
-receiving stock (serialized and quantity-tracked, with duplicate vendor-serial detection), bulk location transfer,
-reservation/release, employee assignment, customer delivery, partial/complete returns with assessment, marking
-assets damaged/lost/disposed, and Administrator corrections/reversals, all as an immutable
-`InventoryTransaction`/`InventoryTransactionLine` ledger. See
-[`docs/architecture/09-delivery-backlog.md`](docs/architecture/09-delivery-backlog.md) for the full delivery plan
-and this phase's noted scope simplifications; documents/PDF generation and reporting/search begin in Phase 5+.
+Phases 1–5 are in place: Docker/PostgreSQL foundation and auth; the `Location` hierarchy and role/location-scope
+authorization; the product catalog with duplicate-Brand/Model/SKU detection; the full inventory ledger (receiving,
+bulk transfer, reservation/release, employee assignment, customer delivery, partial/complete returns with
+assessment, marking assets damaged/lost/disposed, and Administrator corrections/reversals, all as an immutable
+`InventoryTransaction`/`InventoryTransactionLine` ledger); and printable assignment/delivery PDFs (WeasyPrint,
+immutable snapshots) plus scanned-signature attachment upload/download. See
+[`docs/architecture/09-delivery-backlog.md`](docs/architecture/09-delivery-backlog.md) for the full delivery plan;
+Excel/CSV import and reporting/search begin in Phase 6+.
+
+PDF generation needs the GTK3 native runtime outside Docker — see `CLAUDE.md` if running without Docker on Windows.

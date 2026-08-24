@@ -102,14 +102,40 @@ scope-violation rejection for every workflow.
 
 ## Phase 3 — Documents and reporting
 
-### Prompt 5 — Printable forms, PDFs, attachments
+### Prompt 5 — Printable forms, PDFs, attachments — done
 
-Depends on Prompt 4 (needs completed assignment/delivery transactions to render). Delivers: `GeneratedDocument`,
-WeasyPrint rendering from line snapshots, sequential document numbering, `Attachment` upload/download with
-authorization.
+Depends on Prompt 4 (needs completed assignment/delivery transactions to render). Delivered `apps.documents`:
+`GeneratedDocument`/`Attachment` models, `services.generate_document()`/`regenerate_document()` (WeasyPrint
+rendering from `InventoryTransactionLine` snapshots via `pdf.py`, one shared `templates/documents/pdf/form_v1.html`
+covering both assignment and delivery), `services.upload_attachment()`/`delete_attachment()` (magic-byte content
+sniffing rather than trusting the client, storage filenames derived from the row's own UUID rather than the
+uploaded filename), and download views that stream files directly (never through a public media path). Wired into
+the transaction detail page (generate/regenerate, upload, list, admin-only delete).
 
-**Acceptance**: acceptance criterion §21.13; a product edit after document generation does not change a previously
-rendered PDF (tested by regenerating and diffing, or by asserting the snapshot fields are untouched).
+**A real access-control gap was found and fixed while building this**, before any document/attachment code
+depended on it: the existing `TransactionDetailView` scope check only looked at `InventoryTransaction`'s header
+`source_location`/`destination_location`, which are set only for receipt, transfer, and return — assignment,
+delivery, reservation, mark damaged/lost, disposal, and correction/reversal transactions never set them, only their
+*lines* carry location data. That meant any authenticated user, regardless of scope, could already view any
+assignment/delivery/reservation/disposal transaction's detail page. Fixed with a new shared
+`apps.inventory.access.require_transaction_access()` that checks header locations first and falls back to every
+line's `from_location`/`to_location`; `TransactionDetailView` and every new document/attachment view use it. Covered
+by a dedicated regression test file (`tests/test_inventory_transaction_access.py`) proving the leak is closed for
+assignment, reservation, and disposition transactions specifically, plus the original receipt/transfer/return cases
+that already worked.
+
+**WeasyPrint on Windows**: needs the GTK3 native runtime (Pango/Cairo/GObject) — Docker's image installs this via
+`apt` (`deploy/Dockerfile` updated), but a non-Docker Windows dev machine needs it installed separately
+(`winget install --id tschoonj.GTKForWindows -e`), documented in `CLAUDE.md`/`AGENTS.md`. Installed and verified
+locally (with the user's approval) so PDF rendering could be tested for real rather than assumed to work once
+deployed — every test in this phase, including actual `%PDF`-byte-signature assertions, ran against a real
+WeasyPrint render, both via pytest and a live HTTP download through the dev server.
+
+**Acceptance**: acceptance criterion §21.13 — a product rename after document generation changes neither the
+stored `context_snapshot` nor the PDF file bytes (both asserted directly, and confirmed live via shell before the
+test suite was written). Sequential document numbering, regeneration linking via `supersedes` without touching the
+original, and scope-denied download (documents and attachments) are all covered by tests. 249 tests pass (up from
+207).
 
 ### Prompt 6 — Excel/CSV import
 

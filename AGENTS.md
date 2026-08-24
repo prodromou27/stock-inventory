@@ -58,6 +58,11 @@ ruff check .
 black --check .
 ```
 
+WeasyPrint (PDF generation, Phase 5+) needs native GTK3 libraries (Pango/Cairo/GObject) that Docker's image installs
+via `apt` automatically (see `deploy/Dockerfile`). Running outside Docker on Windows, install the GTK3 runtime first
+(`winget install --id tschoonj.GTKForWindows -e`) and put its `bin` directory on `PATH` — without it, any code path
+that generates a PDF (`apps.documents.pdf`) fails at import time with an `OSError` naming `libgobject-2.0-0`.
+
 `seed_dev_data` and `seed_locations` both refuse to run unless `DEBUG=True` — they exist for local/dev use only.
 `seed_dev_data` creates one user per role (`devadmin`/`devmanager`/`devreadonly`), with generated passwords printed
 to stdout unless `SEED_ADMIN_PASSWORD`/etc. are set. `seed_locations` (run after `seed_dev_data`, which it needs an

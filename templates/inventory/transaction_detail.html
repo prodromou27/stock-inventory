@@ -63,4 +63,46 @@
       {% endfor %}
     </tbody>
   </table>
+
+  {% if can_return %}
+    <h2>Documents</h2>
+    {% if documents %}
+      <ul>
+        {% for document in documents %}
+          <li><a href="{{ document.get_absolute_url }}">{{ document.document_number }}</a> ({{ document.generated_at }})</li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p>No documents generated yet.</p>
+    {% endif %}
+    {% if user_is_administrator or "StockManager" in user_role_groups %}
+      <form method="post" action="{% url 'documents:generate_document' transaction.pk %}">
+        {% csrf_token %}
+        <button type="submit">Generate printable document</button>
+      </form>
+    {% endif %}
+  {% endif %}
+
+  <h2>Attachments</h2>
+  {% if attachments %}
+    <ul>
+      {% for attachment in attachments %}
+        <li>
+          <a href="{{ attachment.get_absolute_url }}">{{ attachment.original_filename }}</a>
+          (uploaded by {{ attachment.uploaded_by }} on {{ attachment.uploaded_at }})
+          {% if user_is_administrator %}
+            <form method="post" action="{% url 'documents:attachment_delete' attachment.pk %}" class="inline-form">
+              {% csrf_token %}
+              <button type="submit">Delete</button>
+            </form>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p>No attachments.</p>
+  {% endif %}
+  {% if user_is_administrator or "StockManager" in user_role_groups %}
+    <p><a href="{% url 'documents:attachment_upload' transaction.pk %}">Upload attachment</a></p>
+  {% endif %}
 {% endblock %}

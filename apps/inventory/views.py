@@ -1,6 +1,6 @@
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.core.exceptions import PermissionDenied, ValidationError
+from django.core.exceptions import ValidationError
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
@@ -10,6 +10,7 @@ from apps.catalog.models import Product
 from apps.core.authorization import ADMINISTRATOR, STOCK_MANAGER, RoleRequiredMixin
 from apps.locations.scoping import require_location_access, scope_queryset
 
+from .access import require_transaction_access
 from .forms import (
     AdminCorrectBalanceForm,
     AdminCorrectUnitForm,
@@ -208,22 +209,8 @@ class TransactionDetailView(LoginRequiredMixin, DetailView):
             ),
             pk=self.kwargs["pk"],
         )
-        self._require_transaction_access(obj)
+        require_transaction_access(self.request.user, obj)
         return obj
-
-    def _require_transaction_access(self, txn):
-        locations = [
-            loc for loc in (txn.destination_location, txn.source_location) if loc is not None
-        ]
-        if not locations:
-            return
-        for location in locations:
-            try:
-                require_location_access(self.request.user, location)
-                return
-            except PermissionDenied:
-                continue
-        raise PermissionDenied("You do not have access to this transaction.")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -240,6 +227,12 @@ class TransactionDetailView(LoginRequiredMixin, DetailView):
         context["is_reversal_target"] = self.object.movement_type not in (
             MovementType.CORRECTION,
             MovementType.REVERSAL,
+        )
+        # Reverse relations from apps.documents — accessed without an import
+        # to avoid inventory depending on documents (docs/architecture/01).
+        context["documents"] = self.object.generated_documents.order_by("-generated_at")
+        context["attachments"] = self.object.attachments.filter(is_deleted=False).order_by(
+            "-uploaded_at"
         )
         return context
 

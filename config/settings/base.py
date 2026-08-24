@@ -28,6 +28,7 @@ INSTALLED_APPS = [
     "apps.accounts",
     "apps.catalog",
     "apps.inventory",
+    "apps.documents",
 ]
 
 MIDDLEWARE = [
@@ -136,5 +137,10 @@ LOGGING = {
             "level": env_str("DJANGO_LOG_LEVEL", default="INFO"),
             "propagate": False,
         },
+        # WeasyPrint (and fontTools, which it uses for font subsetting)
+        # log per-step progress noisily at INFO on every PDF render;
+        # warnings (e.g. unsupported CSS) still come through.
+        "weasyprint": {"handlers": ["console"], "level": "WARNING", "propagate": False},
+        "fontTools": {"handlers": ["console"], "level": "WARNING", "propagate": False},
     },
 }
