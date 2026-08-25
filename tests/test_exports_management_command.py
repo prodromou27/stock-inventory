@@ -30,7 +30,7 @@ def test_runs_when_nightly(administrator, capsys, tmp_path):
 
 
 @pytest.mark.django_db
-def test_raises_command_error_on_failure(administrator, tmp_path):
+def test_raises_command_error_on_failure(administrator, tmp_path, unwritable_path):
     update_settings(
         user=administrator,
         export_path=str(tmp_path),
@@ -38,7 +38,7 @@ def test_raises_command_error_on_failure(administrator, tmp_path):
         weekly_weekday=6,
     )
     settings_obj = ExportSettings.load()
-    settings_obj.export_path = "Z:\\now\\unreachable"
+    settings_obj.export_path = unwritable_path
     settings_obj.save(update_fields=["export_path"])
 
     with pytest.raises(CommandError):

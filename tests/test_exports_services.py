@@ -27,11 +27,11 @@ class TestUpdateSettings:
         assert settings_obj.schedule == ExportSchedule.NIGHTLY
         assert settings_obj.updated_by == administrator
 
-    def test_rejects_unwritable_path(self, administrator):
+    def test_rejects_unwritable_path(self, administrator, unwritable_path):
         with pytest.raises(ValidationError, match="not writable"):
             update_settings(
                 user=administrator,
-                export_path="Z:\\definitely\\not\\a\\real\\path",
+                export_path=unwritable_path,
                 schedule=ExportSchedule.NIGHTLY,
                 weekly_weekday=6,
             )
@@ -129,7 +129,9 @@ class TestRunExport:
         assert settings_obj.last_run_status == ExportRunStatus.SUCCESS
         assert settings_obj.last_run_at is not None
 
-    def test_records_failure_status_on_unwritable_path(self, administrator, tmp_path):
+    def test_records_failure_status_on_unwritable_path(
+        self, administrator, tmp_path, unwritable_path
+    ):
         update_settings(
             user=administrator,
             export_path=str(tmp_path),
@@ -141,7 +143,7 @@ class TestRunExport:
         # network share) — the real-world case run_export()'s own error
         # handling exists for.
         settings_obj = ExportSettings.load()
-        settings_obj.export_path = "Z:\\now\\unreachable"
+        settings_obj.export_path = unwritable_path
         settings_obj.save(update_fields=["export_path"])
 
         with pytest.raises(OSError):

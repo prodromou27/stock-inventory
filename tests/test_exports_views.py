@@ -37,12 +37,12 @@ class TestExportSettingsForm:
         assert settings_obj.export_path == str(tmp_path)
         assert settings_obj.schedule == ExportSchedule.NIGHTLY
 
-    def test_rejects_bad_path_with_form_error(self, client, administrator):
+    def test_rejects_bad_path_with_form_error(self, client, administrator, unwritable_path):
         client.force_login(administrator)
         response = client.post(
             reverse("exports:settings"),
             {
-                "export_path": "Z:\\definitely\\not\\a\\real\\path",
+                "export_path": unwritable_path,
                 "schedule": "nightly",
                 "weekly_weekday": "6",
             },
@@ -86,14 +86,14 @@ class TestRunExportNow:
         assert "Export written to" in response.content.decode()
         assert list(tmp_path.glob("stock_inventory_backup_*.xlsx"))
 
-    def test_shows_error_message_on_failure(self, client, administrator, tmp_path):
+    def test_shows_error_message_on_failure(self, client, administrator, tmp_path, unwritable_path):
         client.force_login(administrator)
         client.post(
             reverse("exports:settings"),
             {"export_path": str(tmp_path), "schedule": "nightly", "weekly_weekday": "6"},
         )
         settings_obj = ExportSettings.load()
-        settings_obj.export_path = "Z:\\now\\unreachable"
+        settings_obj.export_path = unwritable_path
         settings_obj.save(update_fields=["export_path"])
 
         response = client.post(reverse("exports:run_now"), follow=True)

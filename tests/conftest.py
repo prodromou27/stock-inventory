@@ -9,6 +9,22 @@ User = get_user_model()
 
 
 @pytest.fixture
+def unwritable_path(tmp_path):
+    """A path guaranteed to make os.makedirs()/open() raise OSError on any
+    OS: a regular file sits where a directory component needs to be, so
+    walking into it as a directory fails. A hardcoded string like
+    "Z:\\no\\such\\path" only fails on Windows — on Linux (e.g. GitHub
+    Actions' runners) backslashes aren't path separators, so the whole
+    string is just an unusual-but-valid relative path component, and
+    os.makedirs() happily creates it (caught by CI, not by local testing on
+    Windows alone).
+    """
+    blocker = tmp_path / "blocker"
+    blocker.write_bytes(b"not a directory")
+    return str(blocker / "subdir")
+
+
+@pytest.fixture
 def administrator(db):
     user = User.objects.create_user(username="admin1", password="a-strong-test-password-123")
     user.groups.add(Group.objects.get(name="Administrator"))
