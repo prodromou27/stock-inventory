@@ -56,28 +56,36 @@ this is also the command for every later deploy (see "Routine deployment" below)
 ### Hostnames (`ALLOWED_HOSTS`)
 
 Left wildcarded (`*`) by default — a fresh install doesn't need a hostname decided up front, and this alone does
-not weaken HTTPS, CSRF, or session cookie security (those are enforced independently). Tighten it later by editing
-`ALLOWED_HOSTS` in `.env.production` to a comma-separated list of your real hostname(s) and restarting `web`
-(`docker compose -f deploy/docker-compose.prod.yml up -d web`) — there is no in-app settings screen for this yet
-(it's read once at process start, before any request — including the very first one — can be handled), so an env
-edit + restart is the only path today.
+not weaken HTTPS, CSRF, or session cookie security (those are enforced independently). Tighten it from **Settings
+→ System configuration** in the app itself (Administrator-only) — takes effect immediately, no restart needed
+(`apps.settings.middleware.SystemSettingsMiddleware` applies it before every request's host validation). A wrong
+value there can lock you out of the site; recover by connecting to the server and clearing it directly:
+`docker compose -f deploy/docker-compose.prod.yml exec web python manage.py shell -c "from apps.settings.models
+import SystemSettings; s = SystemSettings.load(); s.allowed_hosts_override = ''; s.save()"`. The env-file path
+(editing `ALLOWED_HOSTS` in `.env.production` and restarting `web`) still works too and is what the portal setting
+falls back to whenever it's left blank.
 
 ### Certificates
 
 `install.sh` generates a temporary self-signed certificate so the single command produces a working HTTPS site
-immediately, with the trade-off that browsers will show a trust warning until it's replaced. Swap in a real one at
-any time — no rebuild needed:
+immediately, with the trade-off that browsers will show a trust warning until it's replaced. Swap in a real one
+from **Settings → TLS certificate** in the app (Administrator-only) — upload `fullchain.pem`/`privkey.pem`
+directly from your browser instead of getting them onto the server yourself first. Either way, one manual step
+remains: `proxy` only re-reads the certificate files on its own restart (uploading doesn't trigger this
+automatically — that would need `web`'s container to control the Docker daemon via a `docker.sock` mount, a
+security trade-off not worth making here), so finish with:
+
+```
+docker compose -f deploy/docker-compose.prod.yml restart proxy
+```
+
+The old file-drop path still works if you'd rather not use the browser upload:
 
 ```
 cp your-fullchain.pem deploy/certs/fullchain.pem
 cp your-privkey.pem deploy/certs/privkey.pem
 docker compose -f deploy/docker-compose.prod.yml restart proxy
 ```
-
-There is no self-service upload-a-certificate screen in the app yet — this remains a file-drop-and-restart
-operation an operator performs on the host. (Uploading through an in-app settings screen would need new
-infrastructure — a way for `web`, running in its own container, to hand a file to `proxy`'s container and trigger
-an nginx reload — that hasn't been built; flagged here rather than implied to already work.)
 
 ### Optional: hardened DB runtime role
 

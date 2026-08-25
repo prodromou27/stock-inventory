@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Stock Inventory{% endblock %}</title>
+  <title>{% block title %}{{ site_name }}{% endblock %}</title>
   <link rel="stylesheet" href="{% static 'css/app.css' %}">
 </head>
 <body>
@@ -11,8 +11,12 @@
   <div class="app-shell">
     <aside class="sidebar">
       <a class="sidebar__brand" href="{% url 'core:home' %}">
-        <span class="sidebar__brand-mark">SI</span>
-        Stock Inventory
+        {% if site_logo_url %}
+          <img src="{{ site_logo_url }}" alt="{{ site_name }}" class="sidebar__brand-logo">
+        {% else %}
+          <span class="sidebar__brand-mark">{{ site_name|slice:":2"|upper }}</span>
+        {% endif %}
+        {{ site_name }}
       </a>
       <nav class="sidebar__nav">
         <div class="sidebar__group">
@@ -44,11 +48,9 @@
         {% if user_is_administrator %}
           <div class="sidebar__group">
             <div class="sidebar__group-label">Administration</div>
-            <a class="sidebar__link {% nav_active_app 'accounts' %}" href="{% url 'accounts:user_access_list' %}">Manage Access</a>
             <a class="sidebar__link {% nav_active_app 'audit' %}" href="{% url 'audit:log' %}">Audit Log</a>
             <a class="sidebar__link {% nav_active_app 'imports' %}" href="{% url 'imports:batch_list' %}">Excel Import</a>
-            <a class="sidebar__link {% nav_active_app 'exports' %}" href="{% url 'exports:settings' %}">Export Settings</a>
-            <a class="sidebar__link {% nav_active_app 'documents' %}" href="{% url 'documents:template_hub' %}">Document Templates</a>
+            <a class="sidebar__link {% nav_active_app 'sysconfig' 'accounts' 'exports' 'documents' %}" href="{% url 'settings:hub' %}">Settings</a>
           </div>
         {% endif %}
       </nav>
@@ -79,8 +81,12 @@
   <div class="auth-shell">
     <div class="auth-card">
       <div class="auth-card__brand">
-        <span class="sidebar__brand-mark">SI</span>
-        Stock Inventory
+        {% if site_logo_url %}
+          <img src="{{ site_logo_url }}" alt="{{ site_name }}" class="sidebar__brand-logo">
+        {% else %}
+          <span class="sidebar__brand-mark">{{ site_name|slice:":2"|upper }}</span>
+        {% endif %}
+        {{ site_name }}
       </div>
       {% if messages %}
         <ul class="messages">

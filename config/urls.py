@@ -23,5 +23,6 @@ urlpatterns = [
     path("reports/", include("apps.reporting.urls")),
     path("imports/", include("apps.imports.urls")),
     path("exports/", include("apps.exports.urls")),
+    path("settings/", include("apps.settings.urls")),
     path("", include("apps.core.urls")),
 ]

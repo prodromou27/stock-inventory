@@ -42,6 +42,27 @@ def nav_active(context, *url_names):
     return "is-active" if match.url_name in url_names else ""
 
 
+@register.inclusion_tag("_sort_th.html", takes_context=True)
+def sort_th(context, sort_value, label):
+    """A <th> that links to sorting the current list by `sort_value` (an
+    entry in the view's SORT_FIELDS allow-list), toggling direction on
+    repeat clicks — used with a view that sets sort_key/sort_dir in its
+    context (see apps.inventory.views.UnitAssetListView). Only meaningful
+    inside a template that also has `request` in context (base.html always
+    does), since it renders a {% querystring %} link to preserve filters.
+    """
+    sort_key = context.get("sort_key", "")
+    sort_dir = context.get("sort_dir", "asc")
+    is_active = sort_key == sort_value
+    return {
+        "request": context.get("request"),
+        "sort_value": sort_value,
+        "label": label,
+        "next_dir": "desc" if (is_active and sort_dir == "asc") else "asc",
+        "arrow": ("▲" if sort_dir == "asc" else "▼") if is_active else "",
+    }
+
+
 @register.simple_tag(takes_context=True)
 def nav_active_app(context, *app_names):
     """ "is-active" when the current view's URLconf app_name is one of

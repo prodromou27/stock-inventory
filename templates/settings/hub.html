@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}Settings — Stock Inventory{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <h1>Settings</h1>
+  </div>
+
+  <div class="card-grid">
+    <a class="action-card" href="{% url 'settings:system' %}">
+      <span class="action-card__title">System configuration</span>
+      <span class="action-card__desc">Site name, logo, and the allowed-hosts override.</span>
+    </a>
+    <a class="action-card" href="{% url 'settings:certificates' %}">
+      <span class="action-card__title">TLS certificate</span>
+      <span class="action-card__desc">Upload a real certificate to replace the self-signed one.</span>
+    </a>
+    <a class="action-card" href="{% url 'documents:template_hub' %}">
+      <span class="action-card__title">Document templates</span>
+      <span class="action-card__desc">Customize the assignment/delivery PDF layout and logo.</span>
+    </a>
+    <a class="action-card" href="{% url 'exports:settings' %}">
+      <span class="action-card__title">Scheduled export</span>
+      <span class="action-card__desc">Nightly/weekly Excel snapshot destination.</span>
+    </a>
+    <a class="action-card" href="{% url 'accounts:user_access_list' %}">
+      <span class="action-card__title">Manage access</span>
+      <span class="action-card__desc">Grant or revoke roles and location scopes.</span>
+    </a>
+  </div>
+{% endblock %}

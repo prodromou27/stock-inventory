@@ -412,6 +412,26 @@ Administrator-configurable scheduled Excel snapshot to a local/network path (`ap
 Hard-deletable in principle (it's configuration, not history), but never deleted in practice — always updated in
 place via `apps.exports.services.update_settings()`.
 
+### `SystemSettings`
+
+Not in the original prompt-pack's numbered prompts — added on the user's request after Prompt 9 alongside the UI
+redesign, for the new Settings hub (`apps.settings`, Django app label `sysconfig`): site branding and an
+`ALLOWED_HOSTS` portal override. A singleton row (always `pk=1`), but unlike `ExportSettings.load()`,
+`SystemSettings.load()` never writes on a read — it's queried by `apps.settings.middleware.SystemSettingsMiddleware`
+and `apps.settings.context_processors.branding_context` on *every* request, so a `get_or_create()`-style
+SELECT+INSERT on a cache miss isn't acceptable there; an absent row reads back as an unsaved `pk=1` instance with
+field defaults until an Administrator actually saves something via `apps.settings.services.update_system_settings()`.
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | integer PK, always `1` | singleton |
+| `site_name` | varchar, default `"Stock Inventory"` | shown in the sidebar/auth-card brand and browser tab |
+| `logo` | file, null | PNG/JPEG, sniffed by magic bytes, 2 MB limit — same validation as `DocumentTemplate.logo` |
+| `allowed_hosts_override` | varchar, blank | comma-separated hostnames; blank keeps the `.env.production`-configured default |
+| `updated_by_id` | FK → `User`, null | |
+
+Hard-deletable in principle, but never deleted in practice — always updated in place.
+
 ### `AuditEvent`
 
 | Field | Type | Notes |

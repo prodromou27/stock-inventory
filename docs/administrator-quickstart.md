@@ -20,7 +20,7 @@ login (**Password** link on their own account, or the login screen's password-ch
 ## Granting location access
 
 A new Stock Manager or Read-Only user can't see anything until you grant them access to specific storage locations
-(**Manage Access** in the nav). Access to a location automatically includes everything under it in the hierarchy
+(**Settings → Manage access** in the nav). Access to a location automatically includes everything under it in the hierarchy
 (Country → Site → Floor → Storage Room → Rack/Cabinet → Shelf/Bin) — granting "Room A" also grants every rack and
 shelf inside Room A. Revoking access is immediate. Every grant and revoke is itself an audited event.
 
@@ -38,7 +38,7 @@ deliberate, since converting live stock between the two isn't a safe automatic o
 
 ## Customizing the sign-off/delivery document template
 
-**Document Templates** — edit the printable PDF generated for assignment and delivery transactions (the form a
+**Settings → Document templates** — edit the printable PDF generated for assignment and delivery transactions (the form a
 customer or employee physically signs when stock leaves): layout, wording, and your company logo, without needing
 a code change. Start from the packaged default already loaded in the editor, use the documented field list on the
 same screen to pull in real data (product/serial details, customer name, dates, etc.), and:
@@ -50,6 +50,20 @@ same screen to pull in real data (product/serial details, customer name, dates, 
 - **Reset to packaged default** if you want to start over.
 
 This only affects the Assignment/Delivery PDF — the Reports section's own screens are unaffected.
+
+## System configuration and TLS certificate
+
+**Settings → System configuration** — set the site name and logo shown in the sidebar and browser tab, and
+optionally tighten `ALLOWED_HOSTS` from the browser instead of editing `.env.production` and restarting — takes
+effect on the very next request. Leave the hosts field blank to keep the deployment's configured default (a
+wildcard unless you've already set one). Get the hostname wrong and you'll lock yourself out of the site; recover
+by connecting to the server and clearing it directly (`deploy/DEPLOYMENT.md`'s "Hostnames" section has the exact
+command).
+
+**Settings → TLS certificate** — upload a real `fullchain.pem`/`privkey.pem` pair to replace the temporary
+self-signed certificate `install.sh` generates, without needing to get the files onto the server yourself first.
+One manual step still remains after uploading: restart the reverse proxy container so it picks up the change
+(`deploy/DEPLOYMENT.md`'s "Certificates" section has the exact command) — uploading doesn't do this automatically.
 
 ## Corrections and reversals
 
@@ -71,7 +85,7 @@ manually afterward if needed.
 
 ## Scheduled Excel export (backup safety net)
 
-**Export Settings** — point a local or network path at where you want a full Excel snapshot of current inventory
+**Settings → Scheduled export** — point a local or network path at where you want a full Excel snapshot of current inventory
 written nightly or weekly, as a human-readable safety net alongside the database-level backup your deployment runs
 (`deploy/backup.sh`/`deploy/RESTORE.md`). Use **Run export now** to confirm the path actually works before relying
 on the schedule. If a scheduled run fails (e.g. a disconnected network share), you'll see it on this screen and in

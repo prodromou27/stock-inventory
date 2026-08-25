@@ -1,3 +1,7 @@
+import os
+import shutil
+import tempfile
+
 import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
@@ -9,7 +13,24 @@ User = get_user_model()
 
 
 @pytest.fixture
-def unwritable_path(tmp_path):
+def certs_dir(settings):
+    """tempfile.mkdtemp(), not pytest's tmp_path — this repo's CI/most local
+    setups don't need the difference, but tmp_path's own bootstrap can fail
+    with PermissionError on a Windows dev machine where a stale
+    pytest-of-<user> temp dir was left in a locked state (unrelated to this
+    app; a machine-local environment quirk). tempfile.mkdtemp() sidesteps
+    pytest's own temp-dir machinery entirely. Points
+    apps.settings.services.update_certificate's write target
+    (settings.CERTS_DIR) at it for the duration of the test.
+    """
+    path = tempfile.mkdtemp(prefix="stock_inventory_certs_test_")
+    settings.CERTS_DIR = path
+    yield path
+    shutil.rmtree(path, ignore_errors=True)
+
+
+@pytest.fixture
+def unwritable_path():
     """A path guaranteed to make os.makedirs()/open() raise OSError on any
     OS: a regular file sits where a directory component needs to be, so
     walking into it as a directory fails. A hardcoded string like
@@ -18,10 +39,16 @@ def unwritable_path(tmp_path):
     string is just an unusual-but-valid relative path component, and
     os.makedirs() happily creates it (caught by CI, not by local testing on
     Windows alone).
+
+    tempfile.mkdtemp(), not pytest's tmp_path — see certs_dir's docstring
+    above for why.
     """
-    blocker = tmp_path / "blocker"
-    blocker.write_bytes(b"not a directory")
-    return str(blocker / "subdir")
+    base = tempfile.mkdtemp(prefix="stock_inventory_unwritable_test_")
+    blocker = os.path.join(base, "blocker")
+    with open(blocker, "wb") as f:
+        f.write(b"not a directory")
+    yield os.path.join(blocker, "subdir")
+    shutil.rmtree(base, ignore_errors=True)
 
 
 @pytest.fixture

@@ -451,6 +451,88 @@ against the override, reset to default) before writing the pytest suite (`tests/
 the app itself, with a logo and the documented field set, verified against a real rendered PDF at every step.
 417 tests pass (up from 384). No migration drift.
 
+### Additional feature — UI redesign (sidebar shell, design system) — done
+
+Added directly on user request ("The app needs much improvement... UI"). The original UI was a single ~100-line
+stylesheet, browser-default form rendering, plain `<table>` markup, and a narrow centered column not suited to a
+desktop inventory tool. `static/css/app.css` was rebuilt as a full design system (color/spacing/radius/shadow
+tokens with light+dark mode, a sidebar/topbar app shell, buttons, form controls, tables, badges, cards, toolbars,
+pagination) with strong global defaults so untouched markup still renders consistently. `templates/base.html`
+became a fixed sidebar with grouped, active-highlighted navigation and a full-width content area; unauthenticated
+pages (login, forced password change) get a distinct centered auth-card instead of the app shell.
+`apps/core/templatetags/ui_extras.py` added `badge_class` (maps status values to color-coded badges) and
+`nav_active`/`nav_active_app` (sidebar active-link highlighting). 47 templates were updated for consistency: page
+headers with title + action buttons, status badges, definition-list/card detail layouts, the dashboard and three
+hub pages (Movements, Reports, Document Templates) turned into action-card grids, filter forms restyled as
+toolbars.
+
+### Additional feature — Settings hub, system configuration, certificate upload, sortable grid — done
+
+Added directly on user request, in the same conversation as the UI redesign above: "much improvement... on UI,
+functionality, features... Settings tab required... build any features that may be useful." Clarified with the
+user before building (the request was too open-ended to act on blindly per this doc's own "stop and ask rather
+than inventing a new rule" — spec §23.10): consolidate the existing scattered admin screens under one Settings
+entry point, add system configuration (site branding, an `ALLOWED_HOSTS` portal override) and TLS certificate
+upload (both previously flagged as gaps in `deploy/DEPLOYMENT.md`), and — for "the inventory grid must be useful"
+with many items — sortable columns and a real fix for pagination silently dropping active filters.
+
+**New `apps.settings` app** (Django app label `sysconfig` — distinct from `config.settings`, the Django settings
+*module* package, to avoid reader confusion): a `SystemSettings` singleton (`site_name`, `logo`, comma-separated
+`allowed_hosts_override`) mirroring `ExportSettings`'s `.load()` singleton pattern, but with one deliberate
+difference — `.load()` never writes: `get_or_create()`'s SELECT+INSERT/savepoint queries on a cache miss aren't
+acceptable on a lookup that now runs on *every* request (see below), so `.load()` is a plain `SELECT ... LIMIT 1`
+that returns an unsaved `pk=1` instance until an Administrator actually saves something. `apps/settings/services.py`
+follows the established `require_role` + `full_clean()` + `record_event()` pattern for both settings updates and
+certificate uploads (the latter validated structurally — cert/key are a matching pair — via the stdlib `ssl`
+module, not a claim about CA trust or expiry). A new **Settings** sidebar entry (replacing separate Manage
+Access / Export Settings / Document Templates links) opens a hub linking all administrator screens, including the
+two new ones.
+
+**Branding and the `ALLOWED_HOSTS` override reach every request**, not just the Settings screens themselves —
+`apps.settings.middleware.SystemSettingsMiddleware` (first in `MIDDLEWARE`, before `SecurityMiddleware`, because
+`SECURE_SSL_REDIRECT=True` makes `SecurityMiddleware` validate the host on every production request) applies the
+override to `django.conf.settings.ALLOWED_HOSTS` — a blank override reverts to the env-configured default captured
+once at process start, so this is purely additive over the existing wildcard-by-default behavior (doc 04's
+"Default admin bootstrap" section and this doc's Prompt 8 entry). **Recovery if a bad override locks an
+Administrator out**: connect to the server and clear the row directly — `python manage.py shell -c "from
+apps.settings.models import SystemSettings; s = SystemSettings.load(); s.allowed_hosts_override = ''; s.save()"` —
+the same pattern as the existing axes-lockout recovery command in `CLAUDE.md`. `apps.settings.context_processors.
+branding_context` (site name + logo, used by `base.html`'s sidebar/auth-card brand) reuses the middleware's lookup
+via a request attribute instead of querying `SystemSettings` a second time — `tests/test_performance.py`'s asset-
+list query-count budget went from 10 to 11 to account for this one new, fixed-cost (not row-count-scaling) query.
+
+**TLS certificate upload** writes to `settings.CERTS_DIR` (new: `config/settings/base.py`, defaults to
+`deploy/certs`, matching install.sh's existing self-signed-cert location; test settings point it outside the repo
+tree). `deploy/docker-compose.prod.yml`'s `web` service now also bind-mounts `./certs` (read-write; `proxy`'s
+existing mount of the same host directory stays read-only), and `deploy/install.sh` `chmod 777`s that directory so
+`web`'s non-root `app` user can write to it regardless of host UID/GID. Deliberately does **not** reload nginx
+automatically — doing so would need `web` to control the Docker daemon (a `docker.sock` mount), a security
+trade-off not worth making for this; the Settings screen and `deploy/DEPLOYMENT.md` both say so plainly, and the
+operator still runs `docker compose -f deploy/docker-compose.prod.yml restart proxy` once, same as today's
+manual-file-drop process minus the "get the file onto the server" step.
+
+**Inventory grid**: `apps.inventory.views.UnitAssetListView` gained an explicit `SORT_FIELDS` allow-list (product,
+serial, status, location, arrival date) and `?sort=`/`?dir=` query params; `templates/_sort_th.html` +
+`{% sort_th %}` (new inclusion tag in `ui_extras.py`) render each clickable `<th>`, reusable for future sortable
+grids. Separately — and found while building this, not something the user explicitly named — **every paginated
+list's Next/Previous links silently dropped active filters** (`?page=2` without carrying `?status=...&q=...` along
+with it); fixed across all 20 affected templates using Django 5.1's built-in `{% querystring %}` tag, which
+preserves the full current query string and only overrides the key(s) given.
+
+Verified live end-to-end (service layer, then full HTTP: settings save reflected in the sidebar immediately,
+`ALLOWED_HOSTS` override applied/reverted via the middleware directly, a real self-signed cert/key pair
+saved and a mismatched pair rejected, sort links toggle direction and carry active filters) before/alongside the
+pytest suite (`tests/test_settings_models.py`, `tests/test_settings_services.py`, `tests/test_settings_views.py`,
+`tests/test_settings_middleware.py`, plus `TestUnitAssetListSort` in `tests/test_inventory_views.py` — 39 new
+tests). 481 pass locally (12 pre-existing, environment-only `tmp_path` failures on this Windows dev machine
+unrelated to this change — see `tests/conftest.py`'s `certs_dir`/`unwritable_path` fixtures' docstrings; CI is
+unaffected). No migration drift beyond the one new `sysconfig.SystemSettings` table.
+
+**Acceptance**: Administrators reach every configuration screen from one Settings entry; can rebrand the sidebar
+(name + logo) and tighten `ALLOWED_HOSTS` from the browser; can upload a real TLS certificate without needing
+shell/SCP access to the server; can sort the Assets grid by any of five columns; and no longer lose their filters
+by paging through a large result set.
+
 ## Sequencing notes
 
 - Prompt 0 (this package) has no code dependency and is complete.

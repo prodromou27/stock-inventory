@@ -249,3 +249,73 @@ class TestTransactionDetailView:
         client.force_login(stock_manager_with_room_access)
         response = client.get(reverse("inventory:transaction_detail", kwargs={"pk": txn.pk}))
         assert response.status_code == 403
+
+
+@pytest.mark.django_db
+class TestUnitAssetListSort:
+    """templates/inventory/asset_list.html's clickable column headers —
+    apps.inventory.views.UnitAssetListView.SORT_FIELDS.
+    """
+
+    @pytest.fixture
+    def two_products_in_room(self, administrator, unit_product, location_tree):
+        from apps.catalog.models import TrackingMethod
+        from apps.catalog.services import create_product
+
+        other_product = create_product(
+            user=administrator,
+            brand_name="Aruba",
+            model="AP-100",
+            product_type_name="Access Point",
+            tracking_method=TrackingMethod.UNIT,
+        )
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-SORT-FORTINET",
+        )
+        receive_stock(
+            user=administrator,
+            product=other_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-SORT-ARUBA",
+        )
+        return {"fortinet": unit_product, "aruba": other_product}
+
+    def test_default_order_is_unaffected(self, client, administrator, two_products_in_room):
+        client.force_login(administrator)
+        response = client.get(reverse("inventory:asset_list"))
+        assert response.status_code == 200
+        # Most-recently-created first — Aruba was received second.
+        serials = [asset.vendor_serial for asset in response.context["assets"]]
+        assert serials.index("SN-SORT-ARUBA") < serials.index("SN-SORT-FORTINET")
+
+    def test_sort_by_product_ascending(self, client, administrator, two_products_in_room):
+        client.force_login(administrator)
+        response = client.get(reverse("inventory:asset_list"), {"sort": "product", "dir": "asc"})
+        serials = [asset.vendor_serial for asset in response.context["assets"]]
+        assert serials.index("SN-SORT-ARUBA") < serials.index("SN-SORT-FORTINET")
+
+    def test_sort_by_product_descending(self, client, administrator, two_products_in_room):
+        client.force_login(administrator)
+        response = client.get(reverse("inventory:asset_list"), {"sort": "product", "dir": "desc"})
+        serials = [asset.vendor_serial for asset in response.context["assets"]]
+        assert serials.index("SN-SORT-FORTINET") < serials.index("SN-SORT-ARUBA")
+
+    def test_unknown_sort_key_falls_back_to_default(
+        self, client, administrator, two_products_in_room
+    ):
+        client.force_login(administrator)
+        response = client.get(reverse("inventory:asset_list"), {"sort": "not-a-real-field"})
+        assert response.status_code == 200
+
+    def test_sort_link_preserves_active_filters(self, client, administrator, two_products_in_room):
+        client.force_login(administrator)
+        response = client.get(reverse("inventory:asset_list"), {"status": "in_stock"})
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "status=in_stock" in content
+        assert "sort=product" in content

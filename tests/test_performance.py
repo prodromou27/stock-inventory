@@ -67,10 +67,12 @@ class TestAssetListPerformance:
     ):
         client.force_login(administrator)
         # A handful of fixed queries (auth, scope check, count, page of
-        # results with its select_related joins) — not one per row. This is
-        # the real regression guard: an N+1 here would blow well past 10
+        # results with its select_related joins, plus one flat SystemSettings
+        # lookup shared by apps.settings.middleware/context_processors for
+        # branding + the ALLOWED_HOSTS override) — not one per row. This is
+        # the real regression guard: an N+1 here would blow well past 11
         # regardless of how fast the box is.
-        with django_assert_max_num_queries(10):
+        with django_assert_max_num_queries(11):
             response = client.get(reverse("inventory:asset_list"))
         assert response.status_code == 200
 
@@ -78,7 +80,7 @@ class TestAssetListPerformance:
         self, client, administrator, bulk_assets, django_assert_max_num_queries
     ):
         client.force_login(administrator)
-        with django_assert_max_num_queries(10):
+        with django_assert_max_num_queries(11):
             response = client.get(
                 reverse("inventory:asset_list"), {"status": "in_stock", "brand": "Perf"}
             )

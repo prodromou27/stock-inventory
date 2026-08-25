@@ -62,11 +62,11 @@
     <table>
       <thead>
         <tr>
-          <th>Product</th>
-          <th>Serial</th>
-          <th>Status</th>
-          <th>Location</th>
-          <th>Arrival date</th>
+          {% sort_th "product" "Product" %}
+          {% sort_th "serial" "Serial" %}
+          {% sort_th "status" "Status" %}
+          {% sort_th "location" "Location" %}
+          {% sort_th "arrival_date" "Arrival date" %}
         </tr>
       </thead>
       <tbody>
@@ -85,11 +85,11 @@
     {% if is_paginated %}
       <nav class="pagination">
         {% if page_obj.has_previous %}
-          <a href="?page={{ page_obj.previous_page_number }}">Previous</a>
+          <a href="{% querystring page=page_obj.previous_page_number %}">Previous</a>
         {% endif %}
         <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
         {% if page_obj.has_next %}
-          <a href="?page={{ page_obj.next_page_number }}">Next</a>
+          <a href="{% querystring page=page_obj.next_page_number %}">Next</a>
         {% endif %}
       </nav>
     {% endif %}

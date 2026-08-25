@@ -26,6 +26,13 @@ services:
     # rebuild, never a live-edited container.
     volumes:
       - media_data:/app/media
+      # Read-write here, read-only in `proxy` below — lets Settings > TLS
+      # certificate (apps.settings.services.update_certificate) write a
+      # newly-uploaded cert to the same host directory proxy serves from,
+      # without needing web to reach into proxy's container (e.g. a
+      # docker.sock mount) to do it. proxy still needs a manual restart to
+      # pick up the change — see that view/template and DEPLOYMENT.md.
+      - ./certs:/app/deploy/certs
     env_file:
       - ../.env.production
     environment:

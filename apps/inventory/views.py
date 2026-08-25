@@ -126,6 +126,17 @@ class UnitAssetListView(LoginRequiredMixin, CSVExportMixin, ListView):
         "Removal Date",
     ]
 
+    # Explicit allow-list, never a raw user-supplied field path — keeps
+    # ?sort= from reaching into unrelated relations. Column click order
+    # matches templates/inventory/asset_list.html's <th>s.
+    SORT_FIELDS = {
+        "product": "product__brand__name",
+        "serial": "vendor_serial",
+        "status": "status",
+        "location": "current_location__name",
+        "arrival_date": "arrival_date",
+    }
+
     def get_queryset(self):
         queryset = scope_queryset(
             self.request.user,
@@ -138,7 +149,19 @@ class UnitAssetListView(LoginRequiredMixin, CSVExportMixin, ListView):
         if product_id:
             queryset = queryset.filter(product_id=product_id)
         queryset = filter_unit_assets(queryset, self.request.GET)
-        return queryset.order_by("-created_at")
+        return self._apply_sort(queryset)
+
+    def _apply_sort(self, queryset):
+        sort_key = self.request.GET.get("sort")
+        if sort_key not in self.SORT_FIELDS:
+            # Unset/unrecognized: the long-standing default — most recently
+            # received first — not one of the clickable columns itself.
+            return queryset.order_by("-created_at")
+        field = self.SORT_FIELDS[sort_key]
+        if self.request.GET.get("dir") == "desc":
+            field = f"-{field}"
+        # created_at as a stable tiebreaker for rows sharing the same sort value.
+        return queryset.order_by(field, "-created_at")
 
     def csv_rows(self, queryset):
         for asset in queryset:
@@ -163,6 +186,8 @@ class UnitAssetListView(LoginRequiredMixin, CSVExportMixin, ListView):
         context["statuses"] = UnitStatus.choices
         context["locations"] = accessible_locations(self.request.user).order_by("level", "name")
         context["filters"] = self.request.GET
+        context["sort_key"] = self.request.GET.get("sort", "")
+        context["sort_dir"] = self.request.GET.get("dir", "asc")
         return context
 
 

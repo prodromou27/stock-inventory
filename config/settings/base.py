@@ -34,9 +34,14 @@ INSTALLED_APPS = [
     "apps.reporting",
     "apps.imports",
     "apps.exports",
+    "apps.settings",
 ]
 
 MIDDLEWARE = [
+    # Must be first — applies SystemSettings.allowed_hosts_override (if any)
+    # to ALLOWED_HOSTS before SecurityMiddleware's own host validation runs
+    # (apps.settings.middleware.SystemSettingsMiddleware).
+    "apps.settings.middleware.SystemSettingsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -74,6 +79,7 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 "apps.core.context_processors.role_context",
+                "apps.settings.context_processors.branding_context",
             ],
         },
     },
@@ -128,6 +134,12 @@ STORAGES = {
 # Protected volume for future attachments/generated documents (Phase 5). Never
 # served directly via MEDIA_URL — downloads always go through an authorized view.
 MEDIA_ROOT = BASE_DIR / "media"
+
+# Where apps.settings.services.update_certificate writes an uploaded TLS
+# cert/key — must match deploy/docker-compose.prod.yml's `web` service mount
+# (read-write there; `proxy` mounts the same host directory read-only).
+# config.settings.test overrides this to a tmp_path per test.
+CERTS_DIR = env_str("CERTS_DIR", default=str(BASE_DIR / "deploy" / "certs"))
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

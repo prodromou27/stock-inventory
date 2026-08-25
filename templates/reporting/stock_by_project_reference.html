@@ -33,11 +33,11 @@
       {% if is_paginated %}
         <nav class="pagination">
           {% if page_obj.has_previous %}
-            <a href="?project_reference={{ project_reference|urlencode }}&page={{ page_obj.previous_page_number }}">Previous</a>
+            <a href="{% querystring page=page_obj.previous_page_number %}">Previous</a>
           {% endif %}
           <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
           {% if page_obj.has_next %}
-            <a href="?project_reference={{ project_reference|urlencode }}&page={{ page_obj.next_page_number }}">Next</a>
+            <a href="{% querystring page=page_obj.next_page_number %}">Next</a>
           {% endif %}
         </nav>
       {% endif %}

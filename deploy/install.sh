@@ -121,6 +121,17 @@ fi
 # empty and `db` refuses to start.
 ln -sf "../$ENV_FILE" "deploy/.env"
 
+mkdir -p "$CERTS_DIR"
+# Settings > TLS certificate (apps.settings.services.update_certificate)
+# writes here from inside web's container as its non-root `app` user, on
+# top of proxy's existing read-only mount of this same host directory
+# (deploy/docker-compose.prod.yml) — world-writable on the directory (not
+# the files) is the simplest way to make that work across arbitrary host
+# UID/GID setups without needing to know web's container UID ahead of
+# time; the private key file itself is still written with mode 600 by
+# that service regardless.
+chmod 777 "$CERTS_DIR"
+
 if [ -f "$CERTS_DIR/fullchain.pem" ] && [ -f "$CERTS_DIR/privkey.pem" ]; then
     echo "Existing TLS certificate found under $CERTS_DIR — reusing it."
 else
@@ -131,7 +142,6 @@ else
         echo "certificate at $CERTS_DIR/fullchain.pem and $CERTS_DIR/privkey.pem yourself, then re-run." >&2
         exit 1
     fi
-    mkdir -p "$CERTS_DIR"
     openssl req -x509 -nodes -newkey rsa:2048 -days 825 \
         -keyout "$CERTS_DIR/privkey.pem" -out "$CERTS_DIR/fullchain.pem" \
         -subj "/CN=stock-inventory.local" >/dev/null 2>&1
