@@ -23,6 +23,15 @@ SESSION_EXPIRE_AT_BROWSER_CLOSE = True
 
 SECURE_SSL_REDIRECT = env_bool("SECURE_SSL_REDIRECT", default=True)
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+# The Docker healthcheck (deploy/docker-compose.prod.yml) curls `web` directly
+# on its plain-HTTP port, entirely bypassing `proxy`'s TLS termination, so it
+# can never present X-Forwarded-Proto. Without this exemption,
+# SECURE_SSL_REDIRECT sends it a redirect to an https:// URL on a port that
+# never speaks TLS, and the healthcheck hangs until the handshake times out —
+# `web` is unhealthy forever even though the app itself is fine. `web` is
+# never reachable from outside the Docker network (only `proxy` is published
+# to the host), so exempting this one path from the redirect exposes nothing.
+SECURE_REDIRECT_EXEMPT = [r"^healthz/?$"]
 SECURE_HSTS_SECONDS = env_int("SECURE_HSTS_SECONDS", default=3600)
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 # Off by default: submitting to a browser's HSTS preload list is effectively

@@ -8,6 +8,7 @@ monkeypatched environment is picked up.
 """
 
 import importlib
+import re
 
 import pytest
 from django.core.exceptions import ImproperlyConfigured
@@ -49,6 +50,23 @@ def test_production_settings_allowed_hosts_still_overridable(monkeypatch):
     module = _reload_production_settings()
 
     assert module.ALLOWED_HOSTS == ["example.com", "example.org"]
+
+
+def test_production_settings_exempts_healthz_from_ssl_redirect(monkeypatch):
+    """The Docker healthcheck (deploy/docker-compose.prod.yml) curls `web`
+    directly on its plain-HTTP port, bypassing `proxy`'s TLS termination
+    entirely, so it can never present X-Forwarded-Proto. Without this
+    exemption, SECURE_SSL_REDIRECT sends it a redirect to an https:// URL on
+    a port that never speaks TLS, and it hangs until the handshake times out
+    — `web` reports unhealthy forever even though the app itself is fine.
+    """
+    monkeypatch.setenv("SECRET_KEY", "a-real-production-secret")
+    monkeypatch.setenv("ALLOWED_HOSTS", "example.com")
+
+    module = _reload_production_settings()
+
+    path = "healthz/"  # SecurityMiddleware matches against request.path.lstrip("/")
+    assert any(re.search(pattern, path) for pattern in module.SECURE_REDIRECT_EXEMPT)
 
 
 def test_production_settings_disable_debug_even_if_env_says_otherwise(monkeypatch):
