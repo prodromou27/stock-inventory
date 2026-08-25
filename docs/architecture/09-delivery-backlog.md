@@ -354,6 +354,26 @@ project reference, final customer, serial number, supplier, and type — all del
 **Acceptance**: a real 8,000+-row-scale export was written and read back successfully during verification (the
 same bulk-seeded dataset from Prompt 8's timing measurements). 379 tests pass (up from 353). No migration drift.
 
+### Additional infrastructure — GitHub Actions CI and repository publish — done
+
+Also on the user's request: published the repository to GitHub
+([`github.com/prodromou27/stock-inventory`](https://github.com/prodromou27/stock-inventory), private — kept
+private rather than public since this is an internal company tool, even though no real secrets are committed
+anywhere in history; confirmed with a full history scan before pushing) and added `.github/workflows/ci.yml`, a
+GitHub Actions workflow running ruff, `black --check`, the migration-drift check, and the full pytest suite against
+a real Postgres 16 service container on every push — automating the manual verification cycle used by hand every
+phase up to this point.
+
+**One real, genuinely valuable bug caught by the first real CI run**: the exports test suite's "unreachable path"
+fixtures used a hardcoded Windows drive-letter string (`"Z:\\...\\..."`) to force a real filesystem failure. That
+only fails on Windows — GitHub Actions' Linux runners don't treat backslashes as path separators, so the string was
+just an unusual-but-valid relative path component, and `os.makedirs()` happily created it there instead of raising.
+All local testing this whole session ran on Windows, so this was invisible until the first genuinely cross-platform
+run. Fixed with a real cross-platform fixture (`tests/conftest.py`'s `unwritable_path`): a regular file placed
+where a directory component needs to be, so walking into it as a directory reliably raises `OSError` on any OS.
+This is exactly the kind of gap CI is supposed to catch before it reaches anyone else's machine — first real CI run
+found it within minutes.
+
 ### Prompt 9 — Final acceptance and release audit
 
 Depends on all prior prompts. Delivers: traceability matrix (every §21 criterion and §22 out-of-scope item mapped

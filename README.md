@@ -1,5 +1,7 @@
 # Stock Inventory
 
+[![CI](https://github.com/prodromou27/stock-inventory/actions/workflows/ci.yml/badge.svg)](https://github.com/prodromou27/stock-inventory/actions/workflows/ci.yml)
+
 Internal stock and technology-asset inventory application, replacing an Excel-based process. See:
 
 - [`docs/Stock_Inventory_Application_Build_Specification.md`](docs/Stock_Inventory_Application_Build_Specification.md) — business specification
