@@ -19,6 +19,7 @@ db_data/
 
 # Production deployment secrets/artifacts — real values never committed.
 .env.production
+deploy/.env
 deploy/nginx.conf
 deploy/certs/
 deploy/backups/

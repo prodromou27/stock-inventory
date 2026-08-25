@@ -75,6 +75,18 @@ EOF
     GENERATED_NEW_ENV=true
 fi
 
+# Docker Compose auto-loads a file literally named ".env" next to the compose
+# file for its own ${VAR} substitution (docker-compose.prod.yml's `db` service
+# environment block, deliberately with no hardcoded fallback for
+# POSTGRES_PASSWORD — a production DB password must never have one) — that's
+# a *different* mechanism from `web`'s `env_file: ../.env.production`, which
+# only injects vars into that one container. Without this symlink, any
+# `docker compose -f deploy/docker-compose.prod.yml ...` command run without
+# an explicit `--env-file .env.production` (which is easy to forget, and this
+# script itself only covers the commands below) resolves POSTGRES_PASSWORD to
+# empty and `db` refuses to start.
+ln -sf "../$ENV_FILE" "deploy/.env"
+
 if [ -f "$CERTS_DIR/fullchain.pem" ] && [ -f "$CERTS_DIR/privkey.pem" ]; then
     echo "Existing TLS certificate found under $CERTS_DIR — reusing it."
 else

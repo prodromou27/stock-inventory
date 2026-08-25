@@ -31,9 +31,19 @@ cd stock-inventory
 - A temporary self-signed TLS certificate under `deploy/certs/`, if none is already there, so HTTPS works
   immediately — replace it with a real one whenever you have it (see "Certificates" below); nothing else about the
   install needs to wait for that.
-- Then runs `docker compose --env-file .env.production -f deploy/docker-compose.prod.yml up -d --build`, which
-  triggers `deploy/entrypoint.sh` inside `web`: `manage.py migrate` and `manage.py bootstrap_admin`, before the
-  app starts serving.
+- A symlink at `deploy/.env` pointing to `../.env.production` — Compose auto-loads a file literally named `.env`
+  next to the compose file for its own `${VAR}` substitution (used by the `db` service's `POSTGRES_PASSWORD`,
+  deliberately with no hardcoded fallback — a production DB password must never have one). This is a *different*
+  mechanism from `web`'s `env_file: ../.env.production`, which only injects vars into that one container. Without
+  this symlink, any `docker compose -f deploy/docker-compose.prod.yml ...` command run without an explicit
+  `--env-file .env.production` — which every command in this file *except* `install.sh` itself would otherwise be
+  — resolves `POSTGRES_PASSWORD` to empty and `db` refuses to start. (Found for real on a first deployment attempt,
+  not merely anticipated — see the verification note above.) Every command below relies on this symlink already
+  existing, so run `./deploy/install.sh` at least once before any of them.
+- Then runs `docker compose --env-file .env.production -f deploy/docker-compose.prod.yml up -d --build` (the
+  `--env-file` flag here is belt-and-suspenders, redundant with the symlink above but harmless), which triggers
+  `deploy/entrypoint.sh` inside `web`: `manage.py migrate` and `manage.py bootstrap_admin`, before the app starts
+  serving.
 
 At the end it prints the generated Administrator password once. Log in at `https://<this-host>/` with username
 `admin` — the app **blocks every other page** until you change that password; there is no way to skip this. Do it
