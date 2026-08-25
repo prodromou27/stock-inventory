@@ -3,19 +3,24 @@
 {% block title %}Products — Stock Inventory{% endblock %}
 
 {% block content %}
-  <h1>Products</h1>
+  <div class="page-header">
+    <h1>Products</h1>
+    {% if user_is_administrator or "StockManager" in user_role_groups %}
+      <div class="page-header__actions">
+        <a class="btn btn--primary" href="{% url 'catalog:product_create' %}">+ New product</a>
+      </div>
+    {% endif %}
+  </div>
 
-  {% if user_is_administrator or "StockManager" in user_role_groups %}
-    <p><a href="{% url 'catalog:product_create' %}">+ New product</a></p>
-  {% endif %}
-
-  <form method="get" class="location-filters">
-    <input type="text" name="q" value="{{ query }}" placeholder="Search brand, model, SKU, type">
+  <form method="get" class="toolbar">
+    <label>Search
+      <input type="text" name="q" value="{{ query }}" placeholder="Brand, model, SKU, type">
+    </label>
     <label>
       <input type="checkbox" name="show_inactive" value="1" {% if show_inactive %}checked{% endif %}>
       Show inactive
     </label>
-    <button type="submit">Search</button>
+    <button type="submit" class="btn btn--primary">Search</button>
   </form>
 
   {% if products %}
@@ -38,7 +43,13 @@
             <td>{{ product.sku|default:"—" }}</td>
             <td>{{ product.product_type.name }}</td>
             <td>{{ product.get_tracking_method_display }}</td>
-            <td>{% if product.is_active %}Active{% else %}Inactive{% endif %}</td>
+            <td>
+              {% if product.is_active %}
+                <span class="badge badge--success">Active</span>
+              {% else %}
+                <span class="badge badge--neutral">Inactive</span>
+              {% endif %}
+            </td>
           </tr>
         {% endfor %}
       </tbody>
@@ -56,6 +67,6 @@
       </nav>
     {% endif %}
   {% else %}
-    <p>No products found.</p>
+    <p class="empty-state">No products found.</p>
   {% endif %}
 {% endblock %}

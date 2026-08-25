@@ -3,8 +3,12 @@
 {% block title %}Low Stock — Stock Inventory{% endblock %}
 
 {% block content %}
-  <h1>Low stock</h1>
-  <p>Only products with a low-stock threshold configured are considered.</p>
+  <div class="page-header">
+    <div>
+      <h1>Low stock</h1>
+      <div class="page-header__subtitle">Only products with a low-stock threshold configured are considered.</div>
+    </div>
+  </div>
 
   {% if balances %}
     <table>
@@ -30,6 +34,6 @@
       </nav>
     {% endif %}
   {% else %}
-    <p>Nothing below its configured threshold right now (or no product has a threshold configured).</p>
+    <p class="empty-state">Nothing below its configured threshold right now (or no product has a threshold configured).</p>
   {% endif %}
 {% endblock %}

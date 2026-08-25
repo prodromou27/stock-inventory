@@ -3,20 +3,58 @@
 {% block title %}Dashboard — Stock Inventory{% endblock %}
 
 {% block content %}
-  <h1>Dashboard</h1>
-  <p>Signed in as {{ user.get_username }}.</p>
-  {% if user_role_groups %}
-    <p>Role: {{ user_role_groups|join:", " }}</p>
-  {% else %}
+  <div class="page-header">
+    <div>
+      <h1>Dashboard</h1>
+      <div class="page-header__subtitle">
+        Signed in as {{ user.get_username }}{% if user_role_groups %} — {{ user_role_groups|join:", " }}{% endif %}
+      </div>
+    </div>
+  </div>
+
+  {% if not user_role_groups %}
     <p class="messages__item messages__item--warning">No role group assigned yet. Contact an Administrator.</p>
   {% endif %}
-  <p><a href="{% url 'locations:list' %}">Browse locations</a></p>
-  <p><a href="{% url 'catalog:product_list' %}">Browse products</a></p>
-  <p><a href="{% url 'inventory:asset_list' %}">Browse assets</a></p>
-  <p><a href="{% url 'inventory:balance_list' %}">Browse stock balances</a></p>
+
+  <h2>Catalog &amp; inventory</h2>
+  <div class="card-grid">
+    <a class="action-card" href="{% url 'catalog:product_list' %}">
+      <span class="action-card__title">Products</span>
+      <span class="action-card__desc">Browse and manage the product catalog.</span>
+    </a>
+    <a class="action-card" href="{% url 'inventory:asset_list' %}">
+      <span class="action-card__title">Assets</span>
+      <span class="action-card__desc">Serialized units — status, location, history.</span>
+    </a>
+    <a class="action-card" href="{% url 'inventory:balance_list' %}">
+      <span class="action-card__title">Stock balances</span>
+      <span class="action-card__desc">Quantity-tracked stock on hand and available.</span>
+    </a>
+    <a class="action-card" href="{% url 'inventory:transaction_list' %}">
+      <span class="action-card__title">Transactions</span>
+      <span class="action-card__desc">The full inventory movement ledger.</span>
+    </a>
+  </div>
+
   {% if user_is_administrator or "StockManager" in user_role_groups %}
-    <p><a href="{% url 'inventory:movements_hub' %}">Movements (transfer, reserve, assign, deliver, dispose…)</a></p>
+    <h2>Movements</h2>
+    <div class="card-grid">
+      <a class="action-card" href="{% url 'inventory:movements_hub' %}">
+        <span class="action-card__title">Movements hub</span>
+        <span class="action-card__desc">Receive, transfer, reserve, assign, deliver, dispose…</span>
+      </a>
+    </div>
   {% endif %}
-  <p><a href="{% url 'inventory:transaction_list' %}">Browse transactions</a></p>
-  <p><a href="{% url 'reporting:hub' %}">Reports</a> (includes low stock — empty unless a product has a threshold configured)</p>
+
+  <h2>Reports &amp; locations</h2>
+  <div class="card-grid">
+    <a class="action-card" href="{% url 'reporting:hub' %}">
+      <span class="action-card__title">Reports</span>
+      <span class="action-card__desc">Current stock, low stock, deliveries, and more.</span>
+    </a>
+    <a class="action-card" href="{% url 'locations:list' %}">
+      <span class="action-card__title">Locations</span>
+      <span class="action-card__desc">The site / floor / room / rack / shelf tree.</span>
+    </a>
+  </div>
 {% endblock %}

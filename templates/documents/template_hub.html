@@ -3,12 +3,16 @@
 {% block title %}Document Templates — Stock Inventory{% endblock %}
 
 {% block content %}
-  <h1>Document templates</h1>
-  <p>
-    Customize the printable PDF generated for assignment and delivery transactions — layout, wording, and your
-    company logo — without a code change. Each type falls back to the packaged default until you save an override
-    here.
-  </p>
+  <div class="page-header">
+    <div>
+      <h1>Document templates</h1>
+      <div class="page-header__subtitle">
+        Customize the printable PDF generated for assignment and delivery transactions — layout, wording, and your
+        company logo — without a code change. Each type falls back to the packaged default until you save an
+        override here.
+      </div>
+    </div>
+  </div>
 
   <table>
     <thead>
@@ -18,9 +22,15 @@
       {% for row in rows %}
         <tr>
           <td>{{ row.label }}</td>
-          <td>{% if row.template_obj %}Custom{% else %}Packaged default{% endif %}</td>
+          <td>
+            {% if row.template_obj %}
+              <span class="badge badge--info">Custom</span>
+            {% else %}
+              <span class="badge badge--neutral">Packaged default</span>
+            {% endif %}
+          </td>
           <td>{{ row.template_obj.updated_at|default:"—" }}</td>
-          <td><a href="{% url 'documents:template_edit' row.document_type %}">Edit</a></td>
+          <td><a class="btn btn--sm" href="{% url 'documents:template_edit' row.document_type %}">Edit</a></td>
         </tr>
       {% endfor %}
     </tbody>

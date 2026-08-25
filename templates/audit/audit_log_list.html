@@ -3,20 +3,24 @@
 {% block title %}Audit Log — Stock Inventory{% endblock %}
 
 {% block content %}
-  <h1>Audit log</h1>
+  <div class="page-header">
+    <h1>Audit log</h1>
+  </div>
 
-  <form method="get" class="location-filters">
-    <select name="event_type">
-      <option value="">All event types</option>
-      {% for value, label in event_types %}
-        <option value="{{ value }}" {% if selected_event_type == value %}selected{% endif %}>{{ label }}</option>
-      {% endfor %}
-    </select>
-    <input type="text" name="actor" placeholder="Actor username" value="{{ request.GET.actor }}">
-    <input type="text" name="object_type" placeholder="Object type" value="{{ request.GET.object_type }}">
+  <form method="get" class="toolbar">
+    <label>Event type
+      <select name="event_type">
+        <option value="">All event types</option>
+        {% for value, label in event_types %}
+          <option value="{{ value }}" {% if selected_event_type == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Actor<input type="text" name="actor" placeholder="Username" value="{{ request.GET.actor }}"></label>
+    <label>Object type<input type="text" name="object_type" value="{{ request.GET.object_type }}"></label>
     <label>From <input type="date" name="after" value="{{ request.GET.after }}"></label>
     <label>To <input type="date" name="before" value="{{ request.GET.before }}"></label>
-    <button type="submit">Filter</button>
+    <button type="submit" class="btn btn--primary">Filter</button>
   </form>
 
   {% if events %}
@@ -51,6 +55,6 @@
       </nav>
     {% endif %}
   {% else %}
-    <p>No audit events found.</p>
+    <p class="empty-state">No audit events found.</p>
   {% endif %}
 {% endblock %}

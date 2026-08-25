@@ -3,8 +3,12 @@
 {% block title %}Lost Assets — Stock Inventory{% endblock %}
 
 {% block content %}
-  <h1>Lost assets</h1>
-  <p><a href="?{{ request.GET.urlencode }}&format=csv">Export CSV</a></p>
+  <div class="page-header">
+    <h1>Lost assets</h1>
+    <div class="page-header__actions">
+      <a class="btn" href="?{{ request.GET.urlencode }}&format=csv">Export CSV</a>
+    </div>
+  </div>
 
   {% if assets %}
     <table>
@@ -31,6 +35,6 @@
       </nav>
     {% endif %}
   {% else %}
-    <p>No lost assets found in your authorized scope.</p>
+    <p class="empty-state">No lost assets found in your authorized scope.</p>
   {% endif %}
 {% endblock %}

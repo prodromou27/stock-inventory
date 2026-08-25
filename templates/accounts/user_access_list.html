@@ -3,8 +3,12 @@
 {% block title %}Manage Access — Stock Inventory{% endblock %}
 
 {% block content %}
-  <h1>Manage Access</h1>
-  <p><a href="{% url 'accounts:grant_access' %}">+ Grant access</a></p>
+  <div class="page-header">
+    <h1>Manage Access</h1>
+    <div class="page-header__actions">
+      <a class="btn btn--primary" href="{% url 'accounts:grant_access' %}">+ Grant access</a>
+    </div>
+  </div>
 
   <table>
     <thead>

@@ -12,20 +12,32 @@
     </p>
   {% endif %}
 
-  <h1>{{ location.name }}</h1>
-  <p>Level: {{ location.get_level_display }}</p>
-  {% if location.code %}<p>Code: {{ location.code }}</p>{% endif %}
-  <p>Status: {% if location.is_active %}Active{% else %}Inactive{% endif %}</p>
+  <div class="page-header">
+    <h1>{{ location.name }}</h1>
+    {% if user_is_administrator %}
+      <div class="page-header__actions">
+        <a class="btn" href="{% url 'locations:create' %}?parent={{ location.pk }}">+ Add child location</a>
+        <a class="btn {% if location.is_active %}btn--danger{% endif %}" href="{% url 'locations:toggle_active' location.pk %}">
+          {% if location.is_active %}Deactivate{% else %}Reactivate{% endif %}
+        </a>
+      </div>
+    {% endif %}
+  </div>
 
-  {% if user_is_administrator %}
-    <p>
-      <a href="{% url 'locations:create' %}?parent={{ location.pk }}">+ Add child location</a>
-      &nbsp;
-      <a href="{% url 'locations:toggle_active' location.pk %}">
-        {% if location.is_active %}Deactivate{% else %}Reactivate{% endif %}
-      </a>
-    </p>
-  {% endif %}
+  <div class="card">
+    <dl class="definition-list">
+      <dt>Level</dt><dd>{{ location.get_level_display }}</dd>
+      {% if location.code %}<dt>Code</dt><dd>{{ location.code }}</dd>{% endif %}
+      <dt>Status</dt>
+      <dd>
+        {% if location.is_active %}
+          <span class="badge badge--success">Active</span>
+        {% else %}
+          <span class="badge badge--neutral">Inactive</span>
+        {% endif %}
+      </dd>
+    </dl>
+  </div>
 
   <h2>Children</h2>
   {% if children %}
@@ -38,6 +50,6 @@
       {% endfor %}
     </ul>
   {% else %}
-    <p>No child locations.</p>
+    <p class="text-muted">No child locations.</p>
   {% endif %}
 {% endblock %}

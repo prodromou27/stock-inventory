@@ -3,20 +3,24 @@
 {% block title %}Transactions — Stock Inventory{% endblock %}
 
 {% block content %}
-  <h1>Transactions</h1>
+  <div class="page-header">
+    <h1>Transactions</h1>
+  </div>
 
-  <form method="get" class="location-filters">
-    <select name="movement_type">
-      <option value="">All movement types</option>
-      {% for value, label in movement_types %}
-        <option value="{{ value }}" {% if selected_movement_type == value %}selected{% endif %}>{{ label }}</option>
-      {% endfor %}
-    </select>
-    <input type="text" name="project_reference" placeholder="Project reference" value="{{ request.GET.project_reference }}">
-    <input type="text" name="final_customer" placeholder="Final customer" value="{{ request.GET.final_customer }}">
+  <form method="get" class="toolbar">
+    <label>Movement type
+      <select name="movement_type">
+        <option value="">All movement types</option>
+        {% for value, label in movement_types %}
+          <option value="{{ value }}" {% if selected_movement_type == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Project reference<input type="text" name="project_reference" value="{{ request.GET.project_reference }}"></label>
+    <label>Final customer<input type="text" name="final_customer" value="{{ request.GET.final_customer }}"></label>
     <label>From <input type="date" name="occurred_after" value="{{ request.GET.occurred_after }}"></label>
     <label>To <input type="date" name="occurred_before" value="{{ request.GET.occurred_before }}"></label>
-    <button type="submit">Filter</button>
+    <button type="submit" class="btn btn--primary">Filter</button>
   </form>
 
   {% if transactions %}
@@ -53,6 +57,6 @@
       </nav>
     {% endif %}
   {% else %}
-    <p>No transactions found in your authorized scope.</p>
+    <p class="empty-state">No transactions found in your authorized scope.</p>
   {% endif %}
 {% endblock %}

@@ -3,25 +3,37 @@
 {% block title %}{{ product }} — Stock Inventory{% endblock %}
 
 {% block content %}
-  <h1>{{ product }}</h1>
-  <p>Type: {{ product.product_type.name }}</p>
-  <p>Tracking method: {{ product.get_tracking_method_display }}</p>
-  {% if product.description %}<p>{{ product.description }}</p>{% endif %}
-  {% if product.supplier %}<p>Supplier: {{ product.supplier }}</p>{% endif %}
-  {% if product.low_stock_threshold %}<p>Low-stock threshold: {{ product.low_stock_threshold }}</p>{% endif %}
-  <p>Status: {% if product.is_active %}Active{% else %}Inactive{% endif %}</p>
+  <div class="page-header">
+    <h1>{{ product }}</h1>
+    {% if user_is_administrator or "StockManager" in user_role_groups %}
+      <div class="page-header__actions">
+        <a class="btn" href="{% url 'catalog:product_update' product.pk %}">Edit</a>
+        <a class="btn btn--primary" href="{% url 'inventory:receive_stock' %}?product={{ product.pk }}">Receive stock</a>
+      </div>
+    {% endif %}
+  </div>
 
-  {% if user_is_administrator or "StockManager" in user_role_groups %}
-    <p>
-      <a href="{% url 'catalog:product_update' product.pk %}">Edit</a>
-      &nbsp;
-      <a href="{% url 'inventory:receive_stock' %}?product={{ product.pk }}">Receive stock</a>
-    </p>
-  {% endif %}
+  <div class="card">
+    <dl class="definition-list">
+      <dt>Type</dt><dd>{{ product.product_type.name }}</dd>
+      <dt>Tracking method</dt><dd>{{ product.get_tracking_method_display }}</dd>
+      {% if product.description %}<dt>Description</dt><dd>{{ product.description }}</dd>{% endif %}
+      {% if product.supplier %}<dt>Supplier</dt><dd>{{ product.supplier }}</dd>{% endif %}
+      {% if product.low_stock_threshold %}<dt>Low-stock threshold</dt><dd>{{ product.low_stock_threshold }}</dd>{% endif %}
+      <dt>Status</dt>
+      <dd>
+        {% if product.is_active %}
+          <span class="badge badge--success">Active</span>
+        {% else %}
+          <span class="badge badge--neutral">Inactive</span>
+        {% endif %}
+      </dd>
+    </dl>
+  </div>
 
   {% if product.tracking_method == "unit" %}
-    <p><a href="{% url 'inventory:asset_list' %}?product={{ product.pk }}">View units of this product</a></p>
+    <p><a href="{% url 'inventory:asset_list' %}?product={{ product.pk }}">View units of this product &rarr;</a></p>
   {% else %}
-    <p><a href="{% url 'inventory:balance_list' %}?product={{ product.pk }}">View stock balances of this product</a></p>
+    <p><a href="{% url 'inventory:balance_list' %}?product={{ product.pk }}">View stock balances of this product &rarr;</a></p>
   {% endif %}
 {% endblock %}

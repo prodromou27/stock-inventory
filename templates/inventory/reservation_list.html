@@ -1,17 +1,22 @@
 {% extends "base.html" %}
+{% load ui_extras %}
 
 {% block title %}Reservations — Stock Inventory{% endblock %}
 
 {% block content %}
-  <h1>Reservations</h1>
-  <p><a href="{% url 'inventory:reserve' %}">+ New reservation</a></p>
+  <div class="page-header">
+    <h1>Reservations</h1>
+    <div class="page-header__actions">
+      <a class="btn btn--primary" href="{% url 'inventory:reserve' %}">+ New reservation</a>
+    </div>
+  </div>
 
-  <form method="get" class="location-filters">
+  <form method="get" class="toolbar">
     <label>
       <input type="checkbox" name="show_all" value="1" {% if request.GET.show_all == "1" %}checked{% endif %}>
       Show released/consumed
     </label>
-    <button type="submit">Filter</button>
+    <button type="submit" class="btn btn--primary">Filter</button>
   </form>
 
   {% if reservations %}
@@ -32,7 +37,7 @@
             <td>{{ reservation.location }}</td>
             <td>{{ reservation.quantity }}</td>
             <td>{{ reservation.project_reference }}</td>
-            <td>{{ reservation.get_status_display }}</td>
+            <td><span class="badge {{ reservation.status|badge_class }}">{{ reservation.get_status_display }}</span></td>
           </tr>
         {% endfor %}
       </tbody>
@@ -46,6 +51,6 @@
       </nav>
     {% endif %}
   {% else %}
-    <p>No reservations found in your authorized scope.</p>
+    <p class="empty-state">No reservations found in your authorized scope.</p>
   {% endif %}
 {% endblock %}

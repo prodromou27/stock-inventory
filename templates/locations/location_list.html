@@ -3,25 +3,29 @@
 {% block title %}Locations — Stock Inventory{% endblock %}
 
 {% block content %}
-  <h1>Locations</h1>
+  <div class="page-header">
+    <h1>Locations</h1>
+    {% if user_is_administrator %}
+      <div class="page-header__actions">
+        <a class="btn btn--primary" href="{% url 'locations:create' %}">+ New location</a>
+      </div>
+    {% endif %}
+  </div>
 
-  {% if user_is_administrator %}
-    <p><a href="{% url 'locations:create' %}">+ New location</a></p>
-  {% endif %}
-
-  <form method="get" class="location-filters">
-    <label for="id_level">Level</label>
-    <select name="level" id="id_level">
-      <option value="">All levels</option>
-      {% for value, label in levels %}
-        <option value="{{ value }}" {% if selected_level == value %}selected{% endif %}>{{ label }}</option>
-      {% endfor %}
-    </select>
+  <form method="get" class="toolbar">
+    <label for="id_level">Level
+      <select name="level" id="id_level">
+        <option value="">All levels</option>
+        {% for value, label in levels %}
+          <option value="{{ value }}" {% if selected_level == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
     <label>
       <input type="checkbox" name="show_inactive" value="1" {% if show_inactive %}checked{% endif %}>
       Show inactive
     </label>
-    <button type="submit">Filter</button>
+    <button type="submit" class="btn btn--primary">Filter</button>
   </form>
 
   {% if locations %}
@@ -40,7 +44,13 @@
             <td><a href="{{ location.get_absolute_url }}">{{ location.name }}</a></td>
             <td>{{ location.get_level_display }}</td>
             <td>{% if location.parent %}{{ location.parent.name }}{% else %}—{% endif %}</td>
-            <td>{% if location.is_active %}Active{% else %}Inactive{% endif %}</td>
+            <td>
+              {% if location.is_active %}
+                <span class="badge badge--success">Active</span>
+              {% else %}
+                <span class="badge badge--neutral">Inactive</span>
+              {% endif %}
+            </td>
           </tr>
         {% endfor %}
       </tbody>
@@ -58,6 +68,6 @@
       </nav>
     {% endif %}
   {% else %}
-    <p>No locations found in your authorized scope.</p>
+    <p class="empty-state">No locations found in your authorized scope.</p>
   {% endif %}
 {% endblock %}

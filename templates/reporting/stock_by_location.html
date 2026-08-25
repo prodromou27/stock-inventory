@@ -3,7 +3,9 @@
 {% block title %}Stock by Location — Stock Inventory{% endblock %}
 
 {% block content %}
-  <h1>Stock by room/location</h1>
+  <div class="page-header">
+    <h1>Stock by room/location</h1>
+  </div>
   {% if rows %}
     <table>
       <thead>
@@ -21,6 +23,6 @@
       </tbody>
     </table>
   {% else %}
-    <p>No stock found in your authorized scope.</p>
+    <p class="empty-state">No stock found in your authorized scope.</p>
   {% endif %}
 {% endblock %}

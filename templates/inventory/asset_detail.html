@@ -1,25 +1,34 @@
 {% extends "base.html" %}
+{% load ui_extras %}
 
 {% block title %}{{ asset.product }} — Stock Inventory{% endblock %}
 
 {% block content %}
-  <h1>{{ asset.product }}</h1>
-  <p>Serial: {{ asset.vendor_serial|default:"—" }}</p>
-  <p>Status: {{ asset.get_status_display }}</p>
-  <p>Location: {{ asset.current_location|default:"—" }}</p>
-  <p>Condition: {{ asset.get_condition_display }}</p>
-  {% if asset.accessories %}<p>Accessories: {{ asset.accessories }}</p>{% endif %}
-  {% if asset.project_reference %}<p>Project reference: {{ asset.project_reference }}</p>{% endif %}
-  {% if asset.final_customer %}<p>Final customer: {{ asset.final_customer }}</p>{% endif %}
-  {% if asset.supplier %}<p>Supplier: {{ asset.supplier }}</p>{% endif %}
-  {% if asset.invoice_number %}<p>Invoice number: {{ asset.invoice_number }}</p>{% endif %}
-  <p>Arrival date: {{ asset.arrival_date }}</p>
-  {% if asset.last_removal_date %}<p>Last removal date: {{ asset.last_removal_date }}</p>{% endif %}
-  {% if asset.notes %}<p>Notes: {{ asset.notes }}</p>{% endif %}
+  <div class="page-header">
+    <h1>{{ asset.product }}</h1>
+    {% if user_is_administrator %}
+      <div class="page-header__actions">
+        <a class="btn" href="{% url 'inventory:asset_correct' asset.pk %}">Administrator correction</a>
+      </div>
+    {% endif %}
+  </div>
 
-  {% if user_is_administrator %}
-    <p><a href="{% url 'inventory:asset_correct' asset.pk %}">Administrator correction</a></p>
-  {% endif %}
+  <div class="card">
+    <dl class="definition-list">
+      <dt>Serial</dt><dd>{{ asset.vendor_serial|default:"—" }}</dd>
+      <dt>Status</dt><dd><span class="badge {{ asset.status|badge_class }}">{{ asset.get_status_display }}</span></dd>
+      <dt>Location</dt><dd>{{ asset.current_location|default:"—" }}</dd>
+      <dt>Condition</dt><dd><span class="badge {{ asset.condition|badge_class }}">{{ asset.get_condition_display }}</span></dd>
+      {% if asset.accessories %}<dt>Accessories</dt><dd>{{ asset.accessories }}</dd>{% endif %}
+      {% if asset.project_reference %}<dt>Project reference</dt><dd>{{ asset.project_reference }}</dd>{% endif %}
+      {% if asset.final_customer %}<dt>Final customer</dt><dd>{{ asset.final_customer }}</dd>{% endif %}
+      {% if asset.supplier %}<dt>Supplier</dt><dd>{{ asset.supplier }}</dd>{% endif %}
+      {% if asset.invoice_number %}<dt>Invoice number</dt><dd>{{ asset.invoice_number }}</dd>{% endif %}
+      <dt>Arrival date</dt><dd>{{ asset.arrival_date }}</dd>
+      {% if asset.last_removal_date %}<dt>Last removal date</dt><dd>{{ asset.last_removal_date }}</dd>{% endif %}
+      {% if asset.notes %}<dt>Notes</dt><dd>{{ asset.notes }}</dd>{% endif %}
+    </dl>
+  </div>
 
   <h2>History</h2>
   {% if history %}

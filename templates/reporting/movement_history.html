@@ -3,8 +3,12 @@
 {% block title %}Movement History — Stock Inventory{% endblock %}
 
 {% block content %}
-  <h1>Complete asset movement history</h1>
-  <p><a href="?{{ request.GET.urlencode }}&format=csv">Export CSV</a></p>
+  <div class="page-header">
+    <h1>Complete asset movement history</h1>
+    <div class="page-header__actions">
+      <a class="btn" href="?{{ request.GET.urlencode }}&format=csv">Export CSV</a>
+    </div>
+  </div>
 
   {% if events %}
     <table>
@@ -43,6 +47,6 @@
       </nav>
     {% endif %}
   {% else %}
-    <p>No movement history found in your authorized scope.</p>
+    <p class="empty-state">No movement history found in your authorized scope.</p>
   {% endif %}
 {% endblock %}

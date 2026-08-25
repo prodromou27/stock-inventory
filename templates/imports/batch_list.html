@@ -1,14 +1,16 @@
 {% extends "base.html" %}
+{% load ui_extras %}
 
 {% block title %}Excel Import — Stock Inventory{% endblock %}
 
 {% block content %}
-  <h1>Excel Import</h1>
-  <p>
-    <a href="{% url 'imports:upload' %}">Upload a new file</a>
-    &middot;
-    <a href="{% url 'imports:template_download' %}">Download template CSV</a>
-  </p>
+  <div class="page-header">
+    <h1>Excel Import</h1>
+    <div class="page-header__actions">
+      <a class="btn" href="{% url 'imports:template_download' %}">Download template CSV</a>
+      <a class="btn btn--primary" href="{% url 'imports:upload' %}">Upload a new file</a>
+    </div>
+  </div>
 
   {% if batches %}
     <table>
@@ -30,7 +32,7 @@
             <td><a href="{{ batch.get_absolute_url }}">{{ batch.source_filename }}</a></td>
             <td>{{ batch.uploaded_at }}</td>
             <td>{{ batch.uploaded_by }}</td>
-            <td>{{ batch.get_status_display }}</td>
+            <td><span class="badge {{ batch.status|badge_class }}">{{ batch.get_status_display }}</span></td>
             <td>{{ batch.imported_count }}</td>
             <td>{{ batch.warning_count }}</td>
             <td>{{ batch.failed_count }}</td>
@@ -48,6 +50,6 @@
       </nav>
     {% endif %}
   {% else %}
-    <p>No imports yet.</p>
+    <p class="empty-state">No imports yet.</p>
   {% endif %}
 {% endblock %}

@@ -1,44 +1,72 @@
 {% extends "base.html" %}
+{% load ui_extras %}
 
 {% block title %}Import {{ batch.source_filename }} — Stock Inventory{% endblock %}
 
 {% block content %}
-  <h1>Import: {{ batch.source_filename }}</h1>
-  <p>
-    Status: <strong>{{ batch.get_status_display }}</strong>
-    &middot; Uploaded {{ batch.uploaded_at }} by {{ batch.uploaded_by }}
-    {% if batch.executed_at %}&middot; Executed {{ batch.executed_at }} by {{ batch.executed_by }}{% endif %}
-  </p>
-  <p>
-    {{ batch.row_count }} row(s) total —
-    imported: {{ batch.imported_count }},
-    warning: {{ batch.warning_count }},
-    failed: {{ batch.failed_count }},
-    skipped: {{ batch.skipped_count }}
-  </p>
-  <p>
-    {% if batch.executed_at %}<a href="{% url 'imports:results_download' batch.pk %}">Download results CSV</a>{% endif %}
-  </p>
+  <div class="page-header">
+    <div>
+      <h1>Import: {{ batch.source_filename }}</h1>
+      <div class="page-header__subtitle">
+        Uploaded {{ batch.uploaded_at }} by {{ batch.uploaded_by }}
+        {% if batch.executed_at %}&middot; Executed {{ batch.executed_at }} by {{ batch.executed_by }}{% endif %}
+      </div>
+    </div>
+    {% if batch.executed_at %}
+      <div class="page-header__actions">
+        <a class="btn" href="{% url 'imports:results_download' batch.pk %}">Download results CSV</a>
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="stat-grid">
+    <div class="stat-card">
+      <div class="stat-card__value"><span class="badge {{ batch.status|badge_class }}">{{ batch.get_status_display }}</span></div>
+      <div class="stat-card__label">Status</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-card__value">{{ batch.row_count }}</div>
+      <div class="stat-card__label">Rows total</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-card__value">{{ batch.imported_count }}</div>
+      <div class="stat-card__label">Imported</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-card__value">{{ batch.warning_count }}</div>
+      <div class="stat-card__label">Warning</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-card__value">{{ batch.failed_count }}</div>
+      <div class="stat-card__label">Failed</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-card__value">{{ batch.skipped_count }}</div>
+      <div class="stat-card__label">Skipped</div>
+    </div>
+  </div>
 
   {% if can_execute %}
-    <form method="post" action="{% url 'imports:execute' batch.pk %}">
+    <form method="post" action="{% url 'imports:execute' batch.pk %}" class="card">
       {% csrf_token %}
       <p>
         Execution imports every non-skipped row with a resolved location. Duplicate serial warnings must be
         acknowledged explicitly on the affected row first.
       </p>
-      <button type="submit">Execute import</button>
+      <button type="submit" class="btn btn--primary">Execute import</button>
     </form>
   {% endif %}
 
-  <form method="get" class="location-filters">
-    <select name="outcome">
-      <option value="">All outcomes</option>
-      {% for value, label in row_outcomes %}
-        <option value="{{ value }}" {% if outcome_filter == value %}selected{% endif %}>{{ label }}</option>
-      {% endfor %}
-    </select>
-    <button type="submit">Filter</button>
+  <form method="get" class="toolbar">
+    <label>Outcome
+      <select name="outcome">
+        <option value="">All outcomes</option>
+        {% for value, label in row_outcomes %}
+          <option value="{{ value }}" {% if outcome_filter == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit" class="btn btn--primary">Filter</button>
   </form>
 
   <table>
@@ -60,27 +88,27 @@
           <td>{{ row.normalized_data.brand_name }} {{ row.normalized_data.model }}</td>
           <td>{{ row.normalized_data.vendor_serial|default:"—" }}</td>
           <td>{{ row.normalized_data.location_text }}{% if row.normalized_data.sub_location_text %} / {{ row.normalized_data.sub_location_text }}{% endif %}</td>
-          <td>{{ row.get_outcome_display }}</td>
+          <td><span class="badge {{ row.outcome|badge_class }}">{{ row.get_outcome_display }}</span></td>
           <td>{{ row.outcome_detail }}</td>
           {% if can_edit %}
             <td>
               {% if row.outcome == "warning" and not row.normalized_data.resolved_location_id and not row.normalized_data.location_override_id %}
-                <form method="post" action="{% url 'imports:row_override_location' batch.pk row.pk %}">
+                <form method="post" action="{% url 'imports:row_override_location' batch.pk row.pk %}" class="form-actions">
                   {% csrf_token %}
                   {{ override_form.location }}
-                  <button type="submit">Set location</button>
+                  <button type="submit" class="btn btn--sm btn--primary">Set location</button>
                 </form>
               {% endif %}
               {% if row.outcome != "skipped" and row.outcome != "imported" %}
                 {% if row.normalized_data.duplicate_serial_ids and not row.duplicate_serial_acknowledged %}
-                  <form method="post" action="{% url 'imports:row_acknowledge_duplicate' batch.pk row.pk %}">
+                  <form method="post" action="{% url 'imports:row_acknowledge_duplicate' batch.pk row.pk %}" class="inline-form">
                     {% csrf_token %}
-                    <button type="submit">Acknowledge duplicate serial</button>
+                    <button type="submit" class="btn btn--sm">Acknowledge duplicate serial</button>
                   </form>
                 {% endif %}
-                <form method="post" action="{% url 'imports:row_skip' batch.pk row.pk %}">
+                <form method="post" action="{% url 'imports:row_skip' batch.pk row.pk %}" class="inline-form">
                   {% csrf_token %}
-                  <button type="submit">Skip row</button>
+                  <button type="submit" class="btn btn--sm btn--ghost">Skip row</button>
                 </form>
               {% endif %}
             </td>

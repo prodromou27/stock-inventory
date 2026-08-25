@@ -3,24 +3,30 @@
 {% block title %}Stock Balances — Stock Inventory{% endblock %}
 
 {% block content %}
-  <h1>Stock balances</h1>
-  <p><a href="?{{ request.GET.urlencode }}&format=csv">Export CSV</a></p>
+  <div class="page-header">
+    <h1>Stock balances</h1>
+    <div class="page-header__actions">
+      <a class="btn" href="?{{ request.GET.urlencode }}&format=csv">Export CSV</a>
+    </div>
+  </div>
 
-  <form method="get" class="location-filters">
-    <input type="text" name="q" value="{{ filters.q }}" placeholder="Search brand, model, SKU, type">
-    <select name="location">
-      <option value="">All locations</option>
-      {% for location in locations %}
-        <option value="{{ location.pk }}" {% if filters.location == location.pk|stringformat:"s" %}selected{% endif %}>
-          {{ location.name }} ({{ location.get_level_display }})
-        </option>
-      {% endfor %}
-    </select>
-    <input type="text" name="brand" placeholder="Brand" value="{{ filters.brand }}">
-    <input type="text" name="model" placeholder="Model" value="{{ filters.model }}">
-    <input type="text" name="sku" placeholder="SKU" value="{{ filters.sku }}">
-    <input type="text" name="type" placeholder="Type" value="{{ filters.type }}">
-    <button type="submit">Filter</button>
+  <form method="get" class="toolbar">
+    <label>Search<input type="text" name="q" value="{{ filters.q }}" placeholder="Brand, model, SKU, type"></label>
+    <label>Location
+      <select name="location">
+        <option value="">All locations</option>
+        {% for location in locations %}
+          <option value="{{ location.pk }}" {% if filters.location == location.pk|stringformat:"s" %}selected{% endif %}>
+            {{ location.name }} ({{ location.get_level_display }})
+          </option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Brand<input type="text" name="brand" value="{{ filters.brand }}"></label>
+    <label>Model<input type="text" name="model" value="{{ filters.model }}"></label>
+    <label>SKU<input type="text" name="sku" value="{{ filters.sku }}"></label>
+    <label>Type<input type="text" name="type" value="{{ filters.type }}"></label>
+    <button type="submit" class="btn btn--primary">Filter</button>
   </form>
 
   {% if balances %}
@@ -59,6 +65,6 @@
       </nav>
     {% endif %}
   {% else %}
-    <p>No stock balances found in your authorized scope.</p>
+    <p class="empty-state">No stock balances found in your authorized scope.</p>
   {% endif %}
 {% endblock %}

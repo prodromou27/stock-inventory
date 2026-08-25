@@ -1,19 +1,28 @@
 {% extends "base.html" %}
+{% load ui_extras %}
 
 {% block title %}Reservation — Stock Inventory{% endblock %}
 
 {% block content %}
-  <h1>{{ reservation.product }} @ {{ reservation.location }}</h1>
-  <p>Quantity: {{ reservation.quantity }}</p>
-  <p>Project reference: {{ reservation.project_reference }}</p>
-  {% if reservation.final_customer %}<p>Final customer: {{ reservation.final_customer }}</p>{% endif %}
-  <p>Status: {{ reservation.get_status_display }}</p>
-  <p>Created by: {{ reservation.created_by }} on {{ reservation.created_at }}</p>
+  <div class="page-header">
+    <h1>{{ reservation.product }} @ {{ reservation.location }}</h1>
+    {% if reservation.status == "active" %}
+      <div class="page-header__actions">
+        <form method="post" action="{% url 'inventory:release_reservation' reservation.pk %}">
+          {% csrf_token %}
+          <button type="submit" class="btn btn--primary">Release</button>
+        </form>
+      </div>
+    {% endif %}
+  </div>
 
-  {% if reservation.status == "active" %}
-    <form method="post" action="{% url 'inventory:release_reservation' reservation.pk %}">
-      {% csrf_token %}
-      <button type="submit">Release</button>
-    </form>
-  {% endif %}
+  <div class="card">
+    <dl class="definition-list">
+      <dt>Quantity</dt><dd>{{ reservation.quantity }}</dd>
+      <dt>Project reference</dt><dd>{{ reservation.project_reference }}</dd>
+      {% if reservation.final_customer %}<dt>Final customer</dt><dd>{{ reservation.final_customer }}</dd>{% endif %}
+      <dt>Status</dt><dd><span class="badge {{ reservation.status|badge_class }}">{{ reservation.get_status_display }}</span></dd>
+      <dt>Created by</dt><dd>{{ reservation.created_by }} on {{ reservation.created_at }}</dd>
+    </dl>
+  </div>
 {% endblock %}

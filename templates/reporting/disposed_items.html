@@ -3,13 +3,19 @@
 {% block title %}Disposed Items — Stock Inventory{% endblock %}
 
 {% block content %}
-  <h1>Disposed items</h1>
-  <p>Includes HDD disposal records — never deleted, always searchable.</p>
-  <p><a href="?{{ request.GET.urlencode }}&format=csv">Export CSV</a></p>
+  <div class="page-header">
+    <div>
+      <h1>Disposed items</h1>
+      <div class="page-header__subtitle">Includes HDD disposal records — never deleted, always searchable.</div>
+    </div>
+    <div class="page-header__actions">
+      <a class="btn" href="?{{ request.GET.urlencode }}&format=csv">Export CSV</a>
+    </div>
+  </div>
 
-  <form method="get" class="location-filters">
-    <input type="text" name="type" placeholder="Type (e.g. HDD)" value="{{ type_filter }}">
-    <button type="submit">Filter</button>
+  <form method="get" class="toolbar">
+    <label>Type<input type="text" name="type" placeholder="e.g. HDD" value="{{ type_filter }}"></label>
+    <button type="submit" class="btn btn--primary">Filter</button>
   </form>
 
   {% if assets %}
@@ -47,6 +53,6 @@
       </nav>
     {% endif %}
   {% else %}
-    <p>No disposed items found in your authorized scope.</p>
+    <p class="empty-state">No disposed items found in your authorized scope.</p>
   {% endif %}
 {% endblock %}

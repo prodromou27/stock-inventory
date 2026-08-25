@@ -1,3 +1,4 @@
+{% load ui_extras %}
 <h2>Select assets</h2>
 {% if assets %}
   <table>
@@ -16,12 +17,12 @@
           <td><input type="checkbox" name="unit_asset_ids" value="{{ asset.pk }}"></td>
           <td>{{ asset.product }}</td>
           <td>{{ asset.vendor_serial|default:"—" }}</td>
-          <td>{{ asset.get_status_display }}</td>
+          <td><span class="badge {{ asset.status|badge_class }}">{{ asset.get_status_display }}</span></td>
           <td>{{ asset.current_location|default:"—" }}</td>
         </tr>
       {% endfor %}
     </tbody>
   </table>
 {% else %}
-  <p>No eligible assets found in your authorized scope.</p>
+  <p class="empty-state">No eligible assets found in your authorized scope.</p>
 {% endif %}

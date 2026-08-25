@@ -3,19 +3,55 @@
 {% block title %}Movements — Stock Inventory{% endblock %}
 
 {% block content %}
-  <h1>Movements</h1>
-  <ul>
-    <li><a href="{% url 'inventory:receive_stock' %}">Receive stock</a></li>
-    <li><a href="{% url 'inventory:transfer' %}">Bulk location transfer</a></li>
-    <li><a href="{% url 'inventory:reserve' %}">Reserve stock</a></li>
-    <li><a href="{% url 'inventory:reservation_list' %}">Reservations</a></li>
-    <li><a href="{% url 'inventory:assign' %}">Assign to employee</a></li>
-    <li><a href="{% url 'inventory:deliver' %}">Deliver to customer</a></li>
-    <li><a href="{% url 'inventory:assess_return' %}">Assess returned assets</a></li>
-    <li><a href="{% url 'inventory:mark_damaged' %}">Mark damaged</a></li>
-    <li><a href="{% url 'inventory:repair_damaged' %}">Return repaired assets to stock</a></li>
-    <li><a href="{% url 'inventory:mark_lost' %}">Mark lost</a></li>
-    <li><a href="{% url 'inventory:dispose' %}">Dispose</a></li>
-  </ul>
-  <p>To record a return, open the original assignment/delivery transaction and use "Record a return."</p>
+  <div class="page-header">
+    <h1>Movements</h1>
+  </div>
+
+  <div class="card-grid">
+    <a class="action-card" href="{% url 'inventory:receive_stock' %}">
+      <span class="action-card__title">Receive stock</span>
+      <span class="action-card__desc">Record a new arrival into a location.</span>
+    </a>
+    <a class="action-card" href="{% url 'inventory:transfer' %}">
+      <span class="action-card__title">Bulk location transfer</span>
+      <span class="action-card__desc">Move stock between locations.</span>
+    </a>
+    <a class="action-card" href="{% url 'inventory:reserve' %}">
+      <span class="action-card__title">Reserve stock</span>
+      <span class="action-card__desc">Hold quantity against a project or order.</span>
+    </a>
+    <a class="action-card" href="{% url 'inventory:reservation_list' %}">
+      <span class="action-card__title">Reservations</span>
+      <span class="action-card__desc">View and release active reservations.</span>
+    </a>
+    <a class="action-card" href="{% url 'inventory:assign' %}">
+      <span class="action-card__title">Assign to employee</span>
+      <span class="action-card__desc">Hand out stock to a named employee.</span>
+    </a>
+    <a class="action-card" href="{% url 'inventory:deliver' %}">
+      <span class="action-card__title">Deliver to customer</span>
+      <span class="action-card__desc">Remove stock for an external delivery.</span>
+    </a>
+    <a class="action-card" href="{% url 'inventory:assess_return' %}">
+      <span class="action-card__title">Assess returned assets</span>
+      <span class="action-card__desc">Triage assets that have come back.</span>
+    </a>
+    <a class="action-card" href="{% url 'inventory:mark_damaged' %}">
+      <span class="action-card__title">Mark damaged</span>
+      <span class="action-card__desc">Flag assets as damaged and out of service.</span>
+    </a>
+    <a class="action-card" href="{% url 'inventory:repair_damaged' %}">
+      <span class="action-card__title">Return repaired assets to stock</span>
+      <span class="action-card__desc">Bring damaged assets back into stock.</span>
+    </a>
+    <a class="action-card" href="{% url 'inventory:mark_lost' %}">
+      <span class="action-card__title">Mark lost</span>
+      <span class="action-card__desc">Record assets as lost.</span>
+    </a>
+    <a class="action-card" href="{% url 'inventory:dispose' %}">
+      <span class="action-card__title">Dispose</span>
+      <span class="action-card__desc">Remove assets from stock permanently.</span>
+    </a>
+  </div>
+  <p class="text-muted">To record a return, open the original assignment/delivery transaction and use "Record a return."</p>
 {% endblock %}

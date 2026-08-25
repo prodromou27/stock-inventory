@@ -3,19 +3,58 @@
 {% block title %}Reports — Stock Inventory{% endblock %}
 
 {% block content %}
-  <h1>Reports</h1>
-  <ul>
-    <li><a href="{% url 'reporting:current_stock' %}">Current stock</a></li>
-    <li><a href="{% url 'reporting:stock_by_location' %}">Stock by room/location</a></li>
-    <li><a href="{% url 'reporting:reserved_stock' %}">Reserved stock</a></li>
-    <li><a href="{% url 'reporting:employee_assignments' %}">Employee assignments</a></li>
-    <li><a href="{% url 'reporting:customer_deliveries' %}">Customer deliveries</a></li>
-    <li><a href="{% url 'reporting:stock_by_project_reference' %}">Stock by Project Reference</a></li>
-    <li><a href="{% url 'reporting:temporary_assignments' %}">Temporary assignments</a></li>
-    <li><a href="{% url 'reporting:damaged_assets' %}">Damaged assets</a></li>
-    <li><a href="{% url 'reporting:lost_assets' %}">Lost assets</a></li>
-    <li><a href="{% url 'reporting:disposed_items' %}">Disposed items (including HDDs)</a></li>
-    <li><a href="{% url 'reporting:movement_history' %}">Complete asset movement history</a></li>
-    <li><a href="{% url 'reporting:low_stock' %}">Low stock</a> (empty unless a product has a threshold configured)</li>
-  </ul>
+  <div class="page-header">
+    <h1>Reports</h1>
+  </div>
+
+  <div class="card-grid">
+    <a class="action-card" href="{% url 'reporting:current_stock' %}">
+      <span class="action-card__title">Current stock</span>
+      <span class="action-card__desc">Units and quantity balances on hand right now.</span>
+    </a>
+    <a class="action-card" href="{% url 'reporting:stock_by_location' %}">
+      <span class="action-card__title">Stock by room/location</span>
+      <span class="action-card__desc">Stock broken down by the location tree.</span>
+    </a>
+    <a class="action-card" href="{% url 'reporting:reserved_stock' %}">
+      <span class="action-card__title">Reserved stock</span>
+      <span class="action-card__desc">Everything currently held by a reservation.</span>
+    </a>
+    <a class="action-card" href="{% url 'reporting:employee_assignments' %}">
+      <span class="action-card__title">Employee assignments</span>
+      <span class="action-card__desc">Assets currently assigned to employees.</span>
+    </a>
+    <a class="action-card" href="{% url 'reporting:customer_deliveries' %}">
+      <span class="action-card__title">Customer deliveries</span>
+      <span class="action-card__desc">Assets delivered to external customers.</span>
+    </a>
+    <a class="action-card" href="{% url 'reporting:stock_by_project_reference' %}">
+      <span class="action-card__title">Stock by Project Reference</span>
+      <span class="action-card__desc">Movements grouped by project reference.</span>
+    </a>
+    <a class="action-card" href="{% url 'reporting:temporary_assignments' %}">
+      <span class="action-card__title">Temporary assignments</span>
+      <span class="action-card__desc">Assignments expected to come back.</span>
+    </a>
+    <a class="action-card" href="{% url 'reporting:damaged_assets' %}">
+      <span class="action-card__title">Damaged assets</span>
+      <span class="action-card__desc">Assets currently flagged as damaged.</span>
+    </a>
+    <a class="action-card" href="{% url 'reporting:lost_assets' %}">
+      <span class="action-card__title">Lost assets</span>
+      <span class="action-card__desc">Assets recorded as lost.</span>
+    </a>
+    <a class="action-card" href="{% url 'reporting:disposed_items' %}">
+      <span class="action-card__title">Disposed items</span>
+      <span class="action-card__desc">Includes disposed HDDs.</span>
+    </a>
+    <a class="action-card" href="{% url 'reporting:movement_history' %}">
+      <span class="action-card__title">Complete movement history</span>
+      <span class="action-card__desc">Every recorded asset movement.</span>
+    </a>
+    <a class="action-card" href="{% url 'reporting:low_stock' %}">
+      <span class="action-card__title">Low stock</span>
+      <span class="action-card__desc">Empty unless a product has a threshold configured.</span>
+    </a>
+  </div>
 {% endblock %}

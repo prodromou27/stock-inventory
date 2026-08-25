@@ -1,4 +1,4 @@
-{% load static %}<!doctype html>
+{% load static ui_extras %}<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -7,47 +7,99 @@
   <link rel="stylesheet" href="{% static 'css/app.css' %}">
 </head>
 <body>
-  <header class="app-header">
-    <div class="app-header__brand">Stock Inventory</div>
-    <nav class="app-header__nav">
-      {% if user.is_authenticated %}
-        <a href="{% url 'catalog:product_list' %}">Products</a>
-        <a href="{% url 'inventory:asset_list' %}">Assets</a>
-        <a href="{% url 'inventory:balance_list' %}">Stock Balances</a>
-        <a href="{% url 'inventory:transaction_list' %}">Transactions</a>
-        {% if user_is_administrator or "StockManager" in user_role_groups %}
-          <a href="{% url 'inventory:movements_hub' %}">Movements</a>
-        {% endif %}
-        <a href="{% url 'reporting:hub' %}">Reports</a>
-        <a href="{% url 'locations:list' %}">Locations</a>
+{% if user.is_authenticated %}
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="sidebar__brand" href="{% url 'core:home' %}">
+        <span class="sidebar__brand-mark">SI</span>
+        Stock Inventory
+      </a>
+      <nav class="sidebar__nav">
+        <div class="sidebar__group">
+          <div class="sidebar__group-label">Overview</div>
+          <a class="sidebar__link {% nav_active 'home' %}" href="{% url 'core:home' %}">Dashboard</a>
+        </div>
+
+        <div class="sidebar__group">
+          <div class="sidebar__group-label">Catalog</div>
+          <a class="sidebar__link {% nav_active_app 'catalog' %}" href="{% url 'catalog:product_list' %}">Products</a>
+        </div>
+
+        <div class="sidebar__group">
+          <div class="sidebar__group-label">Inventory</div>
+          <a class="sidebar__link {% nav_active 'asset_list' 'asset_detail' 'asset_correct' %}" href="{% url 'inventory:asset_list' %}">Assets</a>
+          <a class="sidebar__link {% nav_active 'balance_list' 'balance_detail' 'balance_correct' %}" href="{% url 'inventory:balance_list' %}">Stock Balances</a>
+          <a class="sidebar__link {% nav_active 'transaction_list' 'transaction_detail' 'transaction_reverse' 'return_stock' %}" href="{% url 'inventory:transaction_list' %}">Transactions</a>
+          {% if user_is_administrator or "StockManager" in user_role_groups %}
+            <a class="sidebar__link {% nav_active 'movements_hub' 'receive_stock' 'transfer' 'reserve' 'reservation_list' 'reservation_detail' 'release_reservation' 'assign' 'deliver' 'assess_return' 'mark_damaged' 'repair_damaged' 'mark_lost' 'dispose' %}" href="{% url 'inventory:movements_hub' %}">Movements</a>
+          {% endif %}
+        </div>
+
+        <div class="sidebar__group">
+          <div class="sidebar__group-label">Insights</div>
+          <a class="sidebar__link {% nav_active_app 'reporting' %}" href="{% url 'reporting:hub' %}">Reports</a>
+          <a class="sidebar__link {% nav_active_app 'locations' %}" href="{% url 'locations:list' %}">Locations</a>
+        </div>
+
         {% if user_is_administrator %}
-          <a href="{% url 'accounts:user_access_list' %}">Manage Access</a>
-          <a href="{% url 'audit:log' %}">Audit Log</a>
-          <a href="{% url 'imports:batch_list' %}">Excel Import</a>
-          <a href="{% url 'exports:settings' %}">Export Settings</a>
-          <a href="{% url 'documents:template_hub' %}">Document Templates</a>
+          <div class="sidebar__group">
+            <div class="sidebar__group-label">Administration</div>
+            <a class="sidebar__link {% nav_active_app 'accounts' %}" href="{% url 'accounts:user_access_list' %}">Manage Access</a>
+            <a class="sidebar__link {% nav_active_app 'audit' %}" href="{% url 'audit:log' %}">Audit Log</a>
+            <a class="sidebar__link {% nav_active_app 'imports' %}" href="{% url 'imports:batch_list' %}">Excel Import</a>
+            <a class="sidebar__link {% nav_active_app 'exports' %}" href="{% url 'exports:settings' %}">Export Settings</a>
+            <a class="sidebar__link {% nav_active_app 'documents' %}" href="{% url 'documents:template_hub' %}">Document Templates</a>
+          </div>
         {% endif %}
-        <span class="app-header__user">
-          {{ user.get_username }}{% if user_role_groups %} ({{ user_role_groups|join:", " }}){% endif %}
-        </span>
-        <form method="post" action="{% url 'logout' %}" class="app-header__logout">
+      </nav>
+    </aside>
+
+    <div class="app-main-col">
+      <header class="topbar">
+        <div class="topbar__user">
+          <strong>{{ user.get_username }}</strong>
+          {% if user_role_groups %}
+            <span class="topbar__role">{{ user_role_groups|join:", " }}</span>
+          {% endif %}
+        </div>
+        <form method="post" action="{% url 'logout' %}" class="topbar__logout">
           {% csrf_token %}
           <button type="submit">Log out</button>
         </form>
-      {% else %}
-        <a href="{% url 'login' %}">Log in</a>
+      </header>
+      <main class="content">
+        {% if messages %}
+          <ul class="messages">
+            {% for message in messages %}
+              <li class="messages__item messages__item--{{ message.tags }}">{{ message }}</li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+{% else %}
+  <div class="auth-shell">
+    <div class="auth-card">
+      <div class="auth-card__brand">
+        <span class="sidebar__brand-mark">SI</span>
+        Stock Inventory
+      </div>
+      {% if messages %}
+        <ul class="messages">
+          {% for message in messages %}
+            <li class="messages__item messages__item--{{ message.tags }}">{{ message }}</li>
+          {% endfor %}
+        </ul>
       {% endif %}
-    </nav>
-  </header>
-  <main class="app-main">
-    {% if messages %}
-      <ul class="messages">
-        {% for message in messages %}
-          <li class="messages__item messages__item--{{ message.tags }}">{{ message }}</li>
-        {% endfor %}
-      </ul>
-    {% endif %}
-    {% block content %}{% endblock %}
-  </main>
+{% endif %}
+
+      {% block content %}{% endblock %}
+
+{% if user.is_authenticated %}
+      </main>
+    </div>
+  </div>
+{% else %}
+    </div>
+  </div>
+{% endif %}
 </body>
 </html>

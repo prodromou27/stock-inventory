@@ -3,8 +3,10 @@
 {% block title %}{{ document_type_label }} Template — Stock Inventory{% endblock %}
 
 {% block content %}
-  <h1>{{ document_type_label }} document template</h1>
   <p><a href="{% url 'documents:template_hub' %}">&larr; All document templates</a></p>
+  <div class="page-header">
+    <h1>{{ document_type_label }} document template</h1>
+  </div>
 
   {% if form.non_field_errors %}
     <ul class="messages">
@@ -17,8 +19,8 @@
   <div class="template-editor-layout">
     <form method="post" enctype="multipart/form-data">
       {% csrf_token %}
-      <p>
-        <label for="{{ form.html_source.id_for_label }}">{{ form.html_source.label }}</label><br>
+      <p class="form-row--wide">
+        <label for="{{ form.html_source.id_for_label }}">{{ form.html_source.label }}</label>
         {{ form.html_source }}
         {% if form.html_source.errors %}<div class="messages__item messages__item--error">{{ form.html_source.errors }}</div>{% endif %}
       </p>
@@ -27,24 +29,26 @@
         <label for="{{ form.logo.id_for_label }}">{{ form.logo.label }}</label>
         {{ form.logo }}
         {% if template_obj.logo %}
-          <br><span>Current logo on file: {{ template_obj.logo.name }} — use Preview to see it rendered.</span>
+          <span class="helptext">Current logo on file: {{ template_obj.logo.name }} — use Preview to see it rendered.</span>
         {% endif %}
       </p>
       <p>
         <label>{{ form.remove_logo }} {{ form.remove_logo.label }}</label>
       </p>
 
-      <button type="submit">Save</button>
-      <button type="submit" formaction="{% url 'documents:template_preview' document_type %}" formtarget="_blank">
-        Preview (opens a sample PDF in a new tab)
-      </button>
+      <div class="form-actions">
+        <button type="submit" class="btn btn--primary">Save</button>
+        <button type="submit" class="btn" formaction="{% url 'documents:template_preview' document_type %}" formtarget="_blank">
+          Preview (opens a sample PDF in a new tab)
+        </button>
+      </div>
     </form>
 
     {% if template_obj %}
       <form method="post" action="{% url 'documents:template_reset' document_type %}"
             onsubmit="return confirm('Reset to the packaged default? Your customizations will be lost.');">
         {% csrf_token %}
-        <button type="submit">Reset to packaged default</button>
+        <button type="submit" class="btn btn--danger btn--sm">Reset to packaged default</button>
       </form>
     {% endif %}
 

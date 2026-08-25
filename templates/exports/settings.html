@@ -1,32 +1,44 @@
 {% extends "base.html" %}
+{% load ui_extras %}
 
 {% block title %}Export Settings — Stock Inventory{% endblock %}
 
 {% block content %}
-  <h1>Scheduled inventory export</h1>
-  <p>
-    Writes a full Excel snapshot of unit assets and stock balances to a local or network path on the schedule
-    below — a human-readable safety net alongside the database backup (<code>deploy/backup.sh</code>).
-  </p>
+  <div class="page-header">
+    <div>
+      <h1>Scheduled inventory export</h1>
+      <div class="page-header__subtitle">
+        Writes a full Excel snapshot of unit assets and stock balances to a local or network path on the schedule
+        below — a human-readable safety net alongside the database backup (<code>deploy/backup.sh</code>).
+      </div>
+    </div>
+  </div>
 
-  {% if settings_obj.last_run_at %}
-    <p>
-      Last run: {{ settings_obj.last_run_at }} —
-      <strong>{{ settings_obj.get_last_run_status_display }}</strong>
-      {% if settings_obj.last_run_detail %}({{ settings_obj.last_run_detail }}){% endif %}
-    </p>
-  {% else %}
-    <p>Never run yet.</p>
-  {% endif %}
+  <div class="card">
+    {% if settings_obj.last_run_at %}
+      <dl class="definition-list">
+        <dt>Last run</dt><dd>{{ settings_obj.last_run_at }}</dd>
+        <dt>Result</dt>
+        <dd>
+          <span class="badge {{ settings_obj.last_run_status|badge_class }}">{{ settings_obj.get_last_run_status_display }}</span>
+          {% if settings_obj.last_run_detail %}<span class="text-muted">{{ settings_obj.last_run_detail }}</span>{% endif %}
+        </dd>
+      </dl>
+    {% else %}
+      <p class="text-muted" style="margin:0;">Never run yet.</p>
+    {% endif %}
+  </div>
 
   <form method="post">
     {% csrf_token %}
     {{ form.as_p }}
-    <button type="submit">Save</button>
+    <div class="form-actions">
+      <button type="submit" class="btn btn--primary">Save</button>
+    </div>
   </form>
 
   <form method="post" action="{% url 'exports:run_now' %}">
     {% csrf_token %}
-    <button type="submit">Run export now</button>
+    <button type="submit" class="btn">Run export now</button>
   </form>
 {% endblock %}

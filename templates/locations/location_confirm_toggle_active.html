@@ -13,7 +13,11 @@
   {% endif %}
   <form method="post">
     {% csrf_token %}
-    <button type="submit">{% if location.is_active %}Deactivate{% else %}Reactivate{% endif %}</button>
-    <a href="{{ location.get_absolute_url }}">Cancel</a>
+    <div class="form-actions">
+      <button type="submit" class="btn {% if location.is_active %}btn--danger{% else %}btn--primary{% endif %}">
+        {% if location.is_active %}Deactivate{% else %}Reactivate{% endif %}
+      </button>
+      <a class="btn btn--ghost" href="{{ location.get_absolute_url }}">Cancel</a>
+    </div>
   </form>
 {% endblock %}

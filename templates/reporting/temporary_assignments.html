@@ -3,8 +3,12 @@
 {% block title %}Temporary Assignments — Stock Inventory{% endblock %}
 
 {% block content %}
-  <h1>Temporary assignments</h1>
-  <p>Expected return dates are informational only — no overdue automation.</p>
+  <div class="page-header">
+    <div>
+      <h1>Temporary assignments</h1>
+      <div class="page-header__subtitle">Expected return dates are informational only — no overdue automation.</div>
+    </div>
+  </div>
 
   {% if transactions %}
     <table>
@@ -30,6 +34,6 @@
       </nav>
     {% endif %}
   {% else %}
-    <p>No temporary assignments found in your authorized scope.</p>
+    <p class="empty-state">No temporary assignments found in your authorized scope.</p>
   {% endif %}
 {% endblock %}

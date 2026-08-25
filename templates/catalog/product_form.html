@@ -38,6 +38,8 @@
         </label>
       </p>
     {% endif %}
-    <button type="submit">{% if product %}Save{% else %}Create{% endif %}</button>
+    <div class="form-actions">
+      <button type="submit" class="btn btn--primary">{% if product %}Save{% else %}Create{% endif %}</button>
+    </div>
   </form>
 {% endblock %}

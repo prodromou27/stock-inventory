@@ -3,7 +3,9 @@
 {% block title %}Reserved Stock — Stock Inventory{% endblock %}
 
 {% block content %}
-  <h1>Reserved stock</h1>
+  <div class="page-header">
+    <h1>Reserved stock</h1>
+  </div>
 
   <h2>Reserved units</h2>
   {% if units %}
@@ -31,7 +33,7 @@
       </nav>
     {% endif %}
   {% else %}
-    <p>No reserved units.</p>
+    <p class="empty-state">No reserved units.</p>
   {% endif %}
 
   <h2>Reserved quantities</h2>
@@ -52,6 +54,6 @@
       </tbody>
     </table>
   {% else %}
-    <p>No active quantity reservations.</p>
+    <p class="empty-state">No active quantity reservations.</p>
   {% endif %}
 {% endblock %}

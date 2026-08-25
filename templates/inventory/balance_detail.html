@@ -3,14 +3,29 @@
 {% block title %}{{ balance.product }} @ {{ balance.location }} — Stock Inventory{% endblock %}
 
 {% block content %}
-  <h1>{{ balance.product }} @ {{ balance.location }}</h1>
-  <p>On hand: {{ balance.on_hand_quantity }}</p>
-  <p>Reserved: {{ balance.reserved_quantity }}</p>
-  <p>Available: {{ balance.available_quantity }}</p>
+  <div class="page-header">
+    <h1>{{ balance.product }} @ {{ balance.location }}</h1>
+    {% if user_is_administrator %}
+      <div class="page-header__actions">
+        <a class="btn" href="{% url 'inventory:balance_correct' balance.pk %}">Administrator correction</a>
+      </div>
+    {% endif %}
+  </div>
 
-  {% if user_is_administrator %}
-    <p><a href="{% url 'inventory:balance_correct' balance.pk %}">Administrator correction</a></p>
-  {% endif %}
+  <div class="stat-grid">
+    <div class="stat-card">
+      <div class="stat-card__value">{{ balance.on_hand_quantity }}</div>
+      <div class="stat-card__label">On hand</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-card__value">{{ balance.reserved_quantity }}</div>
+      <div class="stat-card__label">Reserved</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-card__value">{{ balance.available_quantity }}</div>
+      <div class="stat-card__label">Available</div>
+    </div>
+  </div>
 
   <h2>Ledger</h2>
   {% if lines %}
@@ -35,6 +50,6 @@
       </tbody>
     </table>
   {% else %}
-    <p>No ledger lines.</p>
+    <p class="empty-state">No ledger lines.</p>
   {% endif %}
 {% endblock %}

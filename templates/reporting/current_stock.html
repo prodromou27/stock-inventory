@@ -3,7 +3,9 @@
 {% block title %}Current Stock — Stock Inventory{% endblock %}
 
 {% block content %}
-  <h1>Current stock</h1>
+  <div class="page-header">
+    <h1>Current stock</h1>
+  </div>
 
   <h2>Units in stock</h2>
   {% if units %}
@@ -30,7 +32,7 @@
       </nav>
     {% endif %}
   {% else %}
-    <p>No units currently in stock.</p>
+    <p class="empty-state">No units currently in stock.</p>
   {% endif %}
 
   <h2>Quantity balances (on hand)</h2>
@@ -51,6 +53,6 @@
       </tbody>
     </table>
   {% else %}
-    <p>No quantity stock on hand.</p>
+    <p class="empty-state">No quantity stock on hand.</p>
   {% endif %}
 {% endblock %}

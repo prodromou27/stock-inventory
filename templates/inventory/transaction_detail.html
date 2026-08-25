@@ -3,36 +3,42 @@
 {% block title %}{{ transaction.transaction_number }} — Stock Inventory{% endblock %}
 
 {% block content %}
-  <h1>Transaction {{ transaction.transaction_number }}</h1>
-  <p>Type: {{ transaction.get_movement_type_display }}</p>
-  <p>Date: {{ transaction.occurred_at }}</p>
-  <p>Performed by: {{ transaction.performed_by }}</p>
-  {% if transaction.source_location %}<p>Source location: {{ transaction.source_location }}</p>{% endif %}
-  {% if transaction.destination_location %}<p>Destination location: {{ transaction.destination_location }}</p>{% endif %}
-  {% if transaction.project_reference %}<p>Project reference: {{ transaction.project_reference }}</p>{% endif %}
-  {% if transaction.final_customer %}<p>Final customer: {{ transaction.final_customer }}</p>{% endif %}
-  {% if transaction.notes %}<p>Notes: {{ transaction.notes }}</p>{% endif %}
+  <div class="page-header">
+    <h1>Transaction {{ transaction.transaction_number }}</h1>
+    <div class="page-header__actions">
+      {% if can_return and not already_reversed %}
+        <a class="btn btn--primary" href="{% url 'inventory:return_stock' transaction.pk %}">Record a return</a>
+      {% endif %}
+      {% if user_is_administrator and is_reversal_target %}
+        {% if already_reversed %}
+          <span class="badge badge--neutral">Already reversed</span>
+        {% else %}
+          <a class="btn btn--danger" href="{% url 'inventory:transaction_reverse' transaction.pk %}">Reverse this transaction</a>
+        {% endif %}
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card">
+    <dl class="definition-list">
+      <dt>Type</dt><dd>{{ transaction.get_movement_type_display }}</dd>
+      <dt>Date</dt><dd>{{ transaction.occurred_at }}</dd>
+      <dt>Performed by</dt><dd>{{ transaction.performed_by }}</dd>
+      {% if transaction.source_location %}<dt>Source location</dt><dd>{{ transaction.source_location }}</dd>{% endif %}
+      {% if transaction.destination_location %}<dt>Destination location</dt><dd>{{ transaction.destination_location }}</dd>{% endif %}
+      {% if transaction.project_reference %}<dt>Project reference</dt><dd>{{ transaction.project_reference }}</dd>{% endif %}
+      {% if transaction.final_customer %}<dt>Final customer</dt><dd>{{ transaction.final_customer }}</dd>{% endif %}
+      {% if transaction.notes %}<dt>Notes</dt><dd>{{ transaction.notes }}</dd>{% endif %}
+      {% if transaction.related_transaction %}
+        <dt>Related to</dt>
+        <dd><a href="{{ transaction.related_transaction.get_absolute_url }}">{{ transaction.related_transaction.transaction_number }}</a></dd>
+      {% endif %}
+    </dl>
+  </div>
+
   {% if transaction.duplicate_serial_acknowledged %}
     <p class="messages__item messages__item--warning">A duplicate serial was acknowledged on this transaction.</p>
   {% endif %}
-  {% if transaction.related_transaction %}
-    <p>Related to:
-      <a href="{{ transaction.related_transaction.get_absolute_url }}">{{ transaction.related_transaction.transaction_number }}</a>
-    </p>
-  {% endif %}
-
-  <p>
-    {% if can_return and not already_reversed %}
-      <a href="{% url 'inventory:return_stock' transaction.pk %}">Record a return against this transaction</a>
-    {% endif %}
-    {% if user_is_administrator and is_reversal_target %}
-      {% if already_reversed %}
-        <span>Already reversed.</span>
-      {% else %}
-        &nbsp;<a href="{% url 'inventory:transaction_reverse' transaction.pk %}">Reverse this transaction</a>
-      {% endif %}
-    {% endif %}
-  </p>
 
   <h2>Lines</h2>
   <table>
@@ -73,12 +79,12 @@
         {% endfor %}
       </ul>
     {% else %}
-      <p>No documents generated yet.</p>
+      <p class="text-muted">No documents generated yet.</p>
     {% endif %}
     {% if user_is_administrator or "StockManager" in user_role_groups %}
       <form method="post" action="{% url 'documents:generate_document' transaction.pk %}">
         {% csrf_token %}
-        <button type="submit">Generate printable document</button>
+        <button type="submit" class="btn btn--primary btn--sm">Generate printable document</button>
       </form>
     {% endif %}
   {% endif %}
@@ -100,9 +106,9 @@
       {% endfor %}
     </ul>
   {% else %}
-    <p>No attachments.</p>
+    <p class="text-muted">No attachments.</p>
   {% endif %}
   {% if user_is_administrator or "StockManager" in user_role_groups %}
-    <p><a href="{% url 'documents:attachment_upload' transaction.pk %}">Upload attachment</a></p>
+    <p><a class="btn btn--sm" href="{% url 'documents:attachment_upload' transaction.pk %}">Upload attachment</a></p>
   {% endif %}
 {% endblock %}

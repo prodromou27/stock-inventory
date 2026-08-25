@@ -1,13 +1,16 @@
 {% extends "base.html" %}
+{% load ui_extras %}
 
 {% block title %}Stock by Project Reference — Stock Inventory{% endblock %}
 
 {% block content %}
-  <h1>Stock by Project Reference</h1>
+  <div class="page-header">
+    <h1>Stock by Project Reference</h1>
+  </div>
 
-  <form method="get" class="location-filters">
-    <input type="text" name="project_reference" placeholder="Project reference" value="{{ project_reference }}">
-    <button type="submit">Search</button>
+  <form method="get" class="toolbar">
+    <label>Project reference<input type="text" name="project_reference" value="{{ project_reference }}"></label>
+    <button type="submit" class="btn btn--primary">Search</button>
   </form>
 
   {% if project_reference %}
@@ -20,7 +23,7 @@
             <tr>
               <td><a href="{{ asset.get_absolute_url }}">{{ asset.product }}</a></td>
               <td>{{ asset.vendor_serial|default:"—" }}</td>
-              <td>{{ asset.get_status_display }}</td>
+              <td><span class="badge {{ asset.status|badge_class }}">{{ asset.get_status_display }}</span></td>
               <td>{{ asset.current_location|default:"—" }}</td>
             </tr>
           {% endfor %}
@@ -39,7 +42,7 @@
         </nav>
       {% endif %}
     {% else %}
-      <p>No units for this project reference.</p>
+      <p class="empty-state">No units for this project reference.</p>
     {% endif %}
 
     <h2>Reservations for "{{ project_reference }}"</h2>
@@ -52,13 +55,13 @@
               <td><a href="{{ reservation.get_absolute_url }}">{{ reservation.product }}</a></td>
               <td>{{ reservation.location }}</td>
               <td>{{ reservation.quantity }}</td>
-              <td>{{ reservation.get_status_display }}</td>
+              <td><span class="badge {{ reservation.status|badge_class }}">{{ reservation.get_status_display }}</span></td>
             </tr>
           {% endfor %}
         </tbody>
       </table>
     {% else %}
-      <p>No reservations for this project reference.</p>
+      <p class="empty-state">No reservations for this project reference.</p>
     {% endif %}
   {% else %}
     <h2>Known project references</h2>
@@ -69,7 +72,7 @@
         {% endfor %}
       </ul>
     {% else %}
-      <p>No project references recorded yet.</p>
+      <p class="empty-state">No project references recorded yet.</p>
     {% endif %}
   {% endif %}
 {% endblock %}
