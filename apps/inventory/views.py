@@ -570,12 +570,14 @@ class ReturnView(LoginRequiredMixin, RoleRequiredMixin, View):
     template_name = "inventory/return_form.html"
 
     def _original_transaction(self, pk):
-        return get_object_or_404(
+        original = get_object_or_404(
             InventoryTransaction.objects.filter(
                 movement_type__in=(MovementType.ASSIGNMENT, MovementType.DELIVERY)
             ),
             pk=pk,
         )
+        require_transaction_access(self.request.user, original)
+        return original
 
     def _outstanding_lines(self, original_transaction):
         returned_asset_ids = set(

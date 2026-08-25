@@ -195,6 +195,55 @@ class TestExecuteBatch:
         assert batch.imported_count == 1
         assert UnitAsset.objects.filter(vendor_serial="SN-IDEMPOTENT").count() == 1
 
+    def test_second_executor_is_rejected_while_batch_is_running(self, administrator, location_tree):
+        upload = _csv_upload([_base_row(LOCATION="Room A", **{"S/N": "SN-CONCURRENT"})])
+        batch, _ = services.create_batch_from_upload(uploaded_file=upload, user=administrator)
+        batch.status = ImportBatchStatus.EXECUTING
+        batch.save(update_fields=["status"])
+
+        with pytest.raises(ValidationError, match="already executing"):
+            services.execute_batch(batch=batch, user=administrator)
+        assert not UnitAsset.objects.filter(vendor_serial="SN-CONCURRENT").exists()
+
+    def test_duplicate_import_requires_explicit_row_acknowledgement(
+        self, administrator, location_tree, unit_product
+    ):
+        from apps.inventory.services.receipts import receive_stock
+
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at="2024-01-01",
+            vendor_serial="SN-IMPORT-ACK",
+        )
+        upload = _csv_upload(
+            [
+                _base_row(
+                    LOCATION="Room A",
+                    BRAND=unit_product.brand.name,
+                    **{
+                        "MODEL/Part No./SKU": unit_product.model,
+                        "S/N": "SN-IMPORT-ACK",
+                    },
+                )
+            ]
+        )
+        batch, _ = services.create_batch_from_upload(uploaded_file=upload, user=administrator)
+        services.execute_batch(batch=batch, user=administrator)
+        assert UnitAsset.objects.filter(vendor_serial="SN-IMPORT-ACK").count() == 1
+
+        batch.refresh_from_db()
+        row = batch.rows.get()
+        services.acknowledge_row_duplicate_serial(row=row, user=administrator)
+        services.execute_batch(batch=batch, user=administrator)
+
+        assert UnitAsset.objects.filter(vendor_serial="SN-IMPORT-ACK").count() == 2
+        assert AuditEvent.objects.filter(
+            event_type=AuditEvent.EventType.DUPLICATE_SERIAL_ACKNOWLEDGED,
+            object_id=str(row.pk),
+        ).exists()
+
     def test_row_with_unresolved_location_is_not_executed(self, administrator, location_tree):
         upload = _csv_upload([_base_row(LOCATION="Nowhere Real", **{"S/N": "SN-NOLOC"})])
         batch, _ = services.create_batch_from_upload(uploaded_file=upload, user=administrator)

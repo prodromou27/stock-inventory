@@ -8,7 +8,12 @@ from apps.locations.scoping import require_location_access
 
 from ..models import MovementType, ReservationStatus, StockReservation, UnitAsset, UnitStatus
 from ..transitions import validate_unit_transition
-from .ledger import adjust_reserved, create_transaction_header, write_unit_line
+from .ledger import (
+    adjust_reserved,
+    create_transaction_header,
+    write_reservation_line,
+    write_unit_line,
+)
 
 
 @transaction.atomic
@@ -77,7 +82,7 @@ def reserve_stock(
     for entry in quantity_lines:
         product, location, quantity = entry["product"], entry["location"], entry["quantity"]
         adjust_reserved(product=product, location=location, delta=quantity)
-        StockReservation.objects.create(
+        reservation = StockReservation.objects.create(
             product=product,
             location=location,
             quantity=quantity,
@@ -87,6 +92,14 @@ def reserve_stock(
             created_by=user,
             reservation_transaction=txn,
         )
+        write_reservation_line(
+            transaction=txn,
+            line_number=line_number,
+            reservation=reservation,
+            reserved_quantity_delta=quantity,
+            notes=notes,
+        )
+        line_number += 1
 
     record_event(
         actor=user,
@@ -147,11 +160,23 @@ def release_reservation(*, user, occurred_at, unit_asset_ids=None, reservations=
         line_number += 1
 
     for reservation in reservations:
+        reservation = StockReservation.objects.select_for_update().get(pk=reservation.pk)
+        if reservation.status != ReservationStatus.ACTIVE:
+            raise ValidationError(f"Reservation {reservation.pk} is not active.")
+        remaining = reservation.quantity - reservation.consumed_quantity
         adjust_reserved(
-            product=reservation.product, location=reservation.location, delta=-reservation.quantity
+            product=reservation.product, location=reservation.location, delta=-remaining
         )
         reservation.status = ReservationStatus.RELEASED
         reservation.save(update_fields=["status"])
+        write_reservation_line(
+            transaction=txn,
+            line_number=line_number,
+            reservation=reservation,
+            reserved_quantity_delta=-remaining,
+            notes=notes,
+        )
+        line_number += 1
 
     record_event(
         actor=user,

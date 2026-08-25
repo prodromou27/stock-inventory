@@ -3,7 +3,7 @@ from datetime import date
 import pytest
 from django.core.exceptions import ValidationError
 
-from apps.inventory.models import UnitAsset, UnitStatus
+from apps.inventory.models import StockBalance, UnitAsset, UnitStatus
 from apps.inventory.services.assignments import assign_to_employee
 from apps.inventory.services.receipts import receive_stock
 from apps.inventory.services.returns import assess_return, return_stock
@@ -11,6 +11,50 @@ from apps.inventory.services.returns import assess_return, return_stock
 
 @pytest.mark.django_db
 class TestReturnStock:
+    def test_quantity_returns_cannot_exceed_original_outstanding_amount(
+        self, administrator, quantity_product, location_tree
+    ):
+        receive_stock(
+            user=administrator,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=10,
+        )
+        issue = assign_to_employee(
+            user=administrator,
+            employee_name="Sam",
+            occurred_at=date.today(),
+            quantity_lines=[
+                {"product": quantity_product, "location": location_tree["room"], "quantity": 10}
+            ],
+        )
+        return_stock(
+            user=administrator,
+            original_transaction=issue,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity_lines=[{"product": quantity_product, "quantity": 4}],
+        )
+        return_stock(
+            user=administrator,
+            original_transaction=issue,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity_lines=[{"product": quantity_product, "quantity": 6}],
+        )
+
+        with pytest.raises(ValidationError):
+            return_stock(
+                user=administrator,
+                original_transaction=issue,
+                location=location_tree["room"],
+                occurred_at=date.today(),
+                quantity_lines=[{"product": quantity_product, "quantity": 1}],
+            )
+        balance = StockBalance.objects.get(product=quantity_product, location=location_tree["room"])
+        assert balance.on_hand_quantity == 10
+
     def test_partial_return_leaves_other_lines_assigned(
         self, administrator, unit_product, location_tree
     ):

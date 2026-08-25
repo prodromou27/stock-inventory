@@ -110,6 +110,15 @@ class UnitAsset(UUIDPrimaryKeyModel, UserStampedModel):
         self.normalized_serial = " ".join((self.vendor_serial or "").split()).upper()
         super().save(*args, **kwargs)
 
+    def clean(self):
+        super().clean()
+        from django.core.exceptions import ValidationError
+
+        from apps.catalog.models import TrackingMethod
+
+        if self.product_id and self.product.tracking_method != TrackingMethod.UNIT:
+            raise ValidationError({"product": "Unit assets require a unit-tracked product."})
+
     def get_absolute_url(self):
         return reverse("inventory:asset_detail", kwargs={"pk": self.pk})
 
@@ -293,6 +302,7 @@ class StockReservation(UUIDPrimaryKeyModel):
     consuming_transaction = models.ForeignKey(
         InventoryTransaction, null=True, blank=True, on_delete=models.PROTECT, related_name="+"
     )
+    consumed_quantity = models.PositiveIntegerField(default=0)
 
     class Meta:
         indexes = [
@@ -327,6 +337,14 @@ class InventoryTransactionLine(UUIDPrimaryKeyModel, AppendOnlyModel):
         "catalog.Product", on_delete=models.PROTECT, related_name="transaction_lines"
     )
     quantity_delta = models.IntegerField()
+    reserved_quantity_delta = models.IntegerField(default=0)
+    stock_reservation = models.ForeignKey(
+        StockReservation,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="ledger_lines",
+    )
     from_status = models.CharField(max_length=20, choices=UnitStatus.choices, null=True, blank=True)
     to_status = models.CharField(max_length=20, choices=UnitStatus.choices, null=True, blank=True)
     from_location = models.ForeignKey(
@@ -374,8 +392,15 @@ class InventoryTransactionLine(UUIDPrimaryKeyModel, AppendOnlyModel):
             # enforced solely in services/ledger.py, per doc 02's recommendation.
             models.CheckConstraint(
                 condition=(
-                    (models.Q(unit_asset__isnull=False) & models.Q(quantity_delta__in=[-1, 1]))
-                    | (models.Q(unit_asset__isnull=True) & ~models.Q(quantity_delta=0))
+                    (
+                        models.Q(unit_asset__isnull=False)
+                        & models.Q(quantity_delta__in=[-1, 1])
+                        & models.Q(reserved_quantity_delta=0)
+                    )
+                    | (
+                        models.Q(unit_asset__isnull=True)
+                        & (~models.Q(quantity_delta=0) | ~models.Q(reserved_quantity_delta=0))
+                    )
                 ),
                 name="txnline_quantity_delta_valid",
             ),

@@ -5,8 +5,22 @@ from apps.audit.models import AuditEvent
 from apps.audit.services import record_event
 from apps.core.authorization import ADMINISTRATOR, require_role
 
-from ..models import InventoryTransaction, MovementType, StockBalance, UnitAsset
-from .ledger import adjust_balance, create_transaction_header, write_quantity_line, write_unit_line
+from ..models import (
+    InventoryTransaction,
+    MovementType,
+    ReservationStatus,
+    StockBalance,
+    StockReservation,
+    UnitAsset,
+)
+from .ledger import (
+    adjust_balance,
+    adjust_reserved,
+    create_transaction_header,
+    write_quantity_line,
+    write_reservation_line,
+    write_unit_line,
+)
 
 
 @transaction.atomic
@@ -169,6 +183,67 @@ def reverse_transaction(*, user, original_transaction, occurred_at, reason):
                 notes=reason,
             )
         else:
+            if line.stock_reservation_id:
+                reservation = StockReservation.objects.select_for_update().get(
+                    pk=line.stock_reservation_id
+                )
+                adjust_reserved(
+                    product=line.product,
+                    location=reservation.location,
+                    delta=-line.reserved_quantity_delta,
+                )
+                reservation.status = (
+                    ReservationStatus.RELEASED
+                    if line.reserved_quantity_delta > 0
+                    else ReservationStatus.ACTIVE
+                )
+                update_fields = ["status"]
+                if original_transaction.movement_type in (
+                    MovementType.ASSIGNMENT,
+                    MovementType.DELIVERY,
+                ):
+                    reservation.consumed_quantity -= abs(line.reserved_quantity_delta)
+                    reservation.status = ReservationStatus.ACTIVE
+                    update_fields.append("consumed_quantity")
+                    if reservation.consuming_transaction_id == original_transaction.pk:
+                        reservation.consuming_transaction = None
+                        update_fields.append("consuming_transaction")
+                reservation.save(update_fields=update_fields)
+                write_reservation_line(
+                    transaction=txn,
+                    line_number=line_number,
+                    reservation=reservation,
+                    reserved_quantity_delta=-line.reserved_quantity_delta,
+                    notes=reason,
+                )
+                continue
+            if (
+                original_transaction.movement_type == MovementType.TRANSFER
+                and line.from_location_id
+                and line.to_location_id
+            ):
+                adjust_balance(
+                    product=line.product,
+                    location=line.to_location,
+                    delta=-line.quantity_delta,
+                    respect_available=False,
+                )
+                adjust_balance(
+                    product=line.product,
+                    location=line.from_location,
+                    delta=line.quantity_delta,
+                    respect_available=False,
+                )
+                write_quantity_line(
+                    transaction=txn,
+                    line_number=line_number,
+                    product=line.product,
+                    quantity_delta=-line.quantity_delta,
+                    from_location=line.to_location,
+                    to_location=line.from_location,
+                    notes=reason,
+                )
+                continue
             reversal_location = line.to_location or line.from_location
             adjust_balance(
                 product=line.product,

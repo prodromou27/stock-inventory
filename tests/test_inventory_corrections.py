@@ -12,6 +12,8 @@ from apps.inventory.services.corrections import (
 )
 from apps.inventory.services.disposition import dispose, mark_lost
 from apps.inventory.services.receipts import receive_stock
+from apps.inventory.services.reservations import reserve_stock
+from apps.inventory.services.transfers import bulk_transfer
 
 
 @pytest.mark.django_db
@@ -315,3 +317,70 @@ class TestReverseTransaction:
                 occurred_at=date.today(),
                 reason="x",
             )
+
+
+@pytest.mark.django_db
+class TestQuantityReversalIntegrity:
+    def test_reversing_quantity_transfer_restores_both_balances(
+        self, administrator, quantity_product, location_tree, other_location_tree
+    ):
+        source = location_tree["room"]
+        destination = other_location_tree["site"]
+        receive_stock(
+            user=administrator,
+            product=quantity_product,
+            location=source,
+            occurred_at=date.today(),
+            quantity=10,
+        )
+        transfer = bulk_transfer(
+            user=administrator,
+            destination_location=destination,
+            occurred_at=date.today(),
+            quantity_lines=[
+                {"product": quantity_product, "source_location": source, "quantity": 4}
+            ],
+        )
+        reverse_transaction(
+            user=administrator,
+            original_transaction=transfer,
+            occurred_at=date.today(),
+            reason="wrong destination",
+        )
+        assert (
+            StockBalance.objects.get(product=quantity_product, location=source).on_hand_quantity
+            == 10
+        )
+        assert (
+            StockBalance.objects.get(
+                product=quantity_product, location=destination
+            ).on_hand_quantity
+            == 0
+        )
+
+    def test_reversing_quantity_reservation_restores_reserved_balance(
+        self, administrator, quantity_product, location_tree
+    ):
+        receive_stock(
+            user=administrator,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=10,
+        )
+        reservation_txn = reserve_stock(
+            user=administrator,
+            occurred_at=date.today(),
+            project_reference="PRJ-UNDO",
+            quantity_lines=[
+                {"product": quantity_product, "location": location_tree["room"], "quantity": 4}
+            ],
+        )
+        reverse_transaction(
+            user=administrator,
+            original_transaction=reservation_txn,
+            occurred_at=date.today(),
+            reason="wrong project",
+        )
+        balance = StockBalance.objects.get(product=quantity_product, location=location_tree["room"])
+        assert balance.reserved_quantity == 0

@@ -24,9 +24,8 @@
     <form method="post" action="{% url 'imports:execute' batch.pk %}">
       {% csrf_token %}
       <p>
-        Executing acknowledges any duplicate-serial/duplicate-product warnings shown below and imports every
-        row that isn't skipped and has a resolved location. Rows still missing a location are left for another
-        attempt after you fix them here.
+        Execution imports every non-skipped row with a resolved location. Duplicate serial warnings must be
+        acknowledged explicitly on the affected row first.
       </p>
       <button type="submit">Execute import</button>
     </form>
@@ -73,6 +72,12 @@
                 </form>
               {% endif %}
               {% if row.outcome != "skipped" and row.outcome != "imported" %}
+                {% if row.normalized_data.duplicate_serial_ids and not row.duplicate_serial_acknowledged %}
+                  <form method="post" action="{% url 'imports:row_acknowledge_duplicate' batch.pk row.pk %}">
+                    {% csrf_token %}
+                    <button type="submit">Acknowledge duplicate serial</button>
+                  </form>
+                {% endif %}
                 <form method="post" action="{% url 'imports:row_skip' batch.pk row.pk %}">
                   {% csrf_token %}
                   <button type="submit">Skip row</button>

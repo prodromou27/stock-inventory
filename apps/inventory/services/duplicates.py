@@ -24,3 +24,14 @@ def check_duplicate_serial(vendor_serial, *, user, exclude_id=None):
     if exclude_id:
         queryset = queryset.exclude(pk=exclude_id)
     return queryset
+
+
+def duplicate_serial_count(vendor_serial, *, exclude_id=None):
+    """Return a global count without exposing records outside the caller's scope."""
+    normalized = normalize_serial(vendor_serial)
+    if not normalized:
+        return 0
+    queryset = UnitAsset.objects.filter(normalized_serial=normalized)
+    if exclude_id:
+        queryset = queryset.exclude(pk=exclude_id)
+    return queryset.count()

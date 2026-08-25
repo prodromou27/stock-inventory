@@ -14,6 +14,7 @@ from apps.core.authorization import ADMINISTRATOR, RoleRequiredMixin
 from .forms import ImportUploadForm, RowLocationOverrideForm
 from .models import ImportBatch, ImportBatchStatus, ImportRow, ImportRowOutcome
 from .services import (
+    acknowledge_row_duplicate_serial,
     build_results_csv,
     build_template_csv,
     create_batch_from_upload,
@@ -133,6 +134,21 @@ class ImportRowSkipView(LoginRequiredMixin, RoleRequiredMixin, View):
             messages.error(request, "; ".join(exc.messages))
         else:
             messages.success(request, f"Row {row.row_number}: skipped.")
+        return redirect(batch.get_absolute_url())
+
+
+class ImportRowAcknowledgeDuplicateView(LoginRequiredMixin, RoleRequiredMixin, View):
+    allowed_roles = (ADMINISTRATOR,)
+
+    def post(self, request, pk, row_pk):
+        batch = get_object_or_404(ImportBatch, pk=pk)
+        row = get_object_or_404(ImportRow, pk=row_pk, batch=batch)
+        try:
+            acknowledge_row_duplicate_serial(row=row, user=request.user)
+        except ValidationError as exc:
+            messages.error(request, "; ".join(exc.messages))
+        else:
+            messages.success(request, f"Row {row.row_number}: duplicate serial acknowledged.")
         return redirect(batch.get_absolute_url())
 
 

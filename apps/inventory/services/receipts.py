@@ -1,5 +1,5 @@
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.db import connection, transaction
 
 from apps.audit.models import AuditEvent
 from apps.audit.services import record_event
@@ -16,7 +16,7 @@ from ..models import (
     UnitAsset,
     UnitStatus,
 )
-from .duplicates import check_duplicate_serial
+from .duplicates import check_duplicate_serial, duplicate_serial_count
 from .ledger import create_transaction_header
 
 
@@ -108,9 +108,16 @@ def _receive_unit(
     condition = condition or Condition.UNKNOWN
 
     duplicates = []
+    duplicate_count = 0
     if vendor_serial:
+        normalized_serial = " ".join(vendor_serial.split()).upper()
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", [normalized_serial]
+            )
         duplicates = list(check_duplicate_serial(vendor_serial, user=user))
-    if duplicates and not duplicate_serial_acknowledged:
+        duplicate_count = duplicate_serial_count(vendor_serial)
+    if duplicate_count and not duplicate_serial_acknowledged:
         raise DuplicateSerialError(duplicates)
 
     txn = create_transaction_header(
@@ -121,7 +128,7 @@ def _receive_unit(
         project_reference=project_reference,
         final_customer=final_customer,
         notes=notes,
-        duplicate_serial_acknowledged=bool(duplicates),
+        duplicate_serial_acknowledged=bool(duplicate_count),
     )
 
     asset = UnitAsset(
@@ -178,13 +185,16 @@ def _receive_unit(
         recorded_by=user,
     )
 
-    if duplicates:
+    if duplicate_count:
         record_event(
             actor=user,
             event_type=AuditEvent.EventType.DUPLICATE_SERIAL_ACKNOWLEDGED,
             obj=asset,
             summary=f"Acknowledged duplicate serial '{vendor_serial}' when receiving {product}",
-            metadata={"matched_unit_asset_ids": [str(a.pk) for a in duplicates]},
+            metadata={
+                "matched_unit_asset_ids": [str(a.pk) for a in duplicates],
+                "match_count": duplicate_count,
+            },
         )
 
     record_event(

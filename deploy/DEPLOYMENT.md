@@ -34,8 +34,8 @@ container starts, so there's no separate "run migrations" or "create the first u
    ```
    That's the whole install. Confirm `web`'s healthcheck passes (`docker compose -f deploy/docker-compose.prod.yml
    ps`) and `https://<your-host>/healthz/` returns `{"status": "ok", "database": "ok"}` through the proxy.
-4. **Log in and change the default password immediately**: `https://<your-host>/` with username `admin`, password
-   `admin` (both overridable — see "Default admin account" below). The app **blocks every other page** until you
+4. **Log in and change the bootstrap password immediately**: `https://<your-host>/` with username `admin` and the
+   generated `BOOTSTRAP_ADMIN_PASSWORD` configured in `.env.production`. The app **blocks every other page** until you
    set a real password — there is no way to skip this. Do this before the instance is reachable from any untrusted
    network; see the security note below.
 5. **(Recommended) Provision the hardened runtime role** — defense in depth so a bug in application code cannot
@@ -56,8 +56,9 @@ container starts, so there's no separate "run migrations" or "create the first u
 ### Default admin account
 
 `docs/architecture/04-permission-matrix.md`'s "Default admin bootstrap" section has the full design and the
-security trade-off it makes explicit. In short: `BOOTSTRAP_ADMIN_USERNAME`/`BOOTSTRAP_ADMIN_PASSWORD` (default
-`admin`/`admin`) create exactly one Administrator, only if none already exists — safe to leave running forever,
+security trade-off it makes explicit. In production, `BOOTSTRAP_ADMIN_PASSWORD` is required and cannot be
+`admin`; startup fails closed otherwise. `BOOTSTRAP_ADMIN_USERNAME` defaults to `admin`. These values create
+exactly one Administrator, only if none already exists — safe to leave running forever,
 since it can never reset a password an operator already changed. Set `BOOTSTRAP_ADMIN_ENABLED=false` in
 `.env.production` to disable this entirely and fall back to a manual
 `docker compose -f deploy/docker-compose.prod.yml exec web python manage.py createsuperuser` instead, if you'd

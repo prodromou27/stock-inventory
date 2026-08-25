@@ -23,4 +23,9 @@ urlpatterns = [
         views.ImportRowSkipView.as_view(),
         name="row_skip",
     ),
+    path(
+        "<uuid:pk>/rows/<uuid:row_pk>/acknowledge-duplicate/",
+        views.ImportRowAcknowledgeDuplicateView.as_view(),
+        name="row_acknowledge_duplicate",
+    ),
 ]

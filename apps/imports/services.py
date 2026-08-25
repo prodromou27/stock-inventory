@@ -288,6 +288,33 @@ def skip_row(*, row, user):
     return row
 
 
+@transaction.atomic
+def acknowledge_row_duplicate_serial(*, row, user):
+    require_role(user, ADMINISTRATOR)
+    row = ImportRow.objects.select_for_update().get(pk=row.pk)
+    _require_editable_batch(row.batch)
+    if not row.normalized_data.get("duplicate_serial_ids"):
+        raise ValidationError("This row has no duplicate serial warning.")
+    row.duplicate_serial_acknowledged = True
+    row.duplicate_serial_acknowledged_by = user
+    row.duplicate_serial_acknowledged_at = timezone.now()
+    row.save(
+        update_fields=[
+            "duplicate_serial_acknowledged",
+            "duplicate_serial_acknowledged_by",
+            "duplicate_serial_acknowledged_at",
+        ]
+    )
+    record_event(
+        actor=user,
+        event_type=AuditEvent.EventType.DUPLICATE_SERIAL_ACKNOWLEDGED,
+        obj=row,
+        summary=f"Acknowledged duplicate serial warning for import row {row.row_number}",
+        metadata={"batch_id": str(row.batch_id), "row_number": row.row_number},
+    )
+    return row
+
+
 # --- Execution ------------------------------------------------------------
 
 
@@ -300,8 +327,19 @@ def execute_batch(*, batch, user):
     """
     require_role(user, ADMINISTRATOR)
 
-    batch.status = ImportBatchStatus.EXECUTING
-    batch.save(update_fields=["status"])
+    with transaction.atomic():
+        batch = ImportBatch.objects.select_for_update().get(pk=batch.pk)
+        if batch.status == ImportBatchStatus.COMPLETED:
+            return batch
+        if batch.status == ImportBatchStatus.EXECUTING:
+            raise ValidationError("This import batch is already executing.")
+        if batch.status not in (
+            ImportBatchStatus.PREVIEWED,
+            ImportBatchStatus.PARTIALLY_COMPLETED,
+        ):
+            raise ValidationError("This import batch cannot be executed in its current state.")
+        batch.status = ImportBatchStatus.EXECUTING
+        batch.save(update_fields=["status"])
 
     rows = list(
         batch.rows.filter(
@@ -358,6 +396,10 @@ def _execute_row_chunk(rows, *, user):
 
 def _execute_row(row, *, user):
     data = row.normalized_data
+    if data.get("duplicate_serial_ids") and not row.duplicate_serial_acknowledged:
+        row.outcome_detail = "Not executed: duplicate serial acknowledgement is required."
+        row.save(update_fields=["outcome_detail"])
+        return
     location_id = data.get("location_override_id") or data.get("resolved_location_id")
     if not location_id:
         row.outcome_detail = (
@@ -393,7 +435,7 @@ def _execute_row(row, *, user):
             project_reference=data["project_reference"],
             final_customer=data["final_customer"],
             notes=data["notes"],
-            duplicate_serial_acknowledged=True,
+            duplicate_serial_acknowledged=row.duplicate_serial_acknowledged,
         )
     except ValidationError as exc:
         row.outcome = ImportRowOutcome.FAILED

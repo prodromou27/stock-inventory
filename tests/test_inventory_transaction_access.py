@@ -14,9 +14,11 @@ from django.urls import reverse
 from apps.inventory.access import require_transaction_access
 from apps.inventory.models import UnitAsset
 from apps.inventory.services.assignments import assign_to_employee
-from apps.inventory.services.disposition import mark_damaged
+from apps.inventory.services.disposition import mark_damaged, mark_lost
 from apps.inventory.services.receipts import receive_stock
 from apps.inventory.services.reservations import reserve_stock
+from apps.inventory.services.returns import return_stock
+from apps.inventory.services.transfers import bulk_transfer
 
 
 @pytest.fixture
@@ -123,6 +125,87 @@ class TestRequireTransactionAccess:
 
 @pytest.mark.django_db
 class TestTransactionDetailViewScoping:
+    def test_mixed_scope_transaction_requires_access_to_every_line(
+        self, administrator, stock_manager_with_room_access, unit_product, location_tree, other_room
+    ):
+        for serial, location in (("SN-MIX-A", location_tree["room"]), ("SN-MIX-B", other_room)):
+            receive_stock(
+                user=administrator,
+                product=unit_product,
+                location=location,
+                occurred_at=date.today(),
+                vendor_serial=serial,
+            )
+        assets = list(UnitAsset.objects.filter(vendor_serial__startswith="SN-MIX-"))
+        txn = bulk_transfer(
+            user=administrator,
+            destination_location=location_tree["room"],
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk for asset in assets],
+        )
+        with pytest.raises(PermissionDenied):
+            require_transaction_access(stock_manager_with_room_access, txn)
+
+    def test_return_view_and_service_deny_out_of_scope_original_transaction(
+        self,
+        client,
+        administrator,
+        stock_manager_with_room_access,
+        unit_product,
+        other_room,
+        location_tree,
+    ):
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=other_room,
+            occurred_at=date.today(),
+            vendor_serial="SN-RETURN-SCOPE",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-RETURN-SCOPE")
+        issue = assign_to_employee(
+            user=administrator,
+            employee_name="Taylor",
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+        )
+        client.force_login(stock_manager_with_room_access)
+        response = client.get(reverse("inventory:return_stock", kwargs={"pk": issue.pk}))
+        assert response.status_code == 403
+        with pytest.raises(PermissionDenied):
+            return_stock(
+                user=stock_manager_with_room_access,
+                original_transaction=issue,
+                location=location_tree["room"],
+                occurred_at=date.today(),
+                unit_asset_ids=[asset.pk],
+            )
+
+    def test_locationless_asset_cannot_be_disposed_by_other_scope(
+        self, administrator, stock_manager_with_room_access, unit_product, other_room
+    ):
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=other_room,
+            occurred_at=date.today(),
+            vendor_serial="SN-OUTSIDE-SCOPE",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-OUTSIDE-SCOPE")
+        assign_to_employee(
+            user=administrator,
+            employee_name="Jordan",
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+        )
+        with pytest.raises(PermissionDenied):
+            mark_lost(
+                user=stock_manager_with_room_access,
+                occurred_at=date.today(),
+                unit_asset_ids=[asset.pk],
+                notes="crafted request",
+            )
+
     def test_assignment_detail_denied_outside_scope(
         self, client, administrator, stock_manager_with_room_access, unit_product, other_room
     ):

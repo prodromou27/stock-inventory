@@ -13,6 +13,8 @@ check and call straight in here).
 from django.core.exceptions import ValidationError
 from django.db import connection
 
+from apps.catalog.models import TrackingMethod
+
 from ..models import (
     AssetStatusHistory,
     InventoryTransaction,
@@ -89,6 +91,9 @@ def write_unit_line(
     since callers usually lock a whole batch of assets together up front
     (docs/architecture/03-status-and-movement-rules.md's multi-line rules).
     """
+    if asset.product.tracking_method != TrackingMethod.UNIT:
+        raise ValidationError("Unit ledger lines require a unit-tracked product.")
+
     from_status = asset.status
     from_location = asset.current_location
 
@@ -161,6 +166,10 @@ def write_quantity_line(
     invoice_number="",
     notes="",
 ):
+    if product.tracking_method != TrackingMethod.QUANTITY:
+        raise ValidationError("Quantity ledger lines require a quantity-tracked product.")
+    if not quantity_delta:
+        raise ValidationError("Quantity ledger lines require a non-zero quantity delta.")
     return InventoryTransactionLine.objects.create(
         transaction=transaction,
         line_number=line_number,
@@ -182,6 +191,35 @@ def write_quantity_line(
     )
 
 
+def write_reservation_line(
+    *, transaction, line_number, reservation, reserved_quantity_delta, notes=""
+):
+    product = reservation.product
+    if product.tracking_method != TrackingMethod.QUANTITY:
+        raise ValidationError("Reservation ledger lines require a quantity-tracked product.")
+    if not reserved_quantity_delta:
+        raise ValidationError("Reservation ledger lines require a non-zero reserved delta.")
+    return InventoryTransactionLine.objects.create(
+        transaction=transaction,
+        line_number=line_number,
+        unit_asset=None,
+        product=product,
+        stock_reservation=reservation,
+        quantity_delta=0,
+        reserved_quantity_delta=reserved_quantity_delta,
+        from_location=reservation.location,
+        to_location=reservation.location,
+        brand_snapshot=product.brand.name,
+        model_snapshot=product.model,
+        sku_snapshot=product.sku,
+        type_snapshot=product.product_type.name,
+        description_snapshot=product.description,
+        project_reference_snapshot=reservation.project_reference,
+        final_customer_snapshot=reservation.final_customer,
+        notes=notes,
+    )
+
+
 def adjust_balance(*, product, location, delta, respect_available=True):
     """Locks and mutates the (product, location) StockBalance row.
     `respect_available` (default True) additionally rejects a negative-delta
@@ -189,6 +227,8 @@ def adjust_balance(*, product, location, delta, respect_available=True):
     positive) are unaffected; only Administrator corrections pass False,
     deliberately, to allow a direct on-hand adjustment.
     """
+    if product.tracking_method != TrackingMethod.QUANTITY:
+        raise ValidationError("Stock balances require a quantity-tracked product.")
     balance, _ = StockBalance.objects.select_for_update().get_or_create(
         product=product, location=location
     )
@@ -211,6 +251,8 @@ def adjust_balance(*, product, location, delta, respect_available=True):
 
 
 def adjust_reserved(*, product, location, delta):
+    if product.tracking_method != TrackingMethod.QUANTITY:
+        raise ValidationError("Stock reservations require a quantity-tracked product.")
     balance = StockBalance.objects.select_for_update().get(product=product, location=location)
 
     new_reserved = balance.reserved_quantity + delta

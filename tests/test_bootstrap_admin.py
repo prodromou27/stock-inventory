@@ -2,6 +2,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.urls import reverse
 
 from apps.accounts.models import MustChangePassword
@@ -12,6 +13,13 @@ User = get_user_model()
 
 @pytest.mark.django_db
 class TestBootstrapAdminCommand:
+    def test_production_rejects_missing_or_default_bootstrap_password(self, monkeypatch):
+        monkeypatch.setenv("DJANGO_SETTINGS_MODULE", "config.settings.production")
+        monkeypatch.delenv("BOOTSTRAP_ADMIN_PASSWORD", raising=False)
+        with pytest.raises(CommandError, match="non-default"):
+            call_command("bootstrap_admin")
+        assert not User.objects.filter(username="admin").exists()
+
     def test_creates_default_admin_when_none_exists(self):
         call_command("bootstrap_admin")
 

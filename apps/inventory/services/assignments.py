@@ -6,9 +6,57 @@ from apps.audit.services import record_event
 from apps.core.authorization import ADMINISTRATOR, STOCK_MANAGER, require_role
 from apps.locations.scoping import require_location_access
 
-from ..models import MovementType, UnitAsset, UnitStatus
+from ..models import MovementType, ReservationStatus, StockReservation, UnitAsset, UnitStatus
 from ..transitions import validate_unit_transition
-from .ledger import adjust_balance, create_transaction_header, write_quantity_line, write_unit_line
+from .ledger import (
+    adjust_balance,
+    adjust_reserved,
+    create_transaction_header,
+    write_quantity_line,
+    write_reservation_line,
+    write_unit_line,
+)
+
+
+def _consume_matching_reservations(
+    *, product, location, quantity, transaction, line_number, notes=""
+):
+    reservation_query = StockReservation.objects.select_for_update().filter(
+        product=product,
+        location=location,
+        status=ReservationStatus.ACTIVE,
+        project_reference=transaction.project_reference,
+    )
+    if transaction.final_customer:
+        reservation_query = reservation_query.filter(final_customer=transaction.final_customer)
+    reservations = list(reservation_query.order_by("created_at", "pk"))
+    remaining_issue = quantity
+    consumed = 0
+    for reservation in reservations:
+        available_reserved = reservation.quantity - reservation.consumed_quantity
+        take = min(available_reserved, remaining_issue)
+        if not take:
+            continue
+        reservation.consumed_quantity += take
+        reservation.consuming_transaction = transaction
+        if reservation.consumed_quantity == reservation.quantity:
+            reservation.status = ReservationStatus.CONSUMED
+        reservation.save(update_fields=["consumed_quantity", "consuming_transaction", "status"])
+        write_reservation_line(
+            transaction=transaction,
+            line_number=line_number,
+            reservation=reservation,
+            reserved_quantity_delta=-take,
+            notes=notes,
+        )
+        line_number += 1
+        consumed += take
+        remaining_issue -= take
+        if not remaining_issue:
+            break
+    if consumed:
+        adjust_reserved(product=product, location=location, delta=-consumed)
+    return line_number
 
 
 def _issue_stock(
@@ -84,6 +132,14 @@ def _issue_stock(
 
     for entry in quantity_lines:
         product, location, quantity = entry["product"], entry["location"], entry["quantity"]
+        line_number = _consume_matching_reservations(
+            product=product,
+            location=location,
+            quantity=quantity,
+            transaction=txn,
+            line_number=line_number,
+            notes=notes,
+        )
         adjust_balance(product=product, location=location, delta=-quantity)
         write_quantity_line(
             transaction=txn,

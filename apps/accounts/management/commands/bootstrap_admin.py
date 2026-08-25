@@ -2,7 +2,7 @@ import os
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 
 from apps.accounts.models import MustChangePassword
 from apps.core.authorization import ADMINISTRATOR
@@ -20,8 +20,7 @@ class Command(BaseCommand):
     """
 
     help = (
-        "Creates a default Administrator (BOOTSTRAP_ADMIN_USERNAME/PASSWORD, default "
-        "admin/admin) that must change its password on first login, unless an "
+        "Creates a bootstrap Administrator that must change its password on first login, unless an "
         "Administrator or superuser already exists. Safe to run on every startup. "
         "Set BOOTSTRAP_ADMIN_ENABLED=false to disable entirely."
     )
@@ -44,6 +43,12 @@ class Command(BaseCommand):
 
         username = os.environ.get("BOOTSTRAP_ADMIN_USERNAME", "admin")
         password = os.environ.get("BOOTSTRAP_ADMIN_PASSWORD", "admin")
+        if os.environ.get("DJANGO_SETTINGS_MODULE") == "config.settings.production" and (
+            not os.environ.get("BOOTSTRAP_ADMIN_PASSWORD") or password == "admin"
+        ):
+            raise CommandError(
+                "Production bootstrap requires a non-default BOOTSTRAP_ADMIN_PASSWORD secret."
+            )
 
         user, created = User.objects.get_or_create(
             username=username, defaults={"email": f"{username}@example.invalid"}

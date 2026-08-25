@@ -10,12 +10,86 @@ from apps.inventory.models import (
     UnitAsset,
     UnitStatus,
 )
+from apps.inventory.services.assignments import assign_to_employee
+from apps.inventory.services.corrections import reverse_transaction
 from apps.inventory.services.receipts import receive_stock
 from apps.inventory.services.reservations import release_reservation, reserve_stock
 
 
 @pytest.mark.django_db
 class TestReserveStock:
+    def test_assignment_partially_consumes_matching_quantity_reservation(
+        self, administrator, quantity_product, location_tree
+    ):
+        receive_stock(
+            user=administrator,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=10,
+        )
+        reserve_txn = reserve_stock(
+            user=administrator,
+            occurred_at=date.today(),
+            project_reference="PRJ-CONSUME",
+            quantity_lines=[
+                {"product": quantity_product, "location": location_tree["room"], "quantity": 6}
+            ],
+        )
+        issue = assign_to_employee(
+            user=administrator,
+            employee_name="Pat",
+            occurred_at=date.today(),
+            project_reference="PRJ-CONSUME",
+            quantity_lines=[
+                {"product": quantity_product, "location": location_tree["room"], "quantity": 4}
+            ],
+        )
+
+        reservation = StockReservation.objects.get(reservation_transaction=reserve_txn)
+        balance = StockBalance.objects.get(product=quantity_product, location=location_tree["room"])
+        assert reservation.consumed_quantity == 4
+        assert reservation.status == ReservationStatus.ACTIVE
+        assert reservation.consuming_transaction == issue
+        assert balance.on_hand_quantity == 6
+        assert balance.reserved_quantity == 2
+        assert balance.available_quantity == 4
+
+        reverse_transaction(
+            user=administrator,
+            original_transaction=issue,
+            occurred_at=date.today(),
+            reason="wrong employee",
+        )
+        reservation.refresh_from_db()
+        balance.refresh_from_db()
+        assert reservation.consumed_quantity == 0
+        assert reservation.status == ReservationStatus.ACTIVE
+        assert balance.on_hand_quantity == 10
+        assert balance.reserved_quantity == 6
+
+    def test_quantity_reservation_writes_immutable_reserved_delta(
+        self, administrator, quantity_product, location_tree
+    ):
+        receive_stock(
+            user=administrator,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=5,
+        )
+        txn = reserve_stock(
+            user=administrator,
+            occurred_at=date.today(),
+            project_reference="PRJ-LEDGER",
+            quantity_lines=[
+                {"product": quantity_product, "location": location_tree["room"], "quantity": 3}
+            ],
+        )
+        line = txn.lines.get(stock_reservation__isnull=False)
+        assert line.quantity_delta == 0
+        assert line.reserved_quantity_delta == 3
+
     def test_unit_reservation_sets_status_reserved(
         self, administrator, unit_product, location_tree
     ):

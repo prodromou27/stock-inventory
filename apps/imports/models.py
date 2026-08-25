@@ -90,6 +90,11 @@ class ImportRow(UUIDPrimaryKeyModel):
     created_transaction = models.ForeignKey(
         "inventory.InventoryTransaction", null=True, blank=True, on_delete=models.PROTECT
     )
+    duplicate_serial_acknowledged = models.BooleanField(default=False)
+    duplicate_serial_acknowledged_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT, related_name="+"
+    )
+    duplicate_serial_acknowledged_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["row_number"]

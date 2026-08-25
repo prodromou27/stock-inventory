@@ -31,7 +31,11 @@ def build_document_context(*, transaction, document_number):
     Administrator-edited template (pdf.py's render_pdf()) can never reach
     back into the database through it.
     """
-    lines = list(transaction.lines.select_related("unit_asset").order_by("line_number"))
+    lines = list(
+        transaction.lines.filter(stock_reservation=None)
+        .select_related("unit_asset")
+        .order_by("line_number")
+    )
 
     source_locations = sorted({str(line.from_location) for line in lines if line.from_location_id})
 

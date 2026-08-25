@@ -1,11 +1,13 @@
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import Sum
 
 from apps.audit.models import AuditEvent
 from apps.audit.services import record_event
 from apps.core.authorization import ADMINISTRATOR, STOCK_MANAGER, require_role
 from apps.locations.scoping import require_location_access
 
+from ..access import require_asset_access, require_transaction_access
 from ..models import InventoryTransactionLine, MovementType, UnitAsset, UnitStatus
 from ..transitions import validate_unit_transition
 from .ledger import adjust_balance, create_transaction_header, write_quantity_line, write_unit_line
@@ -33,6 +35,10 @@ def return_stock(
     `quantity_lines` is a list of {"product": Product, "quantity": int}.
     """
     require_role(user, ADMINISTRATOR, STOCK_MANAGER)
+    original_transaction = original_transaction.__class__.objects.select_for_update().get(
+        pk=original_transaction.pk
+    )
+    require_transaction_access(user, original_transaction)
     require_location_access(user, location)
 
     if original_transaction.movement_type not in (MovementType.ASSIGNMENT, MovementType.DELIVERY):
@@ -57,15 +63,50 @@ def return_stock(
         ).values_list("unit_asset_id", flat=True)
     )
     for asset in assets:
+        require_asset_access(user, asset)
         if asset.pk not in original_asset_ids:
             raise ValidationError(
                 f"{asset} was not part of transaction {original_transaction.transaction_number}."
+            )
+        latest_line = asset.transaction_lines.order_by(
+            "-transaction__created_at", "-line_number"
+        ).first()
+        if latest_line is None or latest_line.transaction_id != original_transaction.pk:
+            raise ValidationError(
+                f"{asset} is no longer outstanding on "
+                f"{original_transaction.transaction_number}."
             )
         validate_unit_transition(asset.status, UnitStatus.RETURNED)
 
     for entry in quantity_lines:
         if entry["quantity"] <= 0:
             raise ValidationError("Return quantity must be positive.")
+        product = entry["product"]
+        issued = -(
+            original_transaction.lines.filter(unit_asset=None, product=product).aggregate(
+                total=Sum("quantity_delta")
+            )["total"]
+            or 0
+        )
+        reversed_return_ids = original_transaction.related_transactions.filter(
+            movement_type=MovementType.RETURN,
+            related_transactions__movement_type=MovementType.REVERSAL,
+        ).values_list("pk", flat=True)
+        returned = (
+            InventoryTransactionLine.objects.filter(
+                transaction__related_transaction=original_transaction,
+                transaction__movement_type=MovementType.RETURN,
+                unit_asset=None,
+                product=product,
+            )
+            .exclude(transaction_id__in=reversed_return_ids)
+            .aggregate(total=Sum("quantity_delta"))["total"]
+            or 0
+        )
+        if not issued or returned + entry["quantity"] > issued:
+            raise ValidationError(
+                f"Return quantity for {product} exceeds the {issued - returned} outstanding."
+            )
 
     txn = create_transaction_header(
         movement_type=MovementType.RETURN,

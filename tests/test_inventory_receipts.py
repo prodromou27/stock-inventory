@@ -19,6 +19,40 @@ from apps.inventory.services.receipts import DuplicateSerialError, receive_stock
 
 @pytest.mark.django_db
 class TestReceiveUnitStock:
+    def test_out_of_scope_duplicate_still_requires_acknowledgement_without_leaking_match(
+        self,
+        administrator,
+        stock_manager_with_room_access,
+        unit_product,
+        location_tree,
+        other_location_tree,
+    ):
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=other_location_tree["site"],
+            occurred_at=date.today(),
+            vendor_serial="SN-GLOBAL-DUP",
+        )
+        with pytest.raises(DuplicateSerialError) as exc_info:
+            receive_stock(
+                user=stock_manager_with_room_access,
+                product=unit_product,
+                location=location_tree["room"],
+                occurred_at=date.today(),
+                vendor_serial="SN-GLOBAL-DUP",
+            )
+        assert exc_info.value.matches == []
+
+    def test_quantity_ledger_rejects_unit_tracked_product(
+        self, administrator, unit_product, location_tree
+    ):
+        from apps.inventory.services.ledger import adjust_balance
+
+        with pytest.raises(ValidationError):
+            adjust_balance(product=unit_product, location=location_tree["room"], delta=1)
+        assert not StockBalance.objects.filter(product=unit_product).exists()
+
     def test_receipt_creates_unit_asset_in_stock(self, administrator, unit_product, location_tree):
         txn = receive_stock(
             user=administrator,
