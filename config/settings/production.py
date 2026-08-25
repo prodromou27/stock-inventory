@@ -1,5 +1,3 @@
-from django.core.exceptions import ImproperlyConfigured
-
 from .base import *  # noqa: F401,F403
 from .env import env_bool, env_int, env_list, env_str
 
@@ -9,9 +7,12 @@ DEBUG = False
 
 SECRET_KEY = env_str("SECRET_KEY", required=True)
 
-ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", default=[])
-if not ALLOWED_HOSTS:
-    raise ImproperlyConfigured("ALLOWED_HOSTS must be set in production")
+# Defaults to "accept any host" (Django's own wildcard) rather than failing closed —
+# streamlined-install request: a fresh single-command deployment shouldn't need a
+# hostname decided up front. Tighten this in .env.production (a comma-separated list)
+# once you know the real hostname(s); nothing else in the app depends on it being
+# wildcarded, and doing so does not disable HTTPS, CSRF, or session cookie security.
+ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", default=["*"])
 
 CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS", default=[])
 

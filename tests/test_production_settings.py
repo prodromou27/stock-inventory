@@ -27,12 +27,28 @@ def test_production_settings_require_secret_key(monkeypatch):
         _reload_production_settings()
 
 
-def test_production_settings_require_allowed_hosts(monkeypatch):
+def test_production_settings_default_allowed_hosts_to_wildcard(monkeypatch):
+    """Streamlined-install request: a fresh single-command deployment
+    shouldn't need a hostname decided up front — deploy/install.sh doesn't
+    set one, so production must boot without it (docs/architecture/04's
+    "Default admin bootstrap" section and deploy/DEPLOYMENT.md's "Hostnames"
+    section carry the same reasoning for BOOTSTRAP_ADMIN_* and this).
+    """
     monkeypatch.setenv("SECRET_KEY", "a-real-production-secret")
     monkeypatch.delenv("ALLOWED_HOSTS", raising=False)
 
-    with pytest.raises(ImproperlyConfigured):
-        _reload_production_settings()
+    module = _reload_production_settings()
+
+    assert module.ALLOWED_HOSTS == ["*"]
+
+
+def test_production_settings_allowed_hosts_still_overridable(monkeypatch):
+    monkeypatch.setenv("SECRET_KEY", "a-real-production-secret")
+    monkeypatch.setenv("ALLOWED_HOSTS", "example.com,example.org")
+
+    module = _reload_production_settings()
+
+    assert module.ALLOWED_HOSTS == ["example.com", "example.org"]
 
 
 def test_production_settings_disable_debug_even_if_env_says_otherwise(monkeypatch):

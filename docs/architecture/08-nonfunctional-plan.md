@@ -21,8 +21,11 @@ Covers spec §12, §17, Prompt 1/8.
 - **Uploads**: extension + sniffed-content-type allow-list, size cap, storage-name derived from a UUID (never the
   client filename), files stored outside any publicly served path (doc 06).
 - **Error handling**: `DEBUG=False` by default in the production settings module (not just an env var default — the
-  production settings file itself hardcodes `DEBUG=False` and requires `ALLOWED_HOSTS`/`SECRET_KEY` from the
-  environment, so misconfiguration fails closed); custom 500/403/404 pages that never leak a traceback.
+  production settings file itself hardcodes `DEBUG=False` and requires `SECRET_KEY` from the environment, so
+  misconfiguration fails closed); custom 500/403/404 pages that never leak a traceback. `ALLOWED_HOSTS` is the one
+  exception to "fail closed" — it defaults to `*` rather than refusing to start, a deliberate streamlined-install
+  trade-off (`deploy/install.sh`/`deploy/DEPLOYMENT.md`'s "Hostnames" section) that doesn't weaken HTTPS, CSRF, or
+  session cookie security, all of which are enforced independently of it.
 - **Secrets**: environment variables / Docker secrets only; `.env.example` committed with no real values; a startup
   check fails fast if a required production secret is missing rather than silently running with an insecure
   default.

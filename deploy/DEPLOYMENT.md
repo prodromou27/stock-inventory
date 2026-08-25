@@ -16,50 +16,90 @@ in a real Docker environment before the first production cutover.
 
 ## First-time setup
 
-Installation is a single command (step 3) once the two prerequisite files below exist — `deploy/entrypoint.sh`
-runs `manage.py migrate` and `manage.py bootstrap_admin` automatically before the app starts, every time the `web`
-container starts, so there's no separate "run migrations" or "create the first user" step to remember.
+Installation is one command:
 
-1. **Secrets**: copy [`../.env.production.example`](../.env.production.example) to `.env.production` (repo root,
-   gitignored) and fill in `SECRET_KEY` (generate with
-   `python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"`),
-   `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, and `POSTGRES_PASSWORD`. These four cannot be defaulted away — production
-   settings fail closed without them (doc 08).
-2. **TLS**: place your certificate and key at `deploy/certs/fullchain.pem` / `deploy/certs/privkey.pem` (gitignored
-   — see [`nginx.conf.example`](nginx.conf.example)'s header comment on obtaining one). Copy
-   `nginx.conf.example` to `nginx.conf` and set `server_name` to your real hostname.
-3. **Bring everything up**:
-   ```
-   docker compose -f deploy/docker-compose.prod.yml up -d --build
-   ```
-   That's the whole install. Confirm `web`'s healthcheck passes (`docker compose -f deploy/docker-compose.prod.yml
-   ps`) and `https://<your-host>/healthz/` returns `{"status": "ok", "database": "ok"}` through the proxy.
-4. **Log in and change the bootstrap password immediately**: `https://<your-host>/` with username `admin` and the
-   generated `BOOTSTRAP_ADMIN_PASSWORD` configured in `.env.production`. The app **blocks every other page** until you
-   set a real password — there is no way to skip this. Do this before the instance is reachable from any untrusted
-   network; see the security note below.
-5. **(Recommended) Provision the hardened runtime role** — defense in depth so a bug in application code cannot
-   `UPDATE`/`DELETE` an audit/ledger row (doc 08; the migration-owning role can bypass `GRANT`/`REVOKE` on tables
-   it owns, so this requires a genuinely separate role). Do this any time after step 3 (migrations already ran):
-   ```
-   docker compose -f deploy/docker-compose.prod.yml exec db psql -U $POSTGRES_USER -d $POSTGRES_DB \
-       -v app_role=stock_inventory_app -v app_password='<a-real-generated-password>' -v db_name=$POSTGRES_DB \
-       -f /dev/stdin < deploy/sql/hardening_runtime_role.sql
-   ```
-   Then set `RUNTIME_DB_USER`/`RUNTIME_DB_PASSWORD` in `.env.production` and restart `web` (`docker compose -f
-   deploy/docker-compose.prod.yml up -d web`) — from then on the running app connects as the restricted role;
-   `manage.py migrate` for future releases still needs to run as the owning role (entrypoint.sh always uses
-   `POSTGRES_USER`, never the runtime role, for exactly this reason), and **`hardening_runtime_role.sql` must be
-   re-run any time a migration adds a new append-only table** (the script's own trailing comment lists the current
-   set to keep in sync).
+```
+git clone https://github.com/prodromou27/stock-inventory.git
+cd stock-inventory
+./deploy/install.sh
+```
+
+`deploy/install.sh` generates everything a first run needs and nothing more:
+
+- `.env.production` (gitignored) with a random `SECRET_KEY`, `POSTGRES_PASSWORD`, and `BOOTSTRAP_ADMIN_PASSWORD` —
+  no secret is ever typed or copy-pasted by an operator. `ALLOWED_HOSTS` is left wildcarded (see below).
+- A temporary self-signed TLS certificate under `deploy/certs/`, if none is already there, so HTTPS works
+  immediately — replace it with a real one whenever you have it (see "Certificates" below); nothing else about the
+  install needs to wait for that.
+- Then runs `docker compose --env-file .env.production -f deploy/docker-compose.prod.yml up -d --build`, which
+  triggers `deploy/entrypoint.sh` inside `web`: `manage.py migrate` and `manage.py bootstrap_admin`, before the
+  app starts serving.
+
+At the end it prints the generated Administrator password once. Log in at `https://<this-host>/` with username
+`admin` — the app **blocks every other page** until you change that password; there is no way to skip this. Do it
+immediately, especially before the instance is reachable from an untrusted network.
+
+**Re-running `./deploy/install.sh` is always safe** — an existing `.env.production` or certificate is reused, never
+regenerated (regenerating `POSTGRES_PASSWORD` or `SECRET_KEY` in place would break an already-running install), so
+this is also the command for every later deploy (see "Routine deployment" below).
+
+### Hostnames (`ALLOWED_HOSTS`)
+
+Left wildcarded (`*`) by default — a fresh install doesn't need a hostname decided up front, and this alone does
+not weaken HTTPS, CSRF, or session cookie security (those are enforced independently). Tighten it later by editing
+`ALLOWED_HOSTS` in `.env.production` to a comma-separated list of your real hostname(s) and restarting `web`
+(`docker compose -f deploy/docker-compose.prod.yml up -d web`) — there is no in-app settings screen for this yet
+(it's read once at process start, before any request — including the very first one — can be handled), so an env
+edit + restart is the only path today.
+
+### Certificates
+
+`install.sh` generates a temporary self-signed certificate so the single command produces a working HTTPS site
+immediately, with the trade-off that browsers will show a trust warning until it's replaced. Swap in a real one at
+any time — no rebuild needed:
+
+```
+cp your-fullchain.pem deploy/certs/fullchain.pem
+cp your-privkey.pem deploy/certs/privkey.pem
+docker compose -f deploy/docker-compose.prod.yml restart proxy
+```
+
+There is no self-service upload-a-certificate screen in the app yet — this remains a file-drop-and-restart
+operation an operator performs on the host. (Uploading through an in-app settings screen would need new
+infrastructure — a way for `web`, running in its own container, to hand a file to `proxy`'s container and trigger
+an nginx reload — that hasn't been built; flagged here rather than implied to already work.)
+
+### Optional: hardened DB runtime role
+
+Defense in depth so a bug in application code cannot `UPDATE`/`DELETE` an audit/ledger row (doc 08; the
+migration-owning role can bypass `GRANT`/`REVOKE` on tables it owns, so this requires a genuinely separate role).
+Do this any time after the first `./deploy/install.sh` run (migrations already applied). `POSTGRES_USER`/
+`POSTGRES_DB` below come from `.env.production`, not your shell — `set -a; source .env.production; set +a` first,
+or substitute the values (`stock_inventory` by default) directly:
+
+```
+set -a; source .env.production; set +a
+docker compose -f deploy/docker-compose.prod.yml exec db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+    -v app_role=stock_inventory_app -v app_password='<a-real-generated-password>' -v db_name="$POSTGRES_DB" \
+    -f /dev/stdin < deploy/sql/hardening_runtime_role.sql
+```
+
+Then set `RUNTIME_DB_USER`/`RUNTIME_DB_PASSWORD` in `.env.production` and restart `web` (`docker compose -f
+deploy/docker-compose.prod.yml up -d web`) — from then on the running app connects as the restricted role;
+`manage.py migrate` for future releases still needs to run as the owning role (entrypoint.sh always uses
+`POSTGRES_USER`, never the runtime role, for exactly this reason), and **`hardening_runtime_role.sql` must be
+re-run any time a migration adds a new append-only table** (the script's own trailing comment lists the current
+set to keep in sync).
 
 ### Default admin account
 
 `docs/architecture/04-permission-matrix.md`'s "Default admin bootstrap" section has the full design and the
-security trade-off it makes explicit. In production, `BOOTSTRAP_ADMIN_PASSWORD` is required and cannot be
-`admin`; startup fails closed otherwise. `BOOTSTRAP_ADMIN_USERNAME` defaults to `admin`. These values create
-exactly one Administrator, only if none already exists — safe to leave running forever,
-since it can never reset a password an operator already changed. Set `BOOTSTRAP_ADMIN_ENABLED=false` in
+security trade-off it makes explicit. In production, `BOOTSTRAP_ADMIN_PASSWORD` is required and cannot be `admin`
+— `install.sh` always generates a real random one, and `bootstrap_admin` itself independently refuses to start
+with a blank or literal `admin` password when `DJANGO_SETTINGS_MODULE=config.settings.production`, so this can't
+regress even if `.env.production` is later hand-edited carelessly. `BOOTSTRAP_ADMIN_USERNAME` defaults to `admin`.
+These values create exactly one Administrator, only if none already exists — safe to leave running forever, since
+it can never reset a password an operator already changed. Set `BOOTSTRAP_ADMIN_ENABLED=false` in
 `.env.production` to disable this entirely and fall back to a manual
 `docker compose -f deploy/docker-compose.prod.yml exec web python manage.py createsuperuser` instead, if you'd
 rather not have a predictable-username bootstrap account at all, even briefly.
@@ -68,13 +108,13 @@ rather not have a predictable-username bootstrap account at all, even briefly.
 
 ```
 git pull
-docker compose -f deploy/docker-compose.prod.yml up -d --build web
+./deploy/install.sh
 ```
 
-Migrations run automatically (`deploy/entrypoint.sh`) before the new container starts serving traffic — no
-separate `run ... migrate` step needed. If the release added a new `AppendOnlyModel` subclass (check `git log` /
-the migration for a new ledger/audit-style table), re-run the hardening script (step 5 above) before or
-immediately after this deploy.
+Reuses the existing `.env.production` and certificate untouched, rebuilds the image, and re-applies migrations
+automatically (`deploy/entrypoint.sh`) before the new container starts serving traffic. If the release added a new
+`AppendOnlyModel` subclass (check `git log` / the migration for a new ledger/audit-style table), re-run the
+hardening script above before or immediately after this deploy.
 
 ## Backups
 
