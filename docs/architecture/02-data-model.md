@@ -372,6 +372,26 @@ existing attachment silently," §11, is satisfied).
 `UNIQUE (batch_id, row_number)`. Idempotency: re-executing a batch skips any `ImportRow` whose `outcome` is already
 `imported` (see doc 07 for the full retry algorithm).
 
+### `ExportSettings`
+
+Not in the original prompt-pack's numbered prompts — added on the user's request during Prompt 8/9 for an
+Administrator-configurable scheduled Excel snapshot to a local/network path (`apps.exports`), separate from
+`deploy/backup.sh`'s database-level `pg_dump`. A singleton row (always `pk=1`, via `ExportSettings.load()`).
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | integer PK, always `1` | singleton |
+| `export_path` | varchar | local or network path; validated writable at save time |
+| `schedule` | enum: `disabled, nightly, weekly` | |
+| `weekly_weekday` | integer 0-6 | only read when `schedule=weekly` |
+| `updated_by_id` | FK → `User`, null | |
+| `last_run_at` | timestamptz, null | |
+| `last_run_status` | enum: `success, failed`, blank until first run | |
+| `last_run_detail` | text | the written file path on success, the exception message on failure |
+
+Hard-deletable in principle (it's configuration, not history), but never deleted in practice — always updated in
+place via `apps.exports.services.update_settings()`.
+
 ### `AuditEvent`
 
 | Field | Type | Notes |

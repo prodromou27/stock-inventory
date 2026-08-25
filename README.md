@@ -35,7 +35,9 @@ location-override, idempotent batched execution, results/template CSV downloads)
 Phase 4/Prompt 8 (security/performance hardening) is also in place: login throttling (`django-axes`), custom
 403/404/500 error pages, DB-level defense in depth for the audit/ledger tables (a separate, lower-privilege runtime
 database role), a backup/restore procedure verified against real data, and a production Docker Compose + nginx
-reverse-proxy deployment path — see [`deploy/DEPLOYMENT.md`](deploy/DEPLOYMENT.md). See
+reverse-proxy deployment path — see [`deploy/DEPLOYMENT.md`](deploy/DEPLOYMENT.md). An Administrator can also
+configure a local/network path for a nightly-or-weekly full Excel snapshot of inventory (**Export Settings** in the
+nav) as a human-readable safety net alongside the database backup. See
 [`docs/architecture/09-delivery-backlog.md`](docs/architecture/09-delivery-backlog.md) for the full delivery plan;
 Prompt 9 (the final acceptance/release audit and traceability matrix) is what remains.
 

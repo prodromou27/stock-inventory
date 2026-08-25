@@ -321,6 +321,39 @@ shuffle rows between pages). Covered by new tests in `tests/test_reporting.py` (
 documented. 353 tests pass (up from 342: axes lockout, error pages, and the reporting-pagination regression tests).
 No migration drift.
 
+### Additional feature — scheduled Excel export to a configurable path — done
+
+Not one of the prompt pack's original nine prompts — added directly on the user's request between Prompt 8 and
+Prompt 9: an Administrator-configurable local/network path that a full Excel snapshot of unit assets and stock
+balances gets written to on a nightly or weekly schedule, as a human-readable safety net alongside the database-
+level `pg_dump` backup (`deploy/backup.sh`) built in Prompt 8. The user framed it as "in case of any failure" —
+i.e. something a non-technical person could open directly, not a `pg_restore` step.
+
+Delivered as a new small app, `apps.exports`, mirroring `apps.imports`' shape: an `ExportSettings` singleton (doc
+02), `services.py` (`build_inventory_workbook()`, `run_export()`, `should_run_today()`), an Administrator-only
+settings screen (path + schedule, plus a "Run export now" manual trigger for testing the configured path without
+waiting for cron), and a `run_scheduled_export` management command — the same "cron invokes it daily, the command
+decides internally whether today is a run day" pattern as `deploy/backup.sh`, documented in `deploy/DEPLOYMENT.md`.
+
+The workbook has two sheets, `Unit Assets` and `Stock Balances`, using the same column sets as the existing CSV
+exports (`UnitAssetListView`/`StockBalanceListView`) — unscoped and unfiltered (every asset regardless of status),
+since this is a system-level backup an Administrator configured, not a user-facing scoped report.
+
+**Verified live** (service layer via shell, then the full HTTP flow — save settings, run now, confirm a real
+324KB two-sheet workbook was written and is readable, confirm the management command's no-op/run paths, confirm a
+disconnected/unreachable path is caught and recorded as a failure rather than crashing or silently doing nothing)
+before writing the pytest suite (`tests/test_exports_services.py`, `tests/test_exports_views.py`,
+`tests/test_exports_management_command.py` — 26 tests). A genuinely unreachable path is rejected immediately at
+save time (a real filesystem write-test, not just a format check) so a typo isn't discovered for the first time at
+2am by a failed cron job.
+
+**Filter coverage confirmation** (also raised by the user in the same request): the asset list already filters by
+project reference, final customer, serial number, supplier, and type — all delivered in Prompt 7
+(`apps/inventory/filters.py`, `templates/inventory/asset_list.html`). No gap found; no change needed.
+
+**Acceptance**: a real 8,000+-row-scale export was written and read back successfully during verification (the
+same bulk-seeded dataset from Prompt 8's timing measurements). 379 tests pass (up from 353). No migration drift.
+
 ### Prompt 9 — Final acceptance and release audit
 
 Depends on all prior prompts. Delivers: traceability matrix (every §21 criterion and §22 out-of-scope item mapped

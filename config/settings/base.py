@@ -33,6 +33,7 @@ INSTALLED_APPS = [
     "apps.documents",
     "apps.reporting",
     "apps.imports",
+    "apps.exports",
 ]
 
 MIDDLEWARE = [

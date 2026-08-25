@@ -84,6 +84,25 @@ container being recreated (not wired into `docker-compose.prod.yml` by default, 
 an operational/storage decision, not one this file should presume). Retention defaults to 14 days
 (`BACKUP_RETENTION_DAYS`).
 
+## Scheduled Excel export
+
+Separate from the database backup above: an Administrator can configure a local or network path (**Export
+Settings** in the app nav, Administrator-only) that a full Excel snapshot of unit assets and stock balances gets
+written to on a nightly or weekly schedule — a human-readable safety net a non-technical user can inspect directly,
+without needing `pg_restore`. The path must already be reachable from wherever the app runs (mount/share it into
+the container first if it's a network path); the settings screen validates this by writing a test file when you
+save. Like `backup.sh`, this doesn't self-schedule — invoke it daily via cron and let it decide internally whether
+today is a run day:
+
+```
+0 3 * * * docker compose -f /path/to/deploy/docker-compose.prod.yml exec -T web \
+    python manage.py run_scheduled_export >> /var/log/stock-inventory-export.log 2>&1
+```
+
+The last run's outcome (including the failure reason, if any — e.g. a disconnected network share) is shown on the
+settings screen and recorded as an `AuditEvent`; the command also exits non-zero on failure so cron's own mail-on
+-error or your monitoring can catch it independently.
+
 ## Restore
 
 See [`RESTORE.md`](RESTORE.md) — practice it in a disposable environment before you need it for real.

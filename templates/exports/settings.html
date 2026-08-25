@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}Export Settings — Stock Inventory{% endblock %}
+
+{% block content %}
+  <h1>Scheduled inventory export</h1>
+  <p>
+    Writes a full Excel snapshot of unit assets and stock balances to a local or network path on the schedule
+    below — a human-readable safety net alongside the database backup (<code>deploy/backup.sh</code>).
+  </p>
+
+  {% if settings_obj.last_run_at %}
+    <p>
+      Last run: {{ settings_obj.last_run_at }} —
+      <strong>{{ settings_obj.get_last_run_status_display }}</strong>
+      {% if settings_obj.last_run_detail %}({{ settings_obj.last_run_detail }}){% endif %}
+    </p>
+  {% else %}
+    <p>Never run yet.</p>
+  {% endif %}
+
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Save</button>
+  </form>
+
+  <form method="post" action="{% url 'exports:run_now' %}">
+    {% csrf_token %}
+    <button type="submit">Run export now</button>
+  </form>
+{% endblock %}
