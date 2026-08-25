@@ -137,21 +137,89 @@ test suite was written). Sequential document numbering, regeneration linking via
 original, and scope-denied download (documents and attachments) are all covered by tests. 249 tests pass (up from
 207).
 
-### Prompt 6 — Excel/CSV import
+### Prompt 6 — Excel/CSV import — done
 
-Depends on Prompt 3 (products/assets) and Prompt 2 (locations). Can run in parallel with Prompt 4/5 once those
-dependencies are met, since import reuses — but does not block — the interactive movement services. Best sequenced
-after a sanitized copy of the real legacy workbook is available (prompt pack note).
+Depends on Prompt 3 (products/assets) and Prompt 2 (locations); built after Prompt 7 rather than before it, once
+the user supplied a real sample of the legacy workbook locally (`sample/sample.xlsx`, gitignored — it contains
+real-looking customer names, project references, and serial numbers, so at the user's choice it and any copy of it
+were kept out of git history entirely) — confirming doc 07's column mapping table matches the real file exactly
+(`BRAND`, `MODEL/Part No./SKU`, `TYPE/DESCRIPTION`, `S/N`, `QTY`, `LOCATION`, `2nd floor Location`,
+`Project Ref. #`, `FINAL CUSTOMER`, `COMMENTS/#No`, `PRODUCT DELIVERY / PRODUCT REMOVAL`, `Arrival Date`,
+`Delivery Date`, `Return Date`, `Removal Date`, `Registrar`) down to real quirks like a trailing space in the
+`S/N` header and in some `BRAND`/`TYPE` values. The pytest suite exercises this same layout via a synthetic
+in-memory workbook built by `tests/imports_fixture_builder.py` (fabricated brand/customer names, same structural
+quirks) rather than depending on the real file, so the tests run the same way in any clone.
 
-**Acceptance**: acceptance criterion §21.14; fixture-workbook tests for malformed headers, duplicate rows/serials,
-mixed date formats, interrupted/retried batches.
+Delivered the `apps.imports` app: `ImportBatch`/`ImportRow` models exactly per doc 02; `parsing.py` (openpyxl for
+`.xlsx`, stdlib `csv` for `.csv`, exact case-insensitive header matching against the known column set — never
+fuzzy-matched, per spec §13's "do not guess" instruction — missing required columns rejected before any row is
+staged); `normalization.py` (whitespace, quantity, and lenient date parsing — day-first formats tried before
+month-first, doc 10's "corporate date format" default); `location_resolution.py` (name match on `LOCATION`,
+narrowed by `2nd floor Location` against the matched location's children by name or `code`; ambiguous or unmatched
+values are left unresolved rather than guessed, exactly as doc 07 specifies); and `services.py` (staging,
+row-level location override, skip, batched execution, template/results CSV generation).
+
+**Scope decision made with the user before implementation**: rather than build a preview-time mapping UI for the
+legacy `PRODUCT DELIVERY / PRODUCT REMOVAL` column and the Delivery/Return/Removal date columns (doc 10 open
+question #9 — the spec explicitly says not to guess what legacy movement values mean), every row is imported as an
+initial stock receipt only, using Arrival Date (or today's date if blank/unparseable) as the receipt date. The
+legacy delivery/removal value and the three secondary dates are preserved verbatim in the resulting record's
+`notes` for traceability, but never converted into a delivery/return/disposal transaction automatically — any
+further movement is entered manually afterward through the normal interactive UI. This is the safer, spec-aligned
+default for a first version; a mapping UI can be layered on later without a schema change if needed.
+
+**Scope simplifications, deliberate:**
+- The whole `MODEL/Part No./SKU` column value maps to `Product.model`; `Product.sku` is left blank (doc 07 flags
+  this column as "ambiguous by nature — never auto-split without a user decision," and the real sample file never
+  contains an obvious Model/SKU delimiter to split on). A SKU can be added afterward via the normal product-edit
+  screen.
+- `TYPE/DESCRIPTION` maps to `Product.product_type` only; `Product.description` is left blank, since the real
+  sample's values are short category words ("Firewall", "Router"), not combined type-plus-description text.
+- A row with no serial number is quantity-tracked and needs a positive `QTY`; a row with a serial number is
+  unit-tracked (one `UnitAsset`), regardless of what `QTY` says — a legacy row with a serial and `QTY=0` (seen in
+  the real sample) still yields exactly one unit, since a physical serialized item existing is what the serial
+  number itself asserts.
+- A brand/model that already exists with the *opposite* tracking method than a row implies is a `failed` row, not
+  an auto-resolved one — there's no correction path for this in v1 (no tracking-method-migration UI exists yet
+  either, per doc 10 open item #8), so the source file must be corrected and re-uploaded.
+- `failed` rows are not retried within the same batch on a later `execute_batch()` call — only `pending`/`warning`
+  rows are (see the updated doc 07 Idempotency section for why: a `failed` row's problem is in its own data, and
+  v1 has no in-place row-data correction UI, only a `warning` row's location override).
+- Every row that reaches execution calls a `_get_or_create_import_product()` wrapper around
+  `apps.catalog.services.create_product()`, rather than that function directly — `create_product()` always inserts
+  a *new* Product row even with `duplicate_acknowledged=True` (the correct behavior for its interactive "I know
+  this looks like a duplicate but I mean it" caller), which would have created a separate duplicate product for
+  every row sharing the same brand/model in a batch. Caught and fixed before writing the pytest suite, during the
+  live-shell smoke test against real PostgreSQL with the real sample file (4 "Check Point V80W" rows correctly
+  resolved to one `Product`, not four).
+- Import is Administrator-only (not Administrator + Stock Manager, unlike most inventory writes) — this is a bulk,
+  batch-mutating tool intended for the initial data migration and occasional bulk top-ups, not routine movement
+  work.
+
+An Administrator can also download a blank template CSV (`imports:template_download`, linked from both the batch
+list and upload screens) matching the exact expected column layout with two example rows (one unit-tracked, one
+quantity-tracked), for building future mass-import files from scratch rather than only from an export of the old
+system.
+
+**Acceptance**: acceptance criterion §21.14 — verified by a live end-to-end run against real PostgreSQL: staging
+the real sample file, confirming the two `LOCATION="Customer"` rows correctly warn as unresolved (no such storage
+location exists) while the six `Basement 1` rows resolve down to the correct rack via `2nd floor Location`,
+executing, then **re-running `execute_batch()` on the same already-completed batch and confirming zero new
+`InventoryTransaction` rows were created** — the core idempotent-retry guarantee. Also verified live over real
+HTTP (upload → preview → per-row location override → execute → re-execute after override → results CSV download),
+which caught a real bug ruled out by neither the shell smoke test nor a first pytest pass: the location-override
+and skip views only permitted edits while `ImportBatch.status == "previewed"`, but the first `execute_batch()` call
+moves a batch with any remaining warnings to `"partially_completed"` — silently blocking exactly the retry
+workflow the feature exists for. Fixed by allowing edits in both `previewed` and `partially_completed` states, and
+covered by a dedicated regression test (`test_override_allowed_after_partial_execution`). 342 tests pass (up from
+294).
 
 ### Prompt 7 — Dashboard, search, reports, disposal reporting — done
 
 Depends on Prompt 4 (movements exist to report on) and Prompt 5 (documents referenced from transaction/report
-views). Ran ahead of Prompt 6 (Excel/CSV import), which the prompt pack itself notes is best sequenced after a
-sanitized copy of the real legacy workbook is available — that hasn't been provided yet, so Prompt 6 remains open
-below.
+views). Ran ahead of Prompt 6 (Excel/CSV import): the prompt pack notes import is best sequenced once a sanitized
+copy of the real legacy workbook is available, which hadn't been provided yet at this point — it was supplied
+afterward, and Prompt 6 was completed next (see below).
 
 Delivered `apps/inventory/filters.py` (`filter_unit_assets()`/`filter_stock_balances()` covering every filter in
 spec §14: free-text `q`, brand, model, SKU, type, serial, status, project reference, final customer, supplier,
@@ -207,5 +275,8 @@ stock-manager quick-start docs, release recommendation.
 - Prompt 5 and Prompt 6 both depend on Prompt 3/4 but not on each other — could be parallelized across two sessions
   if desired, at the cost of the cross-tool review step being more valuable at the merge point.
 - Prompt 7 depends on the outputs of 4, 5, and 6 (reports read transactions, documents, and — for import-sourced
-  data — imported rows) so it is last among the "build" prompts.
+  data — imported rows) so it is last among the "build" prompts. In practice Prompt 7 was built *before* Prompt 6,
+  since the real legacy workbook Prompt 6 needed wasn't supplied until afterward — harmless in practice, since
+  import-sourced rows become ordinary `InventoryTransaction`/`UnitAsset`/`StockBalance` rows once executed, which
+  Prompt 7's reports already cover with no import-specific logic of their own.
 - Prompts 8 and 9 are hardening/audit passes over the whole system and must come last.

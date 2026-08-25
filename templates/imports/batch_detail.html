@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+
+{% block title %}Import {{ batch.source_filename }} — Stock Inventory{% endblock %}
+
+{% block content %}
+  <h1>Import: {{ batch.source_filename }}</h1>
+  <p>
+    Status: <strong>{{ batch.get_status_display }}</strong>
+    &middot; Uploaded {{ batch.uploaded_at }} by {{ batch.uploaded_by }}
+    {% if batch.executed_at %}&middot; Executed {{ batch.executed_at }} by {{ batch.executed_by }}{% endif %}
+  </p>
+  <p>
+    {{ batch.row_count }} row(s) total —
+    imported: {{ batch.imported_count }},
+    warning: {{ batch.warning_count }},
+    failed: {{ batch.failed_count }},
+    skipped: {{ batch.skipped_count }}
+  </p>
+  <p>
+    {% if batch.executed_at %}<a href="{% url 'imports:results_download' batch.pk %}">Download results CSV</a>{% endif %}
+  </p>
+
+  {% if can_execute %}
+    <form method="post" action="{% url 'imports:execute' batch.pk %}">
+      {% csrf_token %}
+      <p>
+        Executing acknowledges any duplicate-serial/duplicate-product warnings shown below and imports every
+        row that isn't skipped and has a resolved location. Rows still missing a location are left for another
+        attempt after you fix them here.
+      </p>
+      <button type="submit">Execute import</button>
+    </form>
+  {% endif %}
+
+  <form method="get" class="location-filters">
+    <select name="outcome">
+      <option value="">All outcomes</option>
+      {% for value, label in row_outcomes %}
+        <option value="{{ value }}" {% if outcome_filter == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit">Filter</button>
+  </form>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Row</th>
+        <th>Brand / Model</th>
+        <th>Serial</th>
+        <th>Location</th>
+        <th>Outcome</th>
+        <th>Detail</th>
+        {% if can_edit %}<th>Actions</th>{% endif %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+        <tr>
+          <td>{{ row.row_number }}</td>
+          <td>{{ row.normalized_data.brand_name }} {{ row.normalized_data.model }}</td>
+          <td>{{ row.normalized_data.vendor_serial|default:"—" }}</td>
+          <td>{{ row.normalized_data.location_text }}{% if row.normalized_data.sub_location_text %} / {{ row.normalized_data.sub_location_text }}{% endif %}</td>
+          <td>{{ row.get_outcome_display }}</td>
+          <td>{{ row.outcome_detail }}</td>
+          {% if can_edit %}
+            <td>
+              {% if row.outcome == "warning" and not row.normalized_data.resolved_location_id and not row.normalized_data.location_override_id %}
+                <form method="post" action="{% url 'imports:row_override_location' batch.pk row.pk %}">
+                  {% csrf_token %}
+                  {{ override_form.location }}
+                  <button type="submit">Set location</button>
+                </form>
+              {% endif %}
+              {% if row.outcome != "skipped" and row.outcome != "imported" %}
+                <form method="post" action="{% url 'imports:row_skip' batch.pk row.pk %}">
+                  {% csrf_token %}
+                  <button type="submit">Skip row</button>
+                </form>
+              {% endif %}
+            </td>
+          {% endif %}
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if is_paginated %}
+    <nav class="pagination">
+      {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">Previous</a>{% endif %}
+      <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+      {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">Next</a>{% endif %}
+    </nav>
+  {% endif %}
+{% endblock %}

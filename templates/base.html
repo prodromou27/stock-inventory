@@ -23,6 +23,7 @@
         {% if user_is_administrator %}
           <a href="{% url 'accounts:user_access_list' %}">Manage Access</a>
           <a href="{% url 'audit:log' %}">Audit Log</a>
+          <a href="{% url 'imports:batch_list' %}">Excel Import</a>
         {% endif %}
         <span class="app-header__user">
           {{ user.get_username }}{% if user_role_groups %} ({{ user_role_groups|join:", " }}){% endif %}

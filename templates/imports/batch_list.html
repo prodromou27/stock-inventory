@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}Excel Import — Stock Inventory{% endblock %}
+
+{% block content %}
+  <h1>Excel Import</h1>
+  <p>
+    <a href="{% url 'imports:upload' %}">Upload a new file</a>
+    &middot;
+    <a href="{% url 'imports:template_download' %}">Download template CSV</a>
+  </p>
+
+  {% if batches %}
+    <table>
+      <thead>
+        <tr>
+          <th>File</th>
+          <th>Uploaded</th>
+          <th>By</th>
+          <th>Status</th>
+          <th>Imported</th>
+          <th>Warning</th>
+          <th>Failed</th>
+          <th>Skipped</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for batch in batches %}
+          <tr>
+            <td><a href="{{ batch.get_absolute_url }}">{{ batch.source_filename }}</a></td>
+            <td>{{ batch.uploaded_at }}</td>
+            <td>{{ batch.uploaded_by }}</td>
+            <td>{{ batch.get_status_display }}</td>
+            <td>{{ batch.imported_count }}</td>
+            <td>{{ batch.warning_count }}</td>
+            <td>{{ batch.failed_count }}</td>
+            <td>{{ batch.skipped_count }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {% if is_paginated %}
+      <nav class="pagination">
+        {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">Previous</a>{% endif %}
+        <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+        {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">Next</a>{% endif %}
+      </nav>
+    {% endif %}
+  {% else %}
+    <p>No imports yet.</p>
+  {% endif %}
+{% endblock %}

@@ -50,10 +50,14 @@ Covers spec §13, Prompt 6.
 ## Idempotency
 
 - `ImportRow` is unique per `(batch_id, row_number)`.
-- Re-running execution on the same batch **skips** any row whose `outcome` is already `imported` and only attempts
-  rows still `pending`/`warning`/`failed` (after the user has addressed the flagged issue) — so an accidental
-  double-click or retried request cannot duplicate the rows that already succeeded (spec §13, explicit; acceptance
-  criterion §21.14).
+- Re-running execution on the same batch **skips** any row whose `outcome` is already `imported` or `skipped`, and
+  only attempts rows still `pending`/`warning` — so an accidental double-click or retried request cannot duplicate
+  the rows that already succeeded (spec §13, explicit; acceptance criterion §21.14). As implemented (v1 scope,
+  see doc 09), `failed` rows are excluded from retry within the same batch: a `failed` row's problem is with the
+  row's own data (missing Brand, an unparseable quantity, a tracking-method conflict), and v1 has no in-place data
+  -correction UI for a row — only a `warning` row's unresolved location can be fixed via an override, since
+  `raw_data` is never mutated. Fixing a `failed` row means correcting the source file and uploading it again as a
+  new batch (already a supported, audited workflow above).
 - Each successful row records `created_unit_asset_id`/`created_transaction_id`, so "already imported" is a direct
   foreign-key check, not a heuristic re-match against inventory.
 - A full re-upload of the same file produces a **new** `ImportBatch` (new checksum-flagged warning shown, but not

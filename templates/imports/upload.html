@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{% block title %}Upload Import — Stock Inventory{% endblock %}
+
+{% block content %}
+  <h1>Upload legacy Excel/CSV file</h1>
+  <p>
+    Every row is imported as an initial stock receipt only (using its Arrival Date). Delivery, return, and
+    removal information from the file is preserved in the resulting record's notes, not converted into further
+    movements — enter those manually afterward if needed.
+  </p>
+  <p><a href="{% url 'imports:template_download' %}">Download the template CSV</a> for the expected column layout.</p>
+
+  <form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Upload and preview</button>
+  </form>
+{% endblock %}

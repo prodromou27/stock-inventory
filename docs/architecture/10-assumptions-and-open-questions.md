@@ -58,10 +58,12 @@ judgment calls.
    automatic bulk-conversion of live stock. If real data needs a populated conversion, that's additional service
    logic layered onto the same operation, not a schema change.
 
-9. **PRODUCT DELIVERY / PRODUCT REMOVAL legacy import column** (§13) is explicitly called out in the spec itself as
-   a "legacy status/movement staging value" needing mapping — this plan defers the exact mapping rules to the
-   import preview UI, where a human confirms each ambiguous value's meaning rather than the importer guessing, per
-   §13's own instruction ("do not guess the meaning of ambiguous legacy values").
+9. **Resolved (Prompt 6, doc 07/09)**: the **PRODUCT DELIVERY / PRODUCT REMOVAL legacy import column** (§13) and
+   the Delivery/Return/Removal date columns are *not* converted into movement transactions in v1 — the user chose
+   "receipt-only" import over building a preview-time value-mapping UI (still §13's own "do not guess" instruction
+   satisfied, just resolved by narrowing scope rather than by adding a mapping step). Every row becomes one
+   receipt transaction; the legacy column and dates are preserved verbatim in the resulting record's `notes`.
+   Further movement (delivery, return, disposal) is entered manually afterward through the normal interactive UI.
 
 ## Confirmed non-blocking (spec §24, restated for traceability — no action needed before Phase 1)
 
