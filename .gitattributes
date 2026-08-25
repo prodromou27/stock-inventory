@@ -1,0 +1,4 @@
+# Shell scripts run inside the Linux container — a CRLF line ending breaks the
+# shebang/execution entirely, so force LF regardless of core.autocrlf on any
+# checkout (this repo has been developed with core.autocrlf=true on Windows).
+*.sh text eol=lf

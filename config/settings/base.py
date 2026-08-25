@@ -1,3 +1,4 @@
+from datetime import timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -22,6 +23,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "django.contrib.postgres",
+    "axes",
     "apps.core",
     "apps.audit",
     "apps.locations",
@@ -42,6 +44,16 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    # Must be last — inspects the response of every request, including ones
+    # AxesStandaloneBackend already blocked (doc 08's login throttling).
+    "axes.middleware.AxesMiddleware",
+]
+
+AUTHENTICATION_BACKENDS = [
+    # Must be first — checks the lockout state before Django's own backend
+    # ever compares a password (docs/architecture/08-nonfunctional-plan.md).
+    "axes.backends.AxesStandaloneBackend",
+    "django.contrib.auth.backends.ModelBackend",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -118,6 +130,17 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 LOGIN_URL = "login"
 LOGIN_REDIRECT_URL = "core:home"
 LOGOUT_REDIRECT_URL = "login"
+
+# Login throttling (docs/architecture/08-nonfunctional-plan.md). Locked out by
+# the (username, IP) combination, not IP alone — a shared office/VPN egress IP
+# must not lock out every user behind it, and an attacker must not be able to
+# lock a known username out from every IP just by guessing its password
+# repeatedly from one machine. Exact numbers are a deferred/defaulted decision
+# (spec §24), overridable via env before launch, same as the password policy.
+AXES_FAILURE_LIMIT = env_int("AXES_FAILURE_LIMIT", default=5)
+AXES_COOLOFF_TIME = timedelta(minutes=env_int("AXES_COOLOFF_MINUTES", default=30))
+AXES_LOCKOUT_PARAMETERS = [["username", "ip_address"]]
+AXES_RESET_ON_SUCCESS = True
 
 LOGGING = {
     "version": 1,

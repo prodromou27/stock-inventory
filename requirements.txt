@@ -5,3 +5,4 @@ whitenoise>=6.6,<7.0
 gunicorn>=21.2,<22.0
 weasyprint>=69.0,<70.0
 openpyxl>=3.1,<4.0
+django-axes>=8.0,<9.0

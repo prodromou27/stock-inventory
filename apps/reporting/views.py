@@ -1,4 +1,5 @@
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.core.paginator import Paginator
 from django.shortcuts import render
 from django.views import View
 from django.views.generic import ListView
@@ -8,6 +9,8 @@ from apps.inventory.models import UnitAsset
 
 from . import queries
 
+REPORT_PAGE_SIZE = 50
+
 
 class ReportsHubView(LoginRequiredMixin, View):
     def get(self, request):
@@ -15,10 +18,26 @@ class ReportsHubView(LoginRequiredMixin, View):
 
 
 class CurrentStockView(LoginRequiredMixin, View):
+    """Units in stock is paginated (spec §21.15: every list must stay
+    responsive at 8,000+ records) — caught by measuring real wall-clock
+    timing against the bulk-seeded dataset during Prompt 8, not by the
+    query-count tests alone, which never exercised this plain View. Balances
+    is left unpaginated: it's grouped one row per (product, location), an
+    inherently much smaller set than the raw unit count.
+    """
+
     def get(self, request):
         units, balances = queries.current_stock(request.user)
+        page_obj = Paginator(units, REPORT_PAGE_SIZE).get_page(request.GET.get("page"))
         return render(
-            request, "reporting/current_stock.html", {"units": units, "balances": balances}
+            request,
+            "reporting/current_stock.html",
+            {
+                "units": page_obj,
+                "page_obj": page_obj,
+                "is_paginated": page_obj.has_other_pages(),
+                "balances": balances,
+            },
         )
 
 
@@ -31,10 +50,16 @@ class StockByLocationView(LoginRequiredMixin, View):
 class ReservedStockView(LoginRequiredMixin, View):
     def get(self, request):
         units, reservations = queries.reserved_stock(request.user)
+        page_obj = Paginator(units, REPORT_PAGE_SIZE).get_page(request.GET.get("page"))
         return render(
             request,
             "reporting/reserved_stock.html",
-            {"units": units, "reservations": reservations},
+            {
+                "units": page_obj,
+                "page_obj": page_obj,
+                "is_paginated": page_obj.has_other_pages(),
+                "reservations": reservations,
+            },
         )
 
 
@@ -92,12 +117,19 @@ class StockByProjectReferenceView(LoginRequiredMixin, View):
     def get(self, request):
         project_reference = request.GET.get("project_reference", "").strip()
         units, reservations = queries.stock_by_project_reference(request.user, project_reference)
+
+        page_obj = None
+        if project_reference:
+            page_obj = Paginator(units, REPORT_PAGE_SIZE).get_page(request.GET.get("page"))
+
         return render(
             request,
             "reporting/stock_by_project_reference.html",
             {
                 "project_reference": project_reference,
-                "units": units if project_reference else None,
+                "units": page_obj if project_reference else None,
+                "page_obj": page_obj,
+                "is_paginated": page_obj.has_other_pages() if page_obj else False,
                 "reservations": reservations,
                 "distinct_references": units if not project_reference else None,
             },

@@ -24,6 +24,11 @@ SECURE_SSL_REDIRECT = env_bool("SECURE_SSL_REDIRECT", default=True)
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SECURE_HSTS_SECONDS = env_int("SECURE_HSTS_SECONDS", default=3600)
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+# Off by default: submitting to a browser's HSTS preload list is effectively
+# one-way (removal takes months to propagate once accepted), so it's an
+# explicit operator opt-in via env, not a framework default — see
+# deploy/DEPLOYMENT.md.
+SECURE_HSTS_PRELOAD = env_bool("SECURE_HSTS_PRELOAD", default=False)
 
 # Requires `manage.py collectstatic` to have run during image build/deploy —
 # see docs/architecture/08-nonfunctional-plan.md and the Phase 8 deployment runbook.
@@ -35,3 +40,14 @@ STORAGES = {  # noqa: F405
 }
 
 LOGGING["handlers"]["console"]["formatter"] = "json"  # noqa: F405
+
+# The app connects at runtime as a separate, lower-privilege role than the one
+# that ran migrations, when RUNTIME_DB_USER is set (deploy/sql/hardening_runtime_role.sql,
+# deploy/DEPLOYMENT.md) — defense in depth so a bug in application code cannot UPDATE/DELETE
+# an audit/ledger row, since the migration-owning role can bypass GRANT/REVOKE on tables it
+# owns. Falls back to POSTGRES_USER/PASSWORD (the owning role) so production still runs, just
+# without this extra hardening layer, if the runtime role hasn't been provisioned yet.
+_runtime_db_user = env_str("RUNTIME_DB_USER", default="")
+if _runtime_db_user:
+    DATABASES["default"]["USER"] = _runtime_db_user  # noqa: F405
+    DATABASES["default"]["PASSWORD"] = env_str("RUNTIME_DB_PASSWORD", required=True)  # noqa: F405

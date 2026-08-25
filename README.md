@@ -32,8 +32,11 @@ assignments, customer deliveries, stock by project reference, temporary assignme
 including a disposed-HDD-focused view — movement history, and low stock), verified for responsiveness at 8,000+
 seeded records; and an Administrator-only Excel/CSV importer (`.xlsx`/`.csv`, staged preview with per-row
 location-override, idempotent batched execution, results/template CSV downloads) for the legacy workbook migration.
-See [`docs/architecture/09-delivery-backlog.md`](docs/architecture/09-delivery-backlog.md) for the full delivery
-plan; Phase 4 (Prompts 8–9: security/performance hardening, backup/restore, and final release audit) is what
-remains.
+Phase 4/Prompt 8 (security/performance hardening) is also in place: login throttling (`django-axes`), custom
+403/404/500 error pages, DB-level defense in depth for the audit/ledger tables (a separate, lower-privilege runtime
+database role), a backup/restore procedure verified against real data, and a production Docker Compose + nginx
+reverse-proxy deployment path — see [`deploy/DEPLOYMENT.md`](deploy/DEPLOYMENT.md). See
+[`docs/architecture/09-delivery-backlog.md`](docs/architecture/09-delivery-backlog.md) for the full delivery plan;
+Prompt 9 (the final acceptance/release audit and traceability matrix) is what remains.
 
 PDF generation needs the GTK3 native runtime outside Docker — see `CLAUDE.md` if running without Docker on Windows.

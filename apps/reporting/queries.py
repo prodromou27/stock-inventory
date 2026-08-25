@@ -121,6 +121,7 @@ def stock_by_project_reference(user, project_reference=""):
             _scoped_assets(user)
             .exclude(project_reference="")
             .filter(project_reference__icontains=project_reference)
+            .order_by("product__brand__name", "product__model")
         )
         reservations = scope_queryset(
             user,

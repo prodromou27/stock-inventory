@@ -251,14 +251,75 @@ PostgreSQL. 294 tests pass (up from 249).
 
 ## Phase 4 — Migration and hardening
 
-### Prompt 8 — Security, performance, backup, production deployment
+### Prompt 8 — Security, performance, backup, production deployment — done
 
-Depends on everything above existing to harden. Delivers: throttling, session/password policy finalized, index
-review against real seeded volume, backup/restore scripts + verified restore, production Compose + reverse-proxy
-guidance, deployment runbook.
+Depends on everything above existing to harden. Delivered:
 
-**Acceptance**: restore procedure actually executed once in a disposable environment; measured (not assumed)
-query timings reported against 8,000+ seeded records.
+- **Login throttling**: `django-axes`, locking by `(username, ip_address)` — see doc 08's Security section for why.
+  Verified live against a real login flow (5 failures locks the account, a 6th attempt with the *correct* password
+  is still rejected with 429, a *different* account can still log in from the same session/IP) before writing the
+  regression tests in `tests/test_login_throttling.py`.
+- **Custom error pages**: `templates/403.html`/`404.html` (extend `base.html` — Django's default 403/404 views
+  render with a full `RequestContext`) and `templates/500.html` (deliberately *not* extending `base.html` — Django's
+  `server_error()` view renders with no context processors at all, by design, in case one of them is what's
+  broken, so `500.html` has no `{% if user... %}` or similar that would silently fail). Verified with `DEBUG=False`
+  that no traceback or file path ever appears in any of the three (`tests/test_error_pages.py`, including calling
+  `django.views.defaults.server_error()` directly for the 500 case).
+- **DB-level defense in depth**: `deploy/sql/hardening_runtime_role.sql` plus `RUNTIME_DB_USER`/`RUNTIME_DB_PASSWORD`
+  support in `config/settings/production.py` — see doc 08 for the design and the live-Postgres verification
+  (`UPDATE`/`DELETE` on every append-only table rejected for the runtime role; ordinary tables and `INSERT`/`SELECT`
+  on the append-only ones unaffected).
+- **Backup and restore**: `deploy/backup.sh` (`pg_dump` custom format + a `media/` tarball, with retention pruning)
+  and `deploy/RESTORE.md`. **Actually executed** against real data: backed up the local dev database, `pg_restore`d
+  the dump into a fresh disposable database, ran `manage.py migrate --check` against it (no pending migrations),
+  and ran a smoke-test query confirming every row count matched the source exactly — recorded with the date in
+  `RESTORE.md`'s "Verified" section, per spec §17's explicit requirement that this be a real, executed gate.
+- **Production deployment**: `deploy/Dockerfile.prod` (runtime-only dependencies, `collectstatic` baked in at build
+  time, runs as the non-root `app` user, `gunicorn` instead of `runserver`), `deploy/docker-compose.prod.yml`
+  (no live code bind-mount, an nginx TLS-terminating reverse proxy in front, healthchecked), `deploy/nginx.conf.example`,
+  `.env.production.example`, and `deploy/DEPLOYMENT.md` tying first-time setup, routine deploys, the backup
+  schedule, and the hardening role into one runbook.
+- **Measured query timings against the 8,000+-row bulk-seeded dataset** (not just query counts): real wall-clock
+  timings taken over HTTP against a `runserver` instance running under the actual production settings module
+  (`DEBUG=False`, full security middleware stack), logged in as an Administrator. Every paginated list/report view
+  came back in roughly 60–150ms. Full CSV exports of the entire 8,000-row filtered set took roughly 1.0–1.2s,
+  checked for and cleared of any N+1 query cause (`select_related` already covers every FK rendered per row) —
+  reasonable for "generate and stream the whole matching dataset," a fundamentally different operation from a
+  paginated list page, so not held to the same target.
+
+**One real bug found and fixed by measuring rather than assuming**: `CurrentStockView`'s "units in stock" table
+had no pagination at all — every in-stock `UnitAsset` was rendered in a single response. Invisible in Phase 7's
+query-*count* tests (they only exercised the `ListView`-based screens), but obvious once real timing was measured
+against 8,000 seeded units: roughly 1.2–1.3s per request, a real violation of acceptance criterion §21.15 ("all
+lists are paginated and remain responsive with at least 8,000 imported records"). Fixed with the same manual
+`Paginator` pattern already used elsewhere (`ImportBatchDetailView`); timing dropped to ~100ms after the fix.
+While fixing it, the same unpaginated-`View` pattern was found and fixed the same way in `ReservedStockView` and
+`StockByProjectReferenceView`'s per-reference unit listing (lower risk at today's data shape — nothing seeds
+thousands of reserved/project-tagged units yet — but the same spec requirement applies regardless of today's data,
+and the fix is the same few lines), plus a missing `.order_by()` on the project-reference query that Django's own
+`UnorderedObjectListWarning` flagged once that queryset became paginated (pagination without a stable order can
+shuffle rows between pages). Covered by new tests in `tests/test_reporting.py` (`TestCurrentStockReport`,
+`TestReservedStockReport`) seeding 55 rows to force a second page.
+
+**Scope notes:**
+- Session cookie age (8h idle default) and the password policy (12-char minimum + Django's standard validators)
+  were already in place from Phase 1 — Prompt 8 didn't need to change either, only confirm them against doc 08.
+- `SECURE_HSTS_PRELOAD` defaults to `False` and is now env-configurable — submitting to a browser's HSTS preload
+  list is effectively one-way (removal takes months to propagate), so it's an explicit operator opt-in, not a
+  framework default.
+- Docker itself was **not** available on the machine this was built on, so `docker-compose.prod.yml`/
+  `Dockerfile.prod` follow standard, well-established patterns but haven't been booted end to end via Docker in
+  this repository — see the verification note at the top of `deploy/DEPLOYMENT.md` for exactly what *was* verified
+  without Docker (the production Django settings module itself, `collectstatic`, a full request/response cycle
+  under `DEBUG=False` via `manage.py runserver`, the backup/restore cycle, and the DB role hardening — all against
+  real PostgreSQL). Smoke-testing the actual Docker Compose topology once is called out as a pre-cutover step.
+- Browser-level (Playwright/Selenium) tests from doc 08's original Testing plan were not built — see doc 08's
+  Testing section for why, and it's flagged for Prompt 9's traceability matrix rather than silently dropped.
+
+**Acceptance**: restore procedure actually executed once in a disposable environment (see `RESTORE.md`); measured
+(not assumed) query timings reported against 8,000+ seeded records (see above) — both satisfied for real, not just
+documented. 353 tests pass (up from 342: axes lockout, error pages, and the reporting-pagination regression tests).
+No migration drift.
 
 ### Prompt 9 — Final acceptance and release audit
 

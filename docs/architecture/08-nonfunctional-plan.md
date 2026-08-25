@@ -5,8 +5,11 @@ Covers spec §12, §17, Prompt 1/8.
 ## Security
 
 - **Auth**: Django's built-in auth, PBKDF2/Argon2 (whichever is Django's current default at implementation time —
-  no custom hasher). Login throttling via `django-axes` or an equivalent small, maintained package (evaluated in
-  Phase 1; avoid hand-rolled lockout logic).
+  no custom hasher). Login throttling via `django-axes` (Prompt 8) — locks out by the `(username, ip_address)`
+  combination (`AXES_LOCKOUT_PARAMETERS = [["username", "ip_address"]]`), not IP alone, so a shared office/VPN
+  egress IP can't lock out every user behind it, and an attacker can't lock a known username out from every IP by
+  guessing its password from one machine. `AXES_FAILURE_LIMIT`/`AXES_COOLOFF_MINUTES` are env-configurable
+  (defaulted to 5 / 30, same "deferred, defaulted, overridable" treatment as the password policy below).
 - **Sessions/CSRF**: Django's CSRF middleware everywhere (including HTMX requests — HTMX sends the CSRF header via
   the standard Django template pattern), `SESSION_COOKIE_SECURE`/`CSRF_COOKIE_SECURE`=true in production,
   configurable session timeout (env var, default conservative e.g. 8 hours idle).
@@ -23,9 +26,15 @@ Covers spec §12, §17, Prompt 1/8.
 - **Secrets**: environment variables / Docker secrets only; `.env.example` committed with no real values; a startup
   check fails fast if a required production secret is missing rather than silently running with an insecure
   default.
-- **DB-level defense in depth**: `AuditEvent` and completed `InventoryTransaction` rows have their `UPDATE`/`DELETE`
-  grants revoked from the application's Postgres role (doc 02) — authorization bugs in application code cannot
-  rewrite history even in the worst case.
+- **DB-level defense in depth**: `deploy/sql/hardening_runtime_role.sql` (Prompt 8) provisions a *separate*,
+  lower-privilege Postgres role for the running application to connect as (set via `RUNTIME_DB_USER`/
+  `RUNTIME_DB_PASSWORD` in `config/settings/production.py`), distinct from the role that owns the tables and runs
+  migrations — necessary because PostgreSQL lets a table's owner bypass `GRANT`/`REVOKE` on its own tables, so
+  restricting the owning role would be a no-op. `UPDATE`/`DELETE` are revoked on every `AppendOnlyModel` table
+  (`AuditEvent`, `InventoryTransaction`, `InventoryTransactionLine`, `AssetStatusHistory`, `GeneratedDocument`) for
+  that runtime role — verified for real against a live PostgreSQL instance (both the expected rejections on the
+  append-only tables and that ordinary tables remain fully writable). Optional (the app falls back to the owning
+  role if unset) so it doesn't block a first deploy, but recommended before go-live per `deploy/DEPLOYMENT.md`.
 
 ## Backup and restore
 
@@ -49,7 +58,11 @@ Covers spec §12, §17, Prompt 1/8.
   spec §23.4 and each phase's prompt.
 - Browser-level tests (Playwright via `pytest-playwright`, or Django's `LiveServerTestCase` + Selenium — decided in
   Phase 1 based on what's easiest to run in the Docker dev environment) for the critical multi-step workflows:
-  receive → reserve → assign → partial return, and the import preview/execute flow.
+  receive → reserve → assign → partial return, and the import preview/execute flow. **Not built** — every phase
+  instead verified its critical workflows via the Django test client (`pytest`) plus a live HTTP smoke test against
+  a running dev server (`curl`, with real CSRF/session handling) at the end of each phase, which covered the same
+  multi-step flows end to end without introducing a new browser-automation dependency. Flagged as an open item for
+  Prompt 9's traceability matrix rather than added unilaterally here, since it's new tooling, not a bug fix.
 - Query-count tests (`django.test.utils.CaptureQueriesContext` or `django-assert-num-queries`) on list/report views
   to catch N+1 regressions before they hit production data volumes (spec §17 explicit requirement).
 - A seeded 8,000+-row dataset (via a management command) used both for functional tests at realistic scale and for

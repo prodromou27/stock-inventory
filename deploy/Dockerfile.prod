@@ -1,0 +1,47 @@
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+# libpango/libcairo/libgdk-pixbuf are WeasyPrint's PDF-rendering dependencies
+# (docs/architecture/06-documents-and-snapshots.md).
+RUN apt-get update && apt-get install --no-install-recommends -y \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libpangoft2-1.0-0 \
+    libcairo2 \
+    libgdk-pixbuf-2.0-0 \
+    fonts-liberation \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd --system app && useradd --system --gid app --home /app app
+
+# Only the runtime dependency set — no pytest/ruff/black in the production
+# image (deploy/Dockerfile, used for local dev, installs requirements-dev.txt
+# instead).
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+RUN chown -R app:app /app
+
+USER app
+
+# Baked into the image at build time so the running container never needs
+# write access to its own static files directory, and so collectstatic
+# failures are caught at build time, not first request — see
+# config/settings/production.py's STORAGES override and deploy/DEPLOYMENT.md.
+# SECRET_KEY/ALLOWED_HOSTS aren't read by collectstatic, but production.py
+# requires them to be set for any Django command to load that settings
+# module at all, so dummy build-time values are supplied here and never used
+# at runtime (the real ones come from the container's env at `docker run`).
+RUN DJANGO_SETTINGS_MODULE=config.settings.production \
+    SECRET_KEY=build-time-placeholder-unused-at-runtime \
+    ALLOWED_HOSTS=build-time-placeholder \
+    python manage.py collectstatic --noinput
+
+EXPOSE 8000
+
+CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3"]

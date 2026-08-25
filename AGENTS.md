@@ -71,9 +71,17 @@ Administrator from) creates a sample Country > Site > Floor > Storage Room > Rac
 exercising pagination/filters/reports at realistic volume (spec §21.15); idempotent and safe to re-run, and pass
 `--count` to change the target.
 
+Login throttling (`django-axes`) is active in every settings module, including dev/test — 5 failed attempts for the
+same `(username, ip_address)` locks that combination out for 30 minutes (`AXES_FAILURE_LIMIT`/
+`AXES_COOLOFF_MINUTES`, env-configurable). If manual testing trips this, either wait out the cooloff or clear it:
+`python manage.py shell -c "from axes.models import AccessAttempt; AccessAttempt.objects.all().delete()"`.
+
 ## Settings
 
 `DJANGO_SETTINGS_MODULE` selects `config.settings.{dev,test,production}`, all built on `config.settings.base`.
 Copy `.env.example` to `.env` and adjust before running outside the Docker Compose defaults. Production settings
 hard-fail (`ImproperlyConfigured`) if `SECRET_KEY`/`ALLOWED_HOSTS` are missing and hardcode `DEBUG=False`
-regardless of environment — see `docs/architecture/08-nonfunctional-plan.md`.
+regardless of environment — see `docs/architecture/08-nonfunctional-plan.md`. For an actual production deployment
+(not local Docker dev), see [`deploy/DEPLOYMENT.md`](deploy/DEPLOYMENT.md) — a separate `Dockerfile.prod` +
+`docker-compose.prod.yml` + nginx reverse proxy, backup/restore (`deploy/backup.sh`/`deploy/RESTORE.md`), and the
+optional DB-role hardening script (`deploy/sql/hardening_runtime_role.sql`).

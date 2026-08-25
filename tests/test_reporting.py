@@ -483,3 +483,102 @@ class TestStockByLocationReport:
         row = rows[location_tree["room"].pk]
         assert row["unit_count"] == 2
         assert row["quantity_total"] == 7
+
+
+@pytest.mark.django_db
+class TestCurrentStockReport:
+    """Regression coverage for the pagination fix found by measuring real
+    wall-clock timing against the 8,000+-row bulk-seeded dataset during
+    Prompt 8: this view originally rendered every in-stock unit in one
+    unpaginated response (~1.2s against 8,000 rows), violating spec §21.15.
+    """
+
+    def test_shows_in_stock_units_and_balances(
+        self, client, administrator, unit_product, quantity_product, location_tree
+    ):
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-CUR-1",
+        )
+        receive_stock(
+            user=administrator,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=4,
+        )
+
+        client.force_login(administrator)
+        response = client.get(reverse("reporting:current_stock"))
+        serials = {a.vendor_serial for a in response.context["units"]}
+        assert serials == {"SN-CUR-1"}
+        assert response.context["balances"].count() == 1
+
+    def test_units_are_paginated(self, client, administrator, unit_product, location_tree):
+        for i in range(55):
+            receive_stock(
+                user=administrator,
+                product=unit_product,
+                location=location_tree["room"],
+                occurred_at=date.today(),
+                vendor_serial=f"SN-CUR-PAGE-{i:03d}",
+            )
+
+        client.force_login(administrator)
+        response = client.get(reverse("reporting:current_stock"))
+        assert response.context["is_paginated"] is True
+        assert len(response.context["units"]) == 50
+
+        page2 = client.get(reverse("reporting:current_stock"), {"page": 2})
+        assert len(page2.context["units"]) == 5
+
+    def test_excludes_out_of_scope_units(
+        self,
+        client,
+        administrator,
+        stock_manager_with_room_access,
+        unit_product,
+        location_tree,
+        other_room,
+    ):
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=other_room,
+            occurred_at=date.today(),
+            vendor_serial="SN-OUT-OF-SCOPE",
+        )
+        client.force_login(stock_manager_with_room_access)
+        response = client.get(reverse("reporting:current_stock"))
+        serials = {a.vendor_serial for a in response.context["units"]}
+        assert "SN-OUT-OF-SCOPE" not in serials
+
+
+@pytest.mark.django_db
+class TestReservedStockReport:
+    def test_units_are_paginated(self, client, administrator, unit_product, location_tree):
+        assets = []
+        for i in range(55):
+            receive_stock(
+                user=administrator,
+                product=unit_product,
+                location=location_tree["room"],
+                occurred_at=date.today(),
+                vendor_serial=f"SN-RES-PAGE-{i:03d}",
+            )
+            assets.append(UnitAsset.objects.get(vendor_serial=f"SN-RES-PAGE-{i:03d}"))
+
+        reserve_stock(
+            user=administrator,
+            occurred_at=date.today(),
+            project_reference="PRJ-RESERVE-PAGE",
+            unit_asset_ids=[a.pk for a in assets],
+        )
+
+        client.force_login(administrator)
+        response = client.get(reverse("reporting:reserved_stock"))
+        assert response.context["is_paginated"] is True
+        assert len(response.context["units"]) == 50

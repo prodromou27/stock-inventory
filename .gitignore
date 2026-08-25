@@ -16,3 +16,9 @@ db_data/
 
 # Local-only sample data (may contain real customer/business data) — never committed.
 /sample/
+
+# Production deployment secrets/artifacts — real values never committed.
+.env.production
+deploy/nginx.conf
+deploy/certs/
+deploy/backups/
