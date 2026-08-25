@@ -50,6 +50,46 @@ class TestReturnStock:
         assert asset1.status == UnitStatus.RETURNED
         assert asset2.status == UnitStatus.ASSIGNED  # untouched
 
+    def test_condition_and_accessories_captured_on_return(
+        self, administrator, unit_product, location_tree
+    ):
+        """Regression coverage for acceptance criterion §21.8 ("Condition and
+        accessories can be recorded at issue and return") — return_stock()
+        already threaded these through to the line snapshot correctly, but
+        had no dedicated test on the return side (found during the Prompt 9
+        traceability audit).
+        """
+        from apps.inventory.models import Condition, InventoryTransactionLine
+
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-R-COND",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-R-COND")
+        assign_txn = assign_to_employee(
+            user=administrator,
+            employee_name="Priya",
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+        )
+
+        return_txn = return_stock(
+            user=administrator,
+            original_transaction=assign_txn,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+            condition=Condition.FAIR,
+            accessories="Charger missing",
+        )
+
+        line = InventoryTransactionLine.objects.get(transaction=return_txn, unit_asset=asset)
+        assert line.condition_snapshot == Condition.FAIR
+        assert line.accessories_snapshot == "Charger missing"
+
     def test_return_creates_new_transaction_linked_to_original(
         self, administrator, unit_product, location_tree
     ):

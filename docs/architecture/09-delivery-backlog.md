@@ -374,13 +374,43 @@ where a directory component needs to be, so walking into it as a directory relia
 This is exactly the kind of gap CI is supposed to catch before it reaches anyone else's machine — first real CI run
 found it within minutes.
 
-### Prompt 9 — Final acceptance and release audit
+### Prompt 9 — Final acceptance and release audit — done
 
-Depends on all prior prompts. Delivers: traceability matrix (every §21 criterion and §22 out-of-scope item mapped
-to code/tests), full test/lint/security run, Critical/High findings fixed with regression tests, administrator and
-stock-manager quick-start docs, release recommendation.
+Delivered [`11-traceability-matrix.md`](11-traceability-matrix.md): every spec §21 criterion (1–15) mapped to the
+specific service/view function and the specific passing test function(s) that verify it — not paraphrased, every
+reference spot-checked to confirm the named function actually exists before being written down. Every spec §22
+out-of-scope item confirmed genuinely absent by direct code search, not merely "never mentioned." A "Known gaps"
+section records what's honestly incomplete (no browser-level UI tests, the production Docker Compose topology not
+yet booted end to end, no in-app user-creation screen) rather than letting the matrix imply more coverage than
+exists.
 
-**Acceptance**: the traceability matrix itself, with no unmapped §21 criterion.
+**Two real findings from the audit, both fixed with regression tests**:
+- **Acceptance criterion §21.8** ("condition and accessories recorded at issue and return") had test coverage on
+  the issue side only — the return side (`returns.py::return_stock`) already threaded `condition`/`accessories`
+  through to the line snapshot correctly, it just had no dedicated test proving it. Added
+  `tests/test_inventory_returns.py::test_condition_and_accessories_captured_on_return`.
+- **No in-app way to reach Django's `/admin/` site** (which is how a new user account gets created and assigned a
+  role at all — spec §14's "User and permission administration" screen; `apps.accounts`' own screens only cover
+  location-scoped access grants) for any Administrator except the original `createsuperuser` account, since
+  nothing kept `is_staff` in sync with the app's own Administrator group. Fixed with a signal
+  (`apps/accounts/signals.py::sync_is_staff_with_administrator_group`), verified live against the real dev
+  database before writing `tests/test_admin_staff_sync.py`.
+
+A broader security sweep (SQL injection, XSS/autoescaping, unsafe `eval`/`pickle`/`subprocess`, secrets in git
+history, `manage.py check --deploy`, security headers) found nothing else — see the matrix's "Security review"
+section for the full list of what was checked and how.
+
+Delivered `docs/administrator-quickstart.md` and `docs/stock-manager-quickstart.md` — task-oriented guides for the
+two roles that actually use the app day to day (distinct from the architecture docs, which are for developers).
+Also refreshed `docs/architecture/README.md` (its status line and "recommended next step" had gone stale — it
+still said "no application code has been written yet" and pointed at running Prompt 1) and
+`docs/architecture/01-repository-structure.md` (missing `apps.exports`, and several paths that had drifted from
+what was actually built — `scripts/` never existed, backup/restore/deployment docs live directly under `deploy/`).
+
+**Acceptance**: the traceability matrix itself, with no unmapped §21 criterion — delivered, and every one of its
+test references verified to actually exist. 384 tests pass (up from 383, from the one new regression test — the
+`is_staff` sync fix's own tests were already counted in Prompt 8's "additional infrastructure" entry above). No
+migration drift.
 
 ## Sequencing notes
 

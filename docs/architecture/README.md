@@ -1,11 +1,16 @@
 # Architecture Plan — Index
 
-Status: Draft for review (Prompt 0 deliverable). No application code has been written yet.
+Status: **Built and audited.** All nine prompt-pack prompts (plus two additional features added on direct user
+request — Excel export scheduling and GitHub CI — see doc 09) are implemented, tested, and released; see
+[11-traceability-matrix.md](11-traceability-matrix.md) for the final acceptance audit against spec §21/§22. This
+package started as the Prompt 0 technical plan and has been kept up to date through every phase since — where an
+implementation detail diverged from the original plan, the relevant document below was updated in place, not left
+to go stale.
 
 Source of truth: [`../Stock_Inventory_Application_Build_Specification.md`](../Stock_Inventory_Application_Build_Specification.md)
 (section references below are to that document).
 
-This folder contains the concrete technical plan the build will follow. Read in this order:
+This folder contains the technical plan the build followed. Read in this order:
 
 1. [01-repository-structure.md](01-repository-structure.md) — Django app layout and module responsibilities
 2. [02-data-model.md](02-data-model.md) — entity-relationship model, field-level design, indexes, constraints, deletion policy
@@ -15,8 +20,9 @@ This folder contains the concrete technical plan the build will follow. Read in 
 6. [06-documents-and-snapshots.md](06-documents-and-snapshots.md) — immutable PDF snapshot and attachment strategy
 7. [07-excel-import.md](07-excel-import.md) — staging, validation, idempotency, rollback
 8. [08-nonfunctional-plan.md](08-nonfunctional-plan.md) — security, backup, testing, observability, performance
-9. [09-delivery-backlog.md](09-delivery-backlog.md) — phased backlog with dependencies and acceptance criteria
+9. [09-delivery-backlog.md](09-delivery-backlog.md) — phased backlog with dependencies and acceptance criteria, and the as-built record of what each phase actually delivered
 10. [10-assumptions-and-open-questions.md](10-assumptions-and-open-questions.md) — every place this plan had to fill a gap the spec left open, split into non-blocking assumptions vs. true blockers
+11. [11-traceability-matrix.md](11-traceability-matrix.md) — final release audit: every spec §21/§22 item mapped to real, currently-passing code and tests
 
 ## Guiding constraints carried through every document
 
@@ -29,6 +35,9 @@ This folder contains the concrete technical plan the build will follow. Read in 
 
 **None.** Every gap found while producing this plan was resolvable with a documented, low-risk default that doesn't foreclose spec §24's explicitly-deferred decisions. See [10-assumptions-and-open-questions.md](10-assumptions-and-open-questions.md) for the full list and reasoning — worth a skim before Phase 1 starts, since a couple of the defaults (quantity-stock reservation model, transaction numbering) are judgment calls a reviewer may want to redirect.
 
-## Recommended next step
+## Release status
 
-Review this package, then run Prompt 1 (repository foundation) from the prompt pack. Implement and review one phase at a time per spec §23.1 and the prompt pack's operating sequence.
+See [11-traceability-matrix.md](11-traceability-matrix.md) for the release recommendation and the full acceptance
+audit. In short: every §21 criterion is implemented and covered by a passing test, every §22 exclusion is confirmed
+genuinely absent, and the known gaps (browser-level UI tests, the production Docker Compose topology not yet
+booted end to end) are documented there rather than silently left out.

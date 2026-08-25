@@ -24,20 +24,23 @@ stock_inventory/
 │   ├── inventory/                     # UnitAsset, StockBalance, StockReservation, ledger, movement services
 │   ├── documents/                     # GeneratedDocument, Attachment, PDF rendering
 │   ├── imports/                       # ImportBatch, ImportRow, staged Excel/CSV import
+│   ├── exports/                       # ExportSettings, scheduled full-inventory Excel snapshot to a local/network path
 │   ├── audit/                         # AuditEvent, audit-logging service used by every other app
 │   └── reporting/                     # read-only report/export views built on the other apps' models
 ├── templates/                         # base layout + per-app template overrides (apps also keep local templates/)
 ├── static/
-├── tests/                             # cross-app / end-to-end browser tests (per-app unit tests live in each app)
+├── tests/                             # the full pytest suite (per-app service/view tests + cross-app/end-to-end)
 ├── deploy/
-│   ├── docker-compose.yml
-│   ├── docker-compose.prod.yml
-│   ├── Dockerfile
-│   └── nginx/ (reverse-proxy example)
-├── scripts/                           # backup.sh, restore.sh, seed_dev_data management command wrappers
+│   ├── docker-compose.yml             # local dev
+│   ├── docker-compose.prod.yml        # production: no code bind-mount, nginx reverse proxy
+│   ├── Dockerfile / Dockerfile.prod
+│   ├── nginx.conf.example
+│   ├── backup.sh / RESTORE.md / DEPLOYMENT.md
+│   └── sql/hardening_runtime_role.sql # optional DB-level defense in depth (doc 08)
+├── .github/workflows/ci.yml           # ruff/black/migration-check/pytest on every push, real Postgres service
 ├── manage.py
 ├── pyproject.toml
-├── .env.example
+├── .env.example / .env.production.example
 ├── CLAUDE.md
 └── AGENTS.md
 ```
