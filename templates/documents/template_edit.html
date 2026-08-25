@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}{{ document_type_label }} Template — Stock Inventory{% endblock %}
+
+{% block content %}
+  <h1>{{ document_type_label }} document template</h1>
+  <p><a href="{% url 'documents:template_hub' %}">&larr; All document templates</a></p>
+
+  {% if form.non_field_errors %}
+    <ul class="messages">
+      {% for error in form.non_field_errors %}
+        <li class="messages__item messages__item--error">{{ error }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  <div class="template-editor-layout">
+    <form method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+      <p>
+        <label for="{{ form.html_source.id_for_label }}">{{ form.html_source.label }}</label><br>
+        {{ form.html_source }}
+        {% if form.html_source.errors %}<div class="messages__item messages__item--error">{{ form.html_source.errors }}</div>{% endif %}
+      </p>
+
+      <p>
+        <label for="{{ form.logo.id_for_label }}">{{ form.logo.label }}</label>
+        {{ form.logo }}
+        {% if template_obj.logo %}
+          <br><span>Current logo on file: {{ template_obj.logo.name }} — use Preview to see it rendered.</span>
+        {% endif %}
+      </p>
+      <p>
+        <label>{{ form.remove_logo }} {{ form.remove_logo.label }}</label>
+      </p>
+
+      <button type="submit">Save</button>
+      <button type="submit" formaction="{% url 'documents:template_preview' document_type %}" formtarget="_blank">
+        Preview (opens a sample PDF in a new tab)
+      </button>
+    </form>
+
+    {% if template_obj %}
+      <form method="post" action="{% url 'documents:template_reset' document_type %}"
+            onsubmit="return confirm('Reset to the packaged default? Your customizations will be lost.');">
+        {% csrf_token %}
+        <button type="submit">Reset to packaged default</button>
+      </form>
+    {% endif %}
+
+    <aside class="template-field-reference">
+      <h2>Available fields</h2>
+      <p>Plain Django template syntax — use these anywhere in the HTML:</p>
+      {% verbatim %}
+      <ul>
+        <li><code>{{ document_number }}</code>, <code>{{ transaction_number }}</code></li>
+        <li><code>{{ movement_type_display }}</code> — e.g. "Customer delivery"</li>
+        <li><code>{{ occurred_at }}</code> — ISO date</li>
+        <li><code>{{ employee_name }}</code> — set for assignments, blank for deliveries</li>
+        <li><code>{{ final_customer }}</code> — set for deliveries, blank for assignments</li>
+        <li><code>{{ project_reference }}</code></li>
+        <li><code>{{ source_locations|join:", " }}</code> — a list of location names</li>
+        <li><code>{{ notes }}</code></li>
+        <li><code>{{ prepared_by }}</code></li>
+        <li><code>{{ logo_data_uri }}</code> — your uploaded logo; use
+          <code>&lt;img src="{{ logo_data_uri }}"&gt;</code> (empty string if none uploaded)</li>
+        <li>
+          <code>lines</code> — loop with <code>{% for line in lines %}...{% endfor %}</code>:
+          <code>{{ line.brand }}</code>, <code>{{ line.model }}</code>, <code>{{ line.sku }}</code>,
+          <code>{{ line.type }}</code>, <code>{{ line.description }}</code>, <code>{{ line.serial }}</code>,
+          <code>{{ line.quantity }}</code>, <code>{{ line.condition }}</code>, <code>{{ line.accessories }}</code>
+        </li>
+      </ul>
+      {% endverbatim %}
+      <p>Save runs your template against sample data first — a broken template is rejected with an error here,
+        never saved. Use Preview as often as you like to check a real rendered PDF before saving.</p>
+    </aside>
+  </div>
+{% endblock %}

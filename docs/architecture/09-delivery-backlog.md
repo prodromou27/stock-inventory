@@ -412,6 +412,45 @@ test references verified to actually exist. 384 tests pass (up from 383, from th
 `is_staff` sync fix's own tests were already counted in Prompt 8's "additional infrastructure" entry above). No
 migration drift.
 
+### Additional feature — editable document (sign-off/delivery) PDF templates — done
+
+Added directly on user request, after Prompt 9's release audit. The user asked, in one request: (1) for
+Administrators to be able to preview and edit the printable report/document templates "from settings" — especially
+the sign-off/delivery form — including a logo and mapping the same dynamic data fields the current form already
+uses; and (2) for the "product delivery acceptance and sign-in form" generated when stock is handed over to a
+customer to also use an editable template. Clarified with the user before building: the trigger is the existing
+Delivery movement/document (not a new document type — Delivery already generates exactly this sign-off form), the
+editor should be an HTML/code editor using Django's existing `{{ field }}` syntax (not a visual drag-and-drop
+builder — a materially larger, separate subsystem), and only the printable Assignment/Delivery PDF template(s) need
+to become editable, not every report screen.
+
+See doc 02's `DocumentTemplate` entry and doc 06's "Editable document templates" section for the full design and
+the explicit trust-model reasoning for letting an Administrator-authored template render through Django's template
+engine. In short: `apps/documents/pdf.py::render_pdf()` now checks for an Administrator-saved `DocumentTemplate`
+override per `DocumentType` before falling back to the packaged `form_v1.html` file — purely additive, nothing
+changes for an installation that never touches it. A new **Document Templates** screen (Administrator-only) offers
+a code editor pre-filled with the packaged template as a starting point, a documented list of every available field
+(exactly `build_document_context()`'s output, i.e. nothing new to learn beyond what the packaged template already
+demonstrates), a logo upload embedded as a base64 data URI at render time, a **Preview** button that renders the
+in-progress (not-yet-saved) template against realistic sample data and opens a real PDF in a new tab, and **Reset
+to packaged default**.
+
+**One real bug found by my own tests, fixed**: the Preview endpoint only caught `ValidationError`, but a template
+with a genuine syntax error raises `django.template.exceptions.TemplateSyntaxError` directly from the render call
+— `apps/documents/template_services.py::update_template()`'s save-time validation already wrapped this correctly,
+but `render_preview_pdf()` didn't, so previewing a broken template crashed with a raw 500 instead of the clean 400
+the UI expects. Caught by `tests/test_document_templates_views.py::TestPreviewView::test_broken_template_returns_400_not_500`
+before this was ever exercised by a real user; fixed by wrapping `render_preview_pdf()`'s render call the same way.
+
+Verified live end-to-end (service layer, then full HTTP: save a custom template with a logo, preview it as a real
+PDF, confirm a broken template is rejected without touching the previously-saved good one, generate a real document
+against the override, reset to default) before writing the pytest suite (`tests/test_document_templates_services.py`,
+`tests/test_document_templates_views.py` — 33 tests).
+
+**Acceptance**: an Administrator can edit, preview, and reset the Delivery (and Assignment) document template from
+the app itself, with a logo and the documented field set, verified against a real rendered PDF at every step.
+417 tests pass (up from 384). No migration drift.
+
 ## Sequencing notes
 
 - Prompt 0 (this package) has no code dependency and is complete.

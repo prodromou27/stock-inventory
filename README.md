@@ -24,16 +24,17 @@ console by `seed_dev_data`).
 
 ## Status
 
-**Feature-complete and released.** Every phase of the delivery backlog (all nine prompt-pack prompts, plus two
-features added directly on user request — scheduled Excel export and this GitHub/CI setup) is implemented, tested,
-and audited: the full inventory ledger (receiving, transfer, reservation, assignment, delivery, returns,
-damage/loss/disposal, and Administrator corrections/reversals — all as an immutable
+**Feature-complete and released.** Every phase of the delivery backlog (all nine prompt-pack prompts, plus three
+features added directly on user request — scheduled Excel export, this GitHub/CI setup, and editable document
+templates) is implemented, tested, and audited: the full inventory ledger (receiving, transfer, reservation,
+assignment, delivery, returns, damage/loss/disposal, and Administrator corrections/reversals — all as an immutable
 `InventoryTransaction`/`InventoryTransactionLine` ledger); role/location-scoped authorization everywhere; printable
-immutable PDF snapshots and attachment upload; full filtering/search, CSV export, an audit log, and every report
-from spec §15; an Administrator-only Excel/CSV importer for the legacy workbook migration; an Administrator-only
-scheduled Excel export to a local/network path as a backup safety net; and production-hardening (login throttling,
-custom error pages, DB-level defense in depth for the ledger/audit tables, a verified backup/restore procedure, and
-a production Docker Compose + nginx deployment path).
+immutable PDF snapshots with an Administrator-editable template (layout, logo, and data fields, previewable before
+saving) and attachment upload; full filtering/search, CSV export, an audit log, and every report from spec §15; an
+Administrator-only Excel/CSV importer for the legacy workbook migration; an Administrator-only scheduled Excel
+export to a local/network path as a backup safety net; and production-hardening (login throttling, custom error
+pages, DB-level defense in depth for the ledger/audit tables, a verified backup/restore procedure, and a production
+Docker Compose + nginx deployment path).
 
 See [`docs/architecture/11-traceability-matrix.md`](docs/architecture/11-traceability-matrix.md) for the final
 release audit — every spec §21 acceptance criterion and §22 exclusion mapped to real, currently-passing code and

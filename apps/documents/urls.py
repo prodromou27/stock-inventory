@@ -30,4 +30,20 @@ urlpatterns = [
         views.AttachmentDeleteView.as_view(),
         name="attachment_delete",
     ),
+    path("templates/", views.DocumentTemplateHubView.as_view(), name="template_hub"),
+    path(
+        "templates/<str:document_type>/",
+        views.DocumentTemplateEditView.as_view(),
+        name="template_edit",
+    ),
+    path(
+        "templates/<str:document_type>/preview/",
+        views.DocumentTemplatePreviewView.as_view(),
+        name="template_preview",
+    ),
+    path(
+        "templates/<str:document_type>/reset/",
+        views.DocumentTemplateResetView.as_view(),
+        name="template_reset",
+    ),
 ]

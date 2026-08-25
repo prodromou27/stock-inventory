@@ -345,6 +345,26 @@ Never updated in place; "regenerate" creates a new row (see doc 06).
 Multiple attachments per transaction are allowed (a new upload is a new row — this is how "never overwrite an
 existing attachment silently," §11, is satisfied).
 
+### `DocumentTemplate`
+
+Not in the original prompt-pack prompts — added on direct user request after Prompt 9 (see doc 06's "Editable
+document templates" section for the full design and trust-model reasoning). An Administrator-editable override of
+the packaged PDF template, one row per `DocumentType`.
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | UUID PK | |
+| `document_type` | enum: `assignment, delivery`, unique | |
+| `html_source` | text | raw Django-template-syntax HTML; validated (rendered against sample data) before every save |
+| `logo` | file path (protected volume), null | embedded into the PDF as a base64 data URI at render time, never served directly |
+| `updated_by_id` | FK → `User`, null | |
+| `created_at`, `updated_at` | timestamptz | |
+
+Not append-only — unlike `GeneratedDocument`, this is live configuration meant to be edited and reset, not a
+historical record. "Reset to default" hard-deletes the row (`apps.documents.pdf.render_pdf()` falls back to the
+packaged file template whenever no row exists for a `document_type`), rather than a soft `is_active` toggle —
+there is nothing about a discarded draft template worth preserving as history.
+
 ### `ImportBatch` / `ImportRow`
 
 | `ImportBatch` field | Type |

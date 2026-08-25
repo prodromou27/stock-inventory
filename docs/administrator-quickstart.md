@@ -35,6 +35,21 @@ Products, Brands, and Types are created inline as you receive stock, or managed 
 a product has any movement against it, its tracking method (unit-serialized vs. quantity) locks — this is
 deliberate, since converting live stock between the two isn't a safe automatic operation.
 
+## Customizing the sign-off/delivery document template
+
+**Document Templates** — edit the printable PDF generated for assignment and delivery transactions (the form a
+customer or employee physically signs when stock leaves): layout, wording, and your company logo, without needing
+a code change. Start from the packaged default already loaded in the editor, use the documented field list on the
+same screen to pull in real data (product/serial details, customer name, dates, etc.), and:
+
+- **Preview** as often as you like — it opens a real PDF rendered from your in-progress edit against sample data in
+  a new tab, before you save anything.
+- **Save** re-validates your template against that same sample data first — a broken template is rejected with the
+  error shown right there, and never overwrites your last working version.
+- **Reset to packaged default** if you want to start over.
+
+This only affects the Assignment/Delivery PDF — the Reports section's own screens are unaffected.
+
 ## Corrections and reversals
 
 From an asset, balance, or transaction's detail page, an Administrator-only **Correct** or **Reverse** action is

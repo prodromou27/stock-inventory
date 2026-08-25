@@ -37,13 +37,14 @@ def generate_document(*, txn, user, supersedes=None):
         )
 
     document_number = next_document_number()
+    document_type = document_type_for(txn)
     context = build_document_context(transaction=txn, document_number=document_number)
-    pdf_bytes = render_pdf(context)
+    pdf_bytes = render_pdf(context, document_type=document_type)
 
     document = GeneratedDocument(
         transaction=txn,
         document_number=document_number,
-        document_type=document_type_for(txn),
+        document_type=document_type,
         template_version=CURRENT_TEMPLATE_VERSION,
         context_snapshot=context,
         generated_by=user,
