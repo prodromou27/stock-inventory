@@ -5,6 +5,7 @@ from django.core.exceptions import ValidationError
 
 from apps.audit.models import AuditEvent
 from apps.inventory.models import StockBalance, UnitAsset, UnitStatus
+from apps.inventory.services.assignments import assign_to_employee
 from apps.inventory.services.corrections import (
     correct_balance,
     correct_unit_status,
@@ -18,6 +19,29 @@ from apps.inventory.services.transfers import bulk_transfer
 
 @pytest.mark.django_db
 class TestCorrectUnitStatus:
+    def test_correction_rejects_status_location_inconsistency(
+        self, administrator, unit_product, location_tree
+    ):
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-CONSISTENCY",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-CONSISTENCY")
+        with pytest.raises(ValidationError, match="cannot have a location"):
+            correct_unit_status(
+                user=administrator,
+                unit_asset=asset,
+                to_status=UnitStatus.DELIVERED,
+                occurred_at=date.today(),
+                reason="correct customer delivery",
+                to_location=location_tree["room"],
+            )
+        asset.refresh_from_db()
+        assert asset.status == UnitStatus.IN_STOCK
+
     def test_administrator_can_force_any_status(self, administrator, unit_product, location_tree):
         receive_stock(
             user=administrator,
@@ -321,6 +345,32 @@ class TestReverseTransaction:
 
 @pytest.mark.django_db
 class TestQuantityReversalIntegrity:
+    def test_reversal_recomputes_last_removal_date(
+        self, administrator, unit_product, location_tree
+    ):
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date(2026, 1, 1),
+            vendor_serial="SN-REMOVAL-REV",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-REMOVAL-REV")
+        issue = assign_to_employee(
+            user=administrator,
+            employee_name="Morgan",
+            occurred_at=date(2026, 2, 1),
+            unit_asset_ids=[asset.pk],
+        )
+        reverse_transaction(
+            user=administrator,
+            original_transaction=issue,
+            occurred_at=date(2026, 2, 2),
+            reason="assignment entered in error",
+        )
+        asset.refresh_from_db()
+        assert asset.last_removal_date is None
+
     def test_reversing_quantity_transfer_restores_both_balances(
         self, administrator, quantity_product, location_tree, other_location_tree
     ):

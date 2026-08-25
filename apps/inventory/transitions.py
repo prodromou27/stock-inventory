@@ -49,11 +49,8 @@ VALID_UNIT_TRANSITIONS = {
         UnitStatus.DISPOSED,
     },
     UnitStatus.DAMAGED: {
+        UnitStatus.IN_STOCK,
         UnitStatus.DISPOSED,
-        # Damaged -> In Stock ("after repair", spec §8) is reachable only via
-        # an Administrator correction — see docs/architecture/09-delivery-backlog.md's
-        # Prompt 4 scoping note; it isn't one of the prompt pack's 12 named
-        # Stock-Manager-facing workflows.
     },
     UnitStatus.LOST: set(),  # recovery only via Administrator correction
     UnitStatus.DISPOSED: set(),  # terminal except an Administrator reversal

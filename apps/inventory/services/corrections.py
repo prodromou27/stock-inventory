@@ -12,6 +12,7 @@ from ..models import (
     StockBalance,
     StockReservation,
     UnitAsset,
+    UnitStatus,
 )
 from .ledger import (
     adjust_balance,
@@ -38,6 +39,19 @@ def correct_unit_status(*, user, unit_asset, to_status, occurred_at, reason, to_
     from_status = asset.status
     from_location = asset.current_location
     resolved_location = to_location if to_location is not None else from_location
+    requires_location = {UnitStatus.IN_STOCK, UnitStatus.RESERVED, UnitStatus.RETURNED}
+    requires_no_location = {
+        UnitStatus.ASSIGNED,
+        UnitStatus.DELIVERED,
+        UnitStatus.LOST,
+        UnitStatus.DISPOSED,
+    }
+    if to_status in requires_location and resolved_location is None:
+        raise ValidationError(f"Status '{UnitStatus(to_status).label}' requires a location.")
+    if to_status in requires_no_location and to_location is not None:
+        raise ValidationError(f"Status '{UnitStatus(to_status).label}' cannot have a location.")
+    if to_status in requires_no_location:
+        resolved_location = None
 
     txn = create_transaction_header(
         movement_type=MovementType.CORRECTION,
@@ -182,6 +196,7 @@ def reverse_transaction(*, user, original_transaction, occurred_at, reason):
                 user=user,
                 notes=reason,
             )
+            _recompute_last_removal_date(asset)
         else:
             if line.stock_reservation_id:
                 reservation = StockReservation.objects.select_for_update().get(
@@ -268,3 +283,26 @@ def reverse_transaction(*, user, original_transaction, occurred_at, reason):
         summary=f"Reversed transaction {original_transaction.transaction_number} ({reason})",
     )
     return txn
+
+
+def _recompute_last_removal_date(asset):
+    removal_types = {
+        MovementType.ASSIGNMENT,
+        MovementType.DELIVERY,
+        MovementType.MARK_LOST,
+        MovementType.DISPOSAL,
+        MovementType.CORRECTION,
+    }
+    latest = (
+        asset.transaction_lines.filter(
+            transaction__movement_type__in=removal_types,
+            from_location__isnull=False,
+            to_location__isnull=True,
+        )
+        .exclude(transaction__related_transactions__movement_type=MovementType.REVERSAL)
+        .order_by("-transaction__occurred_at", "-transaction__created_at")
+        .values_list("transaction__occurred_at", flat=True)
+        .first()
+    )
+    asset.last_removal_date = latest
+    asset.save(update_fields=["last_removal_date", "updated_at"])

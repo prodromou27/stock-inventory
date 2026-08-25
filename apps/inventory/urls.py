@@ -42,6 +42,7 @@ urlpatterns = [
     path("deliver/", views.DeliverView.as_view(), name="deliver"),
     path("assess-return/", views.AssessReturnView.as_view(), name="assess_return"),
     path("mark-damaged/", views.MarkDamagedView.as_view(), name="mark_damaged"),
+    path("repair-damaged/", views.RepairDamagedView.as_view(), name="repair_damaged"),
     path("mark-lost/", views.MarkLostView.as_view(), name="mark_lost"),
     path("dispose/", views.DisposeView.as_view(), name="dispose"),
 ]

@@ -221,6 +221,18 @@ class DispositionForm(_BaseMovementForm):
         return cleaned
 
 
+class RepairDamagedForm(forms.Form):
+    location = forms.ModelChoiceField(queryset=Location.objects.none())
+    occurred_at = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
+    notes = forms.CharField(required=False, widget=forms.Textarea, label="Repair notes")
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["location"].queryset = (
+            accessible_locations(user).filter(is_active=True).order_by("level", "name")
+        )
+
+
 class AdminCorrectUnitForm(forms.Form):
     STATUS_CHOICES = UnitStatus.choices
 

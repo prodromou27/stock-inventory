@@ -266,25 +266,47 @@ def set_row_location_override(*, row, location, user):
     re-validation pass is needed.
     """
     require_role(user, ADMINISTRATOR)
+    row = ImportRow.objects.select_for_update().get(pk=row.pk)
     _require_editable_batch(row.batch)
 
+    old_location_id = row.normalized_data.get("location_override_id")
     normalized = dict(row.normalized_data)
     normalized["location_override_id"] = str(location.pk)
     row.normalized_data = normalized
     row.outcome_detail = f"{row.outcome_detail} (location manually set to {location})".strip()
     row.save(update_fields=["normalized_data", "outcome_detail"])
+    record_event(
+        actor=user,
+        event_type=AuditEvent.EventType.RECORD_UPDATED,
+        obj=row,
+        summary=f"Changed location override for import row {row.row_number}",
+        old_values={"location_override_id": old_location_id},
+        new_values={"location_override_id": str(location.pk)},
+        metadata={"batch_id": str(row.batch_id), "row_number": row.row_number},
+    )
     return row
 
 
 @transaction.atomic
 def skip_row(*, row, user):
     require_role(user, ADMINISTRATOR)
+    row = ImportRow.objects.select_for_update().get(pk=row.pk)
     _require_editable_batch(row.batch)
     if row.outcome == ImportRowOutcome.SKIPPED:
         return row
+    old_outcome = row.outcome
     row.outcome = ImportRowOutcome.SKIPPED
     row.outcome_detail = "Skipped by user during preview."
     row.save(update_fields=["outcome", "outcome_detail"])
+    record_event(
+        actor=user,
+        event_type=AuditEvent.EventType.RECORD_UPDATED,
+        obj=row,
+        summary=f"Skipped import row {row.row_number}",
+        old_values={"outcome": old_outcome},
+        new_values={"outcome": ImportRowOutcome.SKIPPED},
+        metadata={"batch_id": str(row.batch_id), "row_number": row.row_number},
+    )
     return row
 
 

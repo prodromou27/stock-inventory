@@ -21,6 +21,7 @@ from .forms import (
     DeliverForm,
     DispositionForm,
     ReceiveStockForm,
+    RepairDamagedForm,
     ReserveForm,
     ReturnAssessmentForm,
     ReturnForm,
@@ -38,7 +39,7 @@ from .models import (
 )
 from .services.assignments import assign_to_employee, deliver_to_customer
 from .services.corrections import correct_balance, correct_unit_status, reverse_transaction
-from .services.disposition import dispose, mark_damaged, mark_lost
+from .services.disposition import dispose, mark_damaged, mark_lost, return_repaired_to_stock
 from .services.receipts import DuplicateSerialError, receive_stock
 from .services.reservations import release_reservation, reserve_stock
 from .services.returns import assess_return, return_stock
@@ -769,6 +770,48 @@ class DisposeView(_DispositionView):
     service = staticmethod(dispose)
     verb = "Disposed"
     page_title = "Dispose"
+
+
+class RepairDamagedView(LoginRequiredMixin, RoleRequiredMixin, View):
+    allowed_roles = (ADMINISTRATOR, STOCK_MANAGER)
+    template_name = "inventory/disposition_form.html"
+
+    def get(self, request):
+        return render(
+            request,
+            self.template_name,
+            {
+                "form": RepairDamagedForm(user=request.user),
+                "assets": _eligible_assets(request, [UnitStatus.DAMAGED]),
+                "page_title": "Return repaired assets to stock",
+            },
+        )
+
+    def post(self, request):
+        form = RepairDamagedForm(request.POST, user=request.user)
+        assets = _eligible_assets(request, [UnitStatus.DAMAGED])
+        if form.is_valid():
+            try:
+                txn = return_repaired_to_stock(
+                    user=request.user,
+                    location=form.cleaned_data["location"],
+                    occurred_at=form.cleaned_data["occurred_at"],
+                    unit_asset_ids=request.POST.getlist("unit_asset_ids"),
+                    notes=form.cleaned_data["notes"],
+                )
+            except ValidationError as exc:
+                form.add_error(None, exc)
+            else:
+                messages.success(
+                    request,
+                    f"Returned repaired assets to stock — transaction {txn.transaction_number}.",
+                )
+                return redirect(txn.get_absolute_url())
+        return render(
+            request,
+            self.template_name,
+            {"form": form, "assets": assets, "page_title": "Return repaired assets to stock"},
+        )
 
 
 class AdminCorrectUnitView(LoginRequiredMixin, RoleRequiredMixin, View):

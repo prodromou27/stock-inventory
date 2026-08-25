@@ -21,49 +21,58 @@ def next_document_number():
     return f"DOC-{value:06d}"
 
 
-@transaction.atomic
 def generate_document(*, txn, user, supersedes=None):
     """Renders and persists a PDF snapshot of a completed assignment/delivery
     transaction (spec §10, acceptance criterion §21.13). `supersedes`, when
     given, links to the GeneratedDocument this one replaces — regeneration
     never edits or removes the old row/file (doc 06).
     """
-    require_role(user, ADMINISTRATOR, STOCK_MANAGER)
-    require_transaction_access(user, txn)
+    stored_file = None
+    storage = None
+    try:
+        with transaction.atomic():
+            require_role(user, ADMINISTRATOR, STOCK_MANAGER)
+            require_transaction_access(user, txn)
 
-    if txn.movement_type not in (MovementType.ASSIGNMENT, MovementType.DELIVERY):
-        raise ValidationError(
-            "Only assignment or delivery transactions can generate a printable document."
-        )
+            if txn.movement_type not in (MovementType.ASSIGNMENT, MovementType.DELIVERY):
+                raise ValidationError(
+                    "Only assignment or delivery transactions can generate a printable document."
+                )
 
-    document_number = next_document_number()
-    document_type = document_type_for(txn)
-    context = build_document_context(transaction=txn, document_number=document_number)
-    pdf_bytes = render_pdf(context, document_type=document_type)
+            document_number = next_document_number()
+            document_type = document_type_for(txn)
+            context = build_document_context(transaction=txn, document_number=document_number)
+            pdf_bytes = render_pdf(context, document_type=document_type)
 
-    document = GeneratedDocument(
-        transaction=txn,
-        document_number=document_number,
-        document_type=document_type,
-        template_version=CURRENT_TEMPLATE_VERSION,
-        context_snapshot=context,
-        generated_by=user,
-        supersedes=supersedes,
-    )
-    document.pdf_file.save(f"{document.id}.pdf", ContentFile(pdf_bytes), save=False)
-    document.full_clean()
-    document.save()
+            document = GeneratedDocument(
+                transaction=txn,
+                document_number=document_number,
+                document_type=document_type,
+                template_version=CURRENT_TEMPLATE_VERSION,
+                context_snapshot=context,
+                generated_by=user,
+                supersedes=supersedes,
+            )
+            document.pdf_file.save(f"{document.id}.pdf", ContentFile(pdf_bytes), save=False)
+            stored_file = document.pdf_file.name
+            storage = document.pdf_file.storage
+            document.full_clean()
+            document.save()
 
-    record_event(
-        actor=user,
-        event_type=AuditEvent.EventType.DOCUMENT_GENERATED,
-        obj=document,
-        summary=(
-            f"Generated {document.document_type} document {document.document_number} "
-            f"for {txn.transaction_number}"
-        ),
-    )
-    return document
+            record_event(
+                actor=user,
+                event_type=AuditEvent.EventType.DOCUMENT_GENERATED,
+                obj=document,
+                summary=(
+                    f"Generated {document.document_type} document {document.document_number} "
+                    f"for {txn.transaction_number}"
+                ),
+            )
+        return document
+    except Exception:
+        if stored_file and storage:
+            storage.delete(stored_file)
+        raise
 
 
 @transaction.atomic
@@ -102,7 +111,6 @@ def _sniff_content_type(uploaded_file):
     return None
 
 
-@transaction.atomic
 def upload_attachment(*, txn, uploaded_file, user):
     require_role(user, ADMINISTRATOR, STOCK_MANAGER)
     require_transaction_access(user, txn)
@@ -125,24 +133,34 @@ def upload_attachment(*, txn, uploaded_file, user):
             "File content does not match an allowed file type (PDF, JPEG, or PNG)."
         )
 
-    attachment = Attachment(
-        transaction=txn,
-        original_filename=original_filename,
-        content_type=sniffed_content_type,
-        size_bytes=uploaded_file.size,
-        uploaded_by=user,
-    )
-    attachment.file.save(f"{attachment.id}{ext}", uploaded_file, save=False)
-    attachment.full_clean()
-    attachment.save()
+    stored_file = None
+    storage = None
+    try:
+        with transaction.atomic():
+            attachment = Attachment(
+                transaction=txn,
+                original_filename=original_filename,
+                content_type=sniffed_content_type,
+                size_bytes=uploaded_file.size,
+                uploaded_by=user,
+            )
+            attachment.file.save(f"{attachment.id}{ext}", uploaded_file, save=False)
+            stored_file = attachment.file.name
+            storage = attachment.file.storage
+            attachment.full_clean()
+            attachment.save()
 
-    record_event(
-        actor=user,
-        event_type=AuditEvent.EventType.ATTACHMENT_UPLOADED,
-        obj=attachment,
-        summary=f"Uploaded attachment '{original_filename}' to {txn.transaction_number}",
-    )
-    return attachment
+            record_event(
+                actor=user,
+                event_type=AuditEvent.EventType.ATTACHMENT_UPLOADED,
+                obj=attachment,
+                summary=f"Uploaded attachment '{original_filename}' to {txn.transaction_number}",
+            )
+        return attachment
+    except Exception:
+        if stored_file and storage:
+            storage.delete(stored_file)
+        raise
 
 
 @transaction.atomic

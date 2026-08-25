@@ -1,6 +1,8 @@
 from datetime import date
+from pathlib import Path
 
 import pytest
+from django.conf import settings
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 
@@ -41,6 +43,22 @@ def assignment_txn(administrator, unit_product, location_tree):
 
 @pytest.mark.django_db
 class TestGenerateDocument:
+    def test_database_failure_removes_generated_pdf(
+        self, administrator, assignment_txn, monkeypatch
+    ):
+        before = set(Path(settings.MEDIA_ROOT).rglob("*"))
+
+        def fail_audit(**kwargs):
+            raise RuntimeError("audit unavailable")
+
+        monkeypatch.setattr("apps.documents.services.record_event", fail_audit)
+        with pytest.raises(RuntimeError, match="audit unavailable"):
+            generate_document(txn=assignment_txn, user=administrator)
+
+        after = set(Path(settings.MEDIA_ROOT).rglob("*"))
+        assert {path for path in after - before if path.is_file()} == set()
+        assert not GeneratedDocument.objects.filter(transaction=assignment_txn).exists()
+
     def test_generates_a_real_pdf(self, administrator, assignment_txn):
         document = generate_document(txn=assignment_txn, user=administrator)
 
@@ -187,6 +205,25 @@ class TestRegenerateDocument:
 
 @pytest.mark.django_db
 class TestUploadAttachment:
+    def test_database_failure_removes_uploaded_file(
+        self, administrator, assignment_txn, monkeypatch
+    ):
+        before = set(Path(settings.MEDIA_ROOT).rglob("*"))
+        upload = SimpleUploadedFile(
+            "signed.pdf", b"%PDF-1.4 signed", content_type="application/pdf"
+        )
+
+        def fail_audit(**kwargs):
+            raise RuntimeError("audit unavailable")
+
+        monkeypatch.setattr("apps.documents.services.record_event", fail_audit)
+        with pytest.raises(RuntimeError, match="audit unavailable"):
+            upload_attachment(txn=assignment_txn, uploaded_file=upload, user=administrator)
+
+        after = set(Path(settings.MEDIA_ROOT).rglob("*"))
+        assert {path for path in after - before if path.is_file()} == set()
+        assert not Attachment.objects.filter(transaction=assignment_txn).exists()
+
     def test_uploads_valid_pdf(self, administrator, assignment_txn):
         upload = SimpleUploadedFile("form.pdf", b"%PDF-1.4 content", content_type="application/pdf")
         attachment = upload_attachment(txn=assignment_txn, uploaded_file=upload, user=administrator)

@@ -4,12 +4,46 @@ import pytest
 from django.core.exceptions import ValidationError
 
 from apps.inventory.models import StockBalance, UnitAsset, UnitStatus
-from apps.inventory.services.disposition import dispose, mark_damaged, mark_lost
+from apps.inventory.services.disposition import (
+    dispose,
+    mark_damaged,
+    mark_lost,
+    return_repaired_to_stock,
+)
 from apps.inventory.services.receipts import receive_stock
 
 
 @pytest.mark.django_db
 class TestMarkDamaged:
+    def test_stock_manager_can_return_repaired_asset_to_stock(
+        self, stock_manager_with_room_access, unit_product, location_tree
+    ):
+        receive_stock(
+            user=stock_manager_with_room_access,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-REPAIRED",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-REPAIRED")
+        mark_damaged(
+            user=stock_manager_with_room_access,
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+            notes="failed power supply",
+        )
+        txn = return_repaired_to_stock(
+            user=stock_manager_with_room_access,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+            notes="power supply replaced",
+        )
+        asset.refresh_from_db()
+        assert asset.status == UnitStatus.IN_STOCK
+        assert asset.current_location == location_tree["room"]
+        assert txn.lines.get().from_status == UnitStatus.DAMAGED
+
     def test_marks_damaged_without_moving_location(
         self, administrator, unit_product, location_tree
     ):

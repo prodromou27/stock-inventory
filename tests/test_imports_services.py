@@ -269,6 +269,23 @@ class TestExecuteBatch:
         asset = UnitAsset.objects.get(vendor_serial="SN-OVERRIDE")
         assert asset.current_location == location_tree["room"]
 
+    def test_preview_override_and_skip_are_audited(self, administrator, location_tree):
+        upload = _csv_upload([_base_row(LOCATION="Nowhere", **{"S/N": "SN-AUDIT-PREVIEW"})])
+        batch, _ = services.create_batch_from_upload(uploaded_file=upload, user=administrator)
+        row = batch.rows.get()
+        services.set_row_location_override(
+            row=row, location=location_tree["room"], user=administrator
+        )
+        services.skip_row(row=row, user=administrator)
+
+        events = AuditEvent.objects.filter(
+            event_type=AuditEvent.EventType.RECORD_UPDATED, object_id=str(row.pk)
+        ).order_by("occurred_at")
+        assert events.count() == 2
+        assert events[0].new_values["location_override_id"] == str(location_tree["room"].pk)
+        assert events[1].old_values["outcome"] == ImportRowOutcome.WARNING
+        assert events[1].new_values["outcome"] == ImportRowOutcome.SKIPPED
+
     def test_override_allowed_after_partial_execution(self, administrator, location_tree):
         """Regression: after a first execute() leaves a batch partially_completed,
         remaining warning rows must still be editable — that's the entire point

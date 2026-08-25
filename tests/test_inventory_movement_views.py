@@ -11,7 +11,7 @@ from apps.inventory.models import (
     UnitStatus,
 )
 from apps.inventory.services.assignments import assign_to_employee
-from apps.inventory.services.disposition import dispose
+from apps.inventory.services.disposition import dispose, mark_damaged
 from apps.inventory.services.receipts import receive_stock
 from apps.inventory.services.reservations import reserve_stock
 
@@ -367,6 +367,37 @@ class TestDispositionViews:
         client.force_login(read_only_user)
         response = client.get(reverse("inventory:mark_damaged"))
         assert response.status_code == 403
+
+    def test_stock_manager_can_complete_repair_view(
+        self, client, stock_manager_with_room_access, unit_product, location_tree
+    ):
+        receive_stock(
+            user=stock_manager_with_room_access,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-REPAIR-VIEW",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-REPAIR-VIEW")
+        mark_damaged(
+            user=stock_manager_with_room_access,
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+            notes="failed fan",
+        )
+        client.force_login(stock_manager_with_room_access)
+        response = client.post(
+            reverse("inventory:repair_damaged"),
+            {
+                "location": str(location_tree["room"].pk),
+                "occurred_at": date.today().isoformat(),
+                "unit_asset_ids": [str(asset.pk)],
+                "notes": "fan replaced",
+            },
+        )
+        assert response.status_code == 302
+        asset.refresh_from_db()
+        assert asset.status == UnitStatus.IN_STOCK
 
 
 @pytest.mark.django_db

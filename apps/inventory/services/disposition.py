@@ -135,3 +135,49 @@ def dispose(*, user, occurred_at, unit_asset_ids=None, quantity_lines=None, note
         quantity_lines=quantity_lines,
         notes=notes,
     )
+
+
+@transaction.atomic
+def return_repaired_to_stock(*, user, location, occurred_at, unit_asset_ids, notes=""):
+    """Record completion of a repair and return damaged units to stock."""
+    require_role(user, ADMINISTRATOR, STOCK_MANAGER)
+    require_location_access(user, location)
+    if not location.is_active:
+        raise ValidationError("Cannot return repaired stock to an inactive location.")
+
+    unit_asset_ids = list(unit_asset_ids or [])
+    if not unit_asset_ids:
+        raise ValidationError("Select at least one damaged asset.")
+    assets = list(
+        UnitAsset.objects.select_for_update().filter(pk__in=unit_asset_ids).order_by("pk")
+    )
+    if len(assets) != len(set(unit_asset_ids)):
+        raise ValidationError("One or more selected assets could not be found.")
+    for asset in assets:
+        require_asset_access(user, asset)
+        validate_unit_transition(asset.status, UnitStatus.IN_STOCK)
+
+    txn = create_transaction_header(
+        movement_type=MovementType.RETURN_ASSESSMENT,
+        performed_by=user,
+        occurred_at=occurred_at,
+        destination_location=location,
+        notes=notes,
+    )
+    for line_number, asset in enumerate(assets, start=1):
+        write_unit_line(
+            transaction=txn,
+            line_number=line_number,
+            asset=asset,
+            to_status=UnitStatus.IN_STOCK,
+            to_location=location,
+            user=user,
+            notes=notes,
+        )
+    record_event(
+        actor=user,
+        event_type=AuditEvent.EventType.MOVEMENT_COMPLETED,
+        obj=txn,
+        summary=f"Returned {len(assets)} repaired asset(s) to stock",
+    )
+    return txn
