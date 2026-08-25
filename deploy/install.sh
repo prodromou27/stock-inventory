@@ -15,21 +15,55 @@ CERTS_DIR="deploy/certs"
 
 _random_hex() {
     local bytes="$1"
+    local value=""
     if command -v openssl >/dev/null 2>&1; then
-        openssl rand -hex "$bytes"
+        value=$(openssl rand -hex "$bytes")
     elif [ -r /dev/urandom ]; then
-        head -c "$bytes" /dev/urandom | od -An -tx1 | tr -d ' \n'
+        value=$(head -c "$bytes" /dev/urandom | od -An -tx1 | tr -d ' \n')
     elif command -v python3 >/dev/null 2>&1; then
-        python3 -c "import secrets; print(secrets.token_hex($bytes))"
-    else
-        echo "No way to generate a secure random value found (need openssl, /dev/urandom, or python3)." >&2
+        value=$(python3 -c "import secrets; print(secrets.token_hex($bytes))")
+    fi
+    # Every generator above can in principle exit 0 with no output (a flaky
+    # openssl, a stripped-down image with a broken od/head). A blank secret
+    # written to $ENV_FILE would otherwise go unnoticed forever, since a
+    # second run treats an existing $ENV_FILE as already-generated and never
+    # looks at its contents again — so fail loudly here instead.
+    if [ -z "$value" ]; then
+        echo "Failed to generate a secure random value (need a working openssl, /dev/urandom, or python3)." >&2
         exit 1
+    fi
+    echo "$value"
+}
+
+# Guards against a $ENV_FILE left over from a prior run that generated the
+# file but wrote a blank value for one of these (e.g. a transient generator
+# failure) — reusing it silently, forever, is exactly what let that go
+# unnoticed until db refused to start on a real deployment. Heals in place
+# rather than failing, so a re-run of this script is still the one command
+# that gets an already-broken install running.
+_ensure_secret_set() {
+    local key="$1" bytes="$2"
+    local current
+    current=$(grep "^${key}=" "$ENV_FILE" | head -1 | cut -d= -f2-)
+    if [ -z "$current" ]; then
+        echo "$key in $ENV_FILE is empty (likely a prior run's generator failed partway through) —" >&2
+        echo "regenerating it now." >&2
+        local value
+        value=$(_random_hex "$bytes")
+        if grep -q "^${key}=" "$ENV_FILE"; then
+            sed -i "s|^${key}=.*|${key}=${value}|" "$ENV_FILE"
+        else
+            echo "${key}=${value}" >> "$ENV_FILE"
+        fi
     fi
 }
 
 GENERATED_NEW_ENV=false
 if [ -f "$ENV_FILE" ]; then
     echo "$ENV_FILE already exists — reusing it (secrets are never regenerated over an existing install)."
+    _ensure_secret_set SECRET_KEY 32
+    _ensure_secret_set POSTGRES_PASSWORD 16
+    _ensure_secret_set BOOTSTRAP_ADMIN_PASSWORD 12
 else
     echo "Generating $ENV_FILE with fresh, random secrets..."
     SECRET_KEY=$(_random_hex 32)
