@@ -24,7 +24,7 @@ COPY requirements.txt requirements-dev.txt ./
 RUN pip install --no-cache-dir -r requirements-dev.txt
 
 COPY . .
-RUN chown -R app:app /app && chmod +x deploy/entrypoint.sh
+RUN chown -R app:app /app && chmod +x deploy/entrypoint.sh deploy/backup.sh
 
 USER app
 
