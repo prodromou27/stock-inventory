@@ -35,10 +35,20 @@ With Docker (recommended — matches the deployment target):
 ```
 cp .env.example .env
 docker compose -f deploy/docker-compose.yml up
-docker compose -f deploy/docker-compose.yml exec web python manage.py migrate
+```
+
+That alone is a working, loggable-in install — `deploy/entrypoint.sh` runs `migrate` and `bootstrap_admin`
+(username `admin`, password `admin`, both env-overridable) automatically on every `web` container start, before
+the server starts serving. `bootstrap_admin` is a no-op once any Administrator exists, so it's safe to leave in
+place forever; it never resets a password an operator already changed. The account is force-blocked from every
+other page until its password is changed (`apps.accounts.middleware.RequirePasswordChangeMiddleware`,
+`docs/architecture/04-permission-matrix.md`'s "Default admin bootstrap" section).
+
+Everything else is optional/as-needed:
+
+```
 docker compose -f deploy/docker-compose.yml exec web python manage.py seed_dev_data
 docker compose -f deploy/docker-compose.yml exec web python manage.py seed_locations
-docker compose -f deploy/docker-compose.yml exec web python manage.py createsuperuser
 docker compose -f deploy/docker-compose.yml exec web pytest
 docker compose -f deploy/docker-compose.yml exec web ruff check .
 docker compose -f deploy/docker-compose.yml exec web black --check .
@@ -50,6 +60,7 @@ Without Docker (requires a local PostgreSQL 16+ with the `ltree` extension avail
 
 ```
 python manage.py migrate
+python manage.py bootstrap_admin
 python manage.py seed_dev_data
 python manage.py seed_locations
 pytest

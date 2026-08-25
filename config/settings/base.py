@@ -43,6 +43,9 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    # Needs request.user (AuthenticationMiddleware) and needs to run before a
+    # view can render anything (doc 04's "Default admin bootstrap" section).
+    "apps.accounts.middleware.RequirePasswordChangeMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     # Must be last — inspects the response of every request, including ones

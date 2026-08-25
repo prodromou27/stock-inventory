@@ -14,27 +14,33 @@ Internal stock and technology-asset inventory application, replacing an Excel-ba
 ```
 cp .env.example .env
 docker compose -f deploy/docker-compose.yml up
-docker compose -f deploy/docker-compose.yml exec web python manage.py migrate
+```
+
+That's it — migrations and a default Administrator account are set up automatically
+(`deploy/entrypoint.sh`). Visit http://localhost:8000/ and log in with username `admin`, password `admin`. The app
+forces a password change before anything else is reachable, so do that first.
+
+Optional, for a fuller dev dataset (extra role accounts, a sample location tree):
+```
 docker compose -f deploy/docker-compose.yml exec web python manage.py seed_dev_data
 docker compose -f deploy/docker-compose.yml exec web python manage.py seed_locations
 ```
 
-Then visit http://localhost:8000/ and log in with one of the seeded dev accounts (credentials are printed to the
-console by `seed_dev_data`).
-
 ## Status
 
-**Feature-complete and released.** Every phase of the delivery backlog (all nine prompt-pack prompts, plus three
-features added directly on user request — scheduled Excel export, this GitHub/CI setup, and editable document
-templates) is implemented, tested, and audited: the full inventory ledger (receiving, transfer, reservation,
-assignment, delivery, returns, damage/loss/disposal, and Administrator corrections/reversals — all as an immutable
-`InventoryTransaction`/`InventoryTransactionLine` ledger); role/location-scoped authorization everywhere; printable
-immutable PDF snapshots with an Administrator-editable template (layout, logo, and data fields, previewable before
-saving) and attachment upload; full filtering/search, CSV export, an audit log, and every report from spec §15; an
-Administrator-only Excel/CSV importer for the legacy workbook migration; an Administrator-only scheduled Excel
-export to a local/network path as a backup safety net; and production-hardening (login throttling, custom error
-pages, DB-level defense in depth for the ledger/audit tables, a verified backup/restore procedure, and a production
-Docker Compose + nginx deployment path).
+**Feature-complete and released.** Every phase of the delivery backlog (all nine prompt-pack prompts, plus four
+features added directly on user request — scheduled Excel export, this GitHub/CI setup, editable document
+templates, and single-command install) is implemented, tested, and audited: the full inventory ledger (receiving,
+transfer, reservation, assignment, delivery, returns, damage/loss/disposal, and Administrator corrections/reversals
+— all as an immutable `InventoryTransaction`/`InventoryTransactionLine` ledger); role/location-scoped authorization
+everywhere; printable immutable PDF snapshots with an Administrator-editable template (layout, logo, and data
+fields, previewable before saving) and attachment upload; full filtering/search, CSV export, an audit log, and
+every report from spec §15; an Administrator-only Excel/CSV importer for the legacy workbook migration; an
+Administrator-only scheduled Excel export to a local/network path as a backup safety net; production-hardening
+(login throttling, custom error pages, DB-level defense in depth for the ledger/audit tables, a verified
+backup/restore procedure, and a production Docker Compose + nginx deployment path); and a one-command install —
+`docker compose up` alone migrates the database and bootstraps a default Administrator (`admin`/`admin`), with a
+hard, server-enforced password change required before anything else is reachable.
 
 See [`docs/architecture/11-traceability-matrix.md`](docs/architecture/11-traceability-matrix.md) for the final
 release audit — every spec §21 acceptance criterion and §22 exclusion mapped to real, currently-passing code and

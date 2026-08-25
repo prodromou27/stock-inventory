@@ -90,3 +90,28 @@ transaction.
 `reporting` app views build their base queryset via `scope_queryset` before applying any filter/sort/pagination, so
 CSV/XLSX export uses the identical filtered queryset the on-screen list used — there is no separate "export"
 code path that could diverge and leak unauthorized rows (spec §4, acceptance criterion §21.3).
+
+## Default admin bootstrap (added on direct user request, post-Prompt 9)
+
+The user asked for installation to be a single command, ending with a working, loggable-in system — specifically:
+a default Administrator account (`admin` / `admin`, both env-overridable via `BOOTSTRAP_ADMIN_USERNAME`/
+`BOOTSTRAP_ADMIN_PASSWORD`) created automatically, that **must** be changed before anything else can be done.
+
+This is a real, explicitly acknowledged security trade-off — predictable default credentials are a known
+anti-pattern — accepted here because it's paired with genuine enforcement, not just a UI hint:
+
+- `apps/accounts/management/commands/bootstrap_admin.py` is **idempotent**: it does nothing if any Administrator
+  (or superuser) already exists. It's safe to run on every container start (`deploy/entrypoint.sh` runs it after
+  every `migrate`) — it can never reset an operator's already-changed password back to the default.
+- `MustChangePassword` (a row, not a flag on `User`, so it survives independently of any future custom-user-model
+  work) is created alongside the bootstrap account. `apps.accounts.middleware.RequirePasswordChangeMiddleware`
+  blocks **every** authenticated request except the password-change page, logout, and static assets while that row
+  exists — not a dismissible banner, a hard redirect enforced server-side on every request, the same "never rely on
+  hidden UI as security" principle this whole document is about.
+- `django-axes` (doc 08) already rate-limits repeated login attempts against the known username, including
+  `admin`, from the moment the container starts.
+- Still a real residual window: if the deployed instance is reachable from an untrusted network before the
+  operator's first login, `admin`/`admin` is guessable during that window. `deploy/DEPLOYMENT.md` calls this out
+  explicitly as a step to complete before exposing the instance beyond a trusted network, and `bootstrap_admin` can
+  be disabled entirely (`BOOTSTRAP_ADMIN_ENABLED=false`) for an operator who prefers the previous interactive
+  `createsuperuser` flow instead.

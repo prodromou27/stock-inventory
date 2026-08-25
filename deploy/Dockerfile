@@ -24,10 +24,13 @@ COPY requirements.txt requirements-dev.txt ./
 RUN pip install --no-cache-dir -r requirements-dev.txt
 
 COPY . .
-RUN chown -R app:app /app
+RUN chown -R app:app /app && chmod +x deploy/entrypoint.sh
 
 USER app
 
 EXPOSE 8000
 
+# entrypoint.sh runs `migrate` + `bootstrap_admin` before every start, so
+# `docker compose up` alone is a complete install — see deploy/entrypoint.sh.
+ENTRYPOINT ["deploy/entrypoint.sh"]
 CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]

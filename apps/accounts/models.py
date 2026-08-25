@@ -36,3 +36,22 @@ class UserLocationAccess(models.Model):
 
     def __str__(self):
         return f"{self.user} @ {self.location}"
+
+
+class MustChangePassword(models.Model):
+    """Presence of a row means `user` is still on a bootstrap-assigned
+    default password and is blocked from doing anything else until they set
+    a real one (apps.accounts.middleware.RequirePasswordChangeMiddleware,
+    apps.accounts.views.ForcedPasswordChangeView) — see
+    apps/accounts/management/commands/bootstrap_admin.py and
+    docs/architecture/04-permission-matrix.md's "Default admin bootstrap"
+    section for the full design and the security trade-off it documents.
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="must_change_password"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.user} must change password"

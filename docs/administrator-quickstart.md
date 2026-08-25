@@ -8,9 +8,10 @@ do everything a Stock Manager can, everywhere, plus the following.
 There's no "add user" button inside the app itself — that's handled by Django's own built-in admin site at
 `/admin/`, which is where new `User` accounts get created and put into one of the three role groups
 (**Administrator**, **StockManager**, **ReadOnlyUser** — a user should normally be in exactly one). The very first
-Administrator account is created during deployment via `manage.py createsuperuser`
-([`deploy/DEPLOYMENT.md`](../deploy/DEPLOYMENT.md)); after that, any Administrator can reach `/admin/` themselves
-(being in the Administrator group grants that automatically) to create the next one.
+Administrator account is created automatically the first time the app starts — username `admin`, password `admin`
+— and you're forced to change that password before anything else in the app is reachable
+([`deploy/DEPLOYMENT.md`](../deploy/DEPLOYMENT.md)'s "Default admin account" section). Any Administrator can reach
+`/admin/` (being in the Administrator group grants that automatically) to create the next one.
 
 Steps: `/admin/` → **Users** → **Add user** → set a username and temporary password → save → open the new user →
 add them to the right group under **Permissions** → save again. They should change their password after first
