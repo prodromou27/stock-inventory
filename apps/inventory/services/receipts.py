@@ -268,3 +268,61 @@ def _receive_quantity(
         new_values={"quantity": quantity, "balance_id": str(balance.pk)},
     )
     return txn
+
+
+def receive_stock_batch(*, user, product, location, occurred_at, vendor_serials, **shared_fields):
+    """Quick Receive (apps.inventory.views.QuickReceiveView) — one serial per
+    line pasted/typed into a single form, for the common "we just got a box
+    of N identical units" case. Serialized (unit-tracked) products only;
+    quantity-tracked products already receive an arbitrary count in one
+    receive_stock() call and have no per-unit serial to enumerate.
+
+    Calls receive_stock() once per non-blank line rather than writing one
+    InventoryTransaction with many lines — each physical unit's arrival is
+    its own receipt event, consistent with how a single manual receive
+    works today, and it means a bad row (a typo'd duplicate serial, an
+    inactive product caught between rows) doesn't roll back every serial
+    that already succeeded: this returns a per-serial outcome list instead
+    of raising, so the view can show exactly what happened to each one.
+    Never auto-acknowledges a duplicate serial — that confirmation is a
+    deliberate human decision (docs/architecture/05-tracking-and-duplicates.md),
+    so a duplicate row is reported back, not silently accepted.
+
+    Permission/product-state checks happen once, up front — not per row,
+    so a StockManager without access to `location` gets one PermissionDenied
+    for the whole submission rather than the same failure N times over.
+    """
+    require_role(user, ADMINISTRATOR, STOCK_MANAGER)
+    require_location_access(user, location)
+    if not product.is_active:
+        raise ValidationError("Cannot receive stock for an inactive product.")
+    if product.tracking_method != TrackingMethod.UNIT:
+        raise ValidationError("Quick Receive is for serialized (unit-tracked) products only.")
+
+    results = []
+    seen = set()
+    for raw_serial in vendor_serials:
+        serial = raw_serial.strip()
+        if not serial:
+            continue
+        normalized = " ".join(serial.split()).upper()
+        if normalized in seen:
+            results.append({"serial": serial, "status": "skipped_repeat_in_batch"})
+            continue
+        seen.add(normalized)
+        try:
+            txn = receive_stock(
+                user=user,
+                product=product,
+                location=location,
+                occurred_at=occurred_at,
+                vendor_serial=serial,
+                **shared_fields,
+            )
+        except DuplicateSerialError as exc:
+            results.append({"serial": serial, "status": "duplicate", "matches": list(exc.matches)})
+        except ValidationError as exc:
+            results.append({"serial": serial, "status": "error", "detail": "; ".join(exc.messages)})
+        else:
+            results.append({"serial": serial, "status": "created", "transaction": txn})
+    return results

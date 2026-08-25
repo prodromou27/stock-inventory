@@ -20,6 +20,7 @@ from .forms import (
     AssignForm,
     DeliverForm,
     DispositionForm,
+    QuickReceiveForm,
     ReceiveStockForm,
     RepairDamagedForm,
     ReserveForm,
@@ -40,7 +41,7 @@ from .models import (
 from .services.assignments import assign_to_employee, deliver_to_customer
 from .services.corrections import correct_balance, correct_unit_status, reverse_transaction
 from .services.disposition import dispose, mark_damaged, mark_lost, return_repaired_to_stock
-from .services.receipts import DuplicateSerialError, receive_stock
+from .services.receipts import DuplicateSerialError, receive_stock, receive_stock_batch
 from .services.reservations import release_reservation, reserve_stock
 from .services.returns import assess_return, return_stock
 from .services.transfers import bulk_transfer
@@ -104,6 +105,77 @@ class ReceiveStockView(LoginRequiredMixin, RoleRequiredMixin, View):
 
         messages.success(request, f"Received stock — transaction {txn.transaction_number}.")
         return redirect(txn.get_absolute_url())
+
+
+class QuickReceiveView(LoginRequiredMixin, RoleRequiredMixin, View):
+    """One product/location/date, many serials pasted at once — the fast
+    path for "we just got a box of N identical units" (linked from the
+    Assets grid's page header). Each line becomes its own receive_stock()
+    call via receive_stock_batch(); the response shows a per-serial result
+    (created / duplicate / error) rather than an all-or-nothing outcome, so
+    one bad line doesn't cost you the rest of the batch.
+    """
+
+    allowed_roles = (ADMINISTRATOR, STOCK_MANAGER)
+    template_name = "inventory/quick_receive_form.html"
+
+    def get(self, request):
+        initial = {"occurred_at": None}
+        product_id = request.GET.get("product")
+        if product_id:
+            initial["product"] = product_id
+        location_id = request.GET.get("location")
+        if location_id:
+            initial["location"] = location_id
+        form = QuickReceiveForm(user=request.user, initial=initial)
+        return render(request, self.template_name, {"form": form})
+
+    def post(self, request):
+        form = QuickReceiveForm(request.POST, user=request.user)
+        if not form.is_valid():
+            return render(request, self.template_name, {"form": form})
+
+        data = form.cleaned_data
+        try:
+            results = receive_stock_batch(
+                user=request.user,
+                product=data["product"],
+                location=data["location"],
+                occurred_at=data["occurred_at"],
+                vendor_serials=data["vendor_serials"],
+                project_reference=data["project_reference"],
+                final_customer=data["final_customer"],
+                supplier=data["supplier"],
+                invoice_number=data["invoice_number"],
+                condition=data["condition"],
+                accessories=data["accessories"],
+                notes=data["notes"],
+            )
+        except ValidationError as exc:
+            form.add_error(None, exc)
+            return render(request, self.template_name, {"form": form})
+
+        created = sum(1 for r in results if r["status"] == "created")
+        messages.success(
+            request,
+            f"Received {created} of {len(results)} unit(s) of "
+            f"{data['product']} at {data['location']}.",
+        )
+        return render(
+            request,
+            self.template_name,
+            {
+                "form": QuickReceiveForm(
+                    user=request.user,
+                    initial={
+                        "product": data["product"].pk,
+                        "location": data["location"].pk,
+                        "occurred_at": data["occurred_at"],
+                    },
+                ),
+                "results": results,
+            },
+        )
 
 
 class UnitAssetListView(LoginRequiredMixin, CSVExportMixin, ListView):

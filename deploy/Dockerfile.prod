@@ -1,3 +1,19 @@
+# Compiles static/css/app.css from assets/tailwind/input.css (CLAUDE.md's
+# "Frontend build" section) — Tailwind is a build-time-only tool, so this
+# stage's output (one CSS file) is all that crosses into the runtime image
+# below; Node itself never ships. Only templates/ is copied in (not the
+# apps/**/templates/*.html pattern tailwind.config.js also scans for
+# content — no app currently has its own templates dir; add it here too if
+# one ever does).
+FROM node:20-slim AS assets
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY tailwind.config.js ./
+COPY assets/ ./assets/
+COPY templates/ ./templates/
+RUN npm run build:css
+
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -25,6 +41,7 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
+COPY --from=assets /app/static/css/app.css ./static/css/app.css
 RUN chown -R app:app /app && chmod +x deploy/entrypoint.sh deploy/backup.sh
 
 USER app

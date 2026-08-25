@@ -35,7 +35,7 @@
           <a class="sidebar__link {% nav_active 'balance_list' 'balance_detail' 'balance_correct' %}" href="{% url 'inventory:balance_list' %}">Stock Balances</a>
           <a class="sidebar__link {% nav_active 'transaction_list' 'transaction_detail' 'transaction_reverse' 'return_stock' %}" href="{% url 'inventory:transaction_list' %}">Transactions</a>
           {% if user_is_administrator or "StockManager" in user_role_groups %}
-            <a class="sidebar__link {% nav_active 'movements_hub' 'receive_stock' 'transfer' 'reserve' 'reservation_list' 'reservation_detail' 'release_reservation' 'assign' 'deliver' 'assess_return' 'mark_damaged' 'repair_damaged' 'mark_lost' 'dispose' %}" href="{% url 'inventory:movements_hub' %}">Movements</a>
+            <a class="sidebar__link {% nav_active 'movements_hub' 'receive_stock' 'quick_receive' 'transfer' 'reserve' 'reservation_list' 'reservation_detail' 'release_reservation' 'assign' 'deliver' 'assess_return' 'mark_damaged' 'repair_damaged' 'mark_lost' 'dispose' %}" href="{% url 'inventory:movements_hub' %}">Movements</a>
           {% endif %}
         </div>
 

@@ -23,3 +23,10 @@ deploy/.env
 deploy/nginx.conf
 deploy/certs/
 deploy/backups/
+
+# Tailwind CSS build (CLAUDE.md's "Frontend build" section) — static/css/app.css
+# is a generated artifact of assets/tailwind/input.css, never hand-edited or
+# committed; `npm install && npm run build:css` (or the Docker image build)
+# produces it.
+node_modules/
+static/css/app.css

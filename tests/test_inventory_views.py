@@ -87,6 +87,101 @@ class TestReceiveStockView:
 
 
 @pytest.mark.django_db
+class TestQuickReceiveView:
+    def test_anonymous_redirected_to_login(self, client):
+        response = client.get(reverse("inventory:quick_receive"))
+        assert response.status_code == 302
+
+    def test_read_only_user_forbidden(self, client, read_only_user):
+        client.force_login(read_only_user)
+        response = client.get(reverse("inventory:quick_receive"))
+        assert response.status_code == 403
+
+    def test_creates_a_unit_asset_per_line_and_shows_results(
+        self, client, stock_manager_with_room_access, unit_product, location_tree
+    ):
+        client.force_login(stock_manager_with_room_access)
+        response = client.post(
+            reverse("inventory:quick_receive"),
+            {
+                "product": unit_product.pk,
+                "location": location_tree["room"].pk,
+                "occurred_at": date.today().isoformat(),
+                "vendor_serials": "SN-QV-1\nSN-QV-2\nSN-QV-3",
+                "condition": "new",
+            },
+        )
+        assert response.status_code == 200
+        results = response.context["results"]
+        assert [r["status"] for r in results] == ["created", "created", "created"]
+        assert UnitAsset.objects.filter(vendor_serial__startswith="SN-QV-").count() == 3
+        assert "Received 3 of 3" in response.content.decode()
+
+    def test_form_redisplayed_with_product_and_location_preset_for_the_next_batch(
+        self, client, stock_manager_with_room_access, unit_product, location_tree
+    ):
+        client.force_login(stock_manager_with_room_access)
+        response = client.post(
+            reverse("inventory:quick_receive"),
+            {
+                "product": unit_product.pk,
+                "location": location_tree["room"].pk,
+                "occurred_at": date.today().isoformat(),
+                "vendor_serials": "SN-QV-NEXT-1",
+                "condition": "new",
+            },
+        )
+        assert response.context["form"]["product"].value() == unit_product.pk
+        assert response.context["form"]["location"].value() == location_tree["room"].pk
+
+    def test_mixed_batch_shows_per_row_outcome(
+        self, client, stock_manager_with_room_access, unit_product, location_tree
+    ):
+        from apps.inventory.services.receipts import receive_stock
+
+        receive_stock(
+            user=stock_manager_with_room_access,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-QV-DUP",
+        )
+
+        client.force_login(stock_manager_with_room_access)
+        response = client.post(
+            reverse("inventory:quick_receive"),
+            {
+                "product": unit_product.pk,
+                "location": location_tree["room"].pk,
+                "occurred_at": date.today().isoformat(),
+                "vendor_serials": "SN-QV-OK\nSN-QV-DUP",
+                "condition": "new",
+            },
+        )
+        results = response.context["results"]
+        assert [r["status"] for r in results] == ["created", "duplicate"]
+        assert "Received 1 of 2" in response.content.decode()
+
+    def test_blank_serials_field_rejected_with_form_error(
+        self, client, stock_manager_with_room_access, unit_product, location_tree
+    ):
+        client.force_login(stock_manager_with_room_access)
+        response = client.post(
+            reverse("inventory:quick_receive"),
+            {
+                "product": unit_product.pk,
+                "location": location_tree["room"].pk,
+                "occurred_at": date.today().isoformat(),
+                "vendor_serials": "   \n\n",
+                "condition": "new",
+            },
+        )
+        assert response.status_code == 200
+        assert "results" not in response.context
+        assert "Enter at least one serial" in response.content.decode()
+
+
+@pytest.mark.django_db
 class TestUnitAssetListAndDetail:
     def test_list_scoped_to_accessible_locations(
         self,

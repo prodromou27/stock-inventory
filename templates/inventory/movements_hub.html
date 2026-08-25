@@ -12,6 +12,10 @@
       <span class="action-card__title">Receive stock</span>
       <span class="action-card__desc">Record a new arrival into a location.</span>
     </a>
+    <a class="action-card" href="{% url 'inventory:quick_receive' %}">
+      <span class="action-card__title">Quick receive</span>
+      <span class="action-card__desc">One product/location, many serials at once.</span>
+    </a>
     <a class="action-card" href="{% url 'inventory:transfer' %}">
       <span class="action-card__title">Bulk location transfer</span>
       <span class="action-card__desc">Move stock between locations.</span>

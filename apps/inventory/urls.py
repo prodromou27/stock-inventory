@@ -7,6 +7,7 @@ app_name = "inventory"
 urlpatterns = [
     path("movements/", views.MovementsHubView.as_view(), name="movements_hub"),
     path("receive/", views.ReceiveStockView.as_view(), name="receive_stock"),
+    path("receive/quick/", views.QuickReceiveView.as_view(), name="quick_receive"),
     path("assets/", views.UnitAssetListView.as_view(), name="asset_list"),
     path("assets/<uuid:pk>/", views.UnitAssetDetailView.as_view(), name="asset_detail"),
     path("assets/<uuid:pk>/correct/", views.AdminCorrectUnitView.as_view(), name="asset_correct"),

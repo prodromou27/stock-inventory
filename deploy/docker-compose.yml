@@ -38,5 +38,21 @@ services:
       retries: 5
       start_period: 10s
 
+  # Compiles static/css/app.css from assets/tailwind/input.css and rebuilds
+  # on every save (CLAUDE.md's "Frontend build" section). A separate
+  # container rather than folding this into `web`'s image build: `web`
+  # bind-mounts the whole repo (`..:/app` above), which would shadow
+  # anything Tailwind-built at image-build time anyway, so a live watcher
+  # writing straight to the same bind-mounted static/css/ is the only setup
+  # that actually keeps CSS edits picked up without a rebuild. Not needed in
+  # production — deploy/Dockerfile.prod's `assets` build stage compiles this
+  # once at image build instead, since that image never bind-mounts source.
+  assets:
+    image: node:20-slim
+    working_dir: /app
+    volumes:
+      - ..:/app
+    command: sh -c "npm ci && npm run watch:css"
+
 volumes:
   db_data:

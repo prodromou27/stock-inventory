@@ -41,6 +41,53 @@ class ReceiveStockForm(forms.Form):
         return cleaned
 
 
+class QuickReceiveForm(forms.Form):
+    """apps.inventory.services.receipts.receive_stock_batch() — one row per
+    non-blank line of `vendor_serials`, all sharing every other field here.
+    """
+
+    product = forms.ModelChoiceField(
+        queryset=Product.objects.filter(
+            is_active=True, tracking_method=TrackingMethod.UNIT
+        ).select_related("brand"),
+        label="Product",
+    )
+    location = forms.ModelChoiceField(queryset=Location.objects.none())
+    occurred_at = forms.DateField(
+        widget=forms.DateInput(attrs={"type": "date"}), label="Arrival date"
+    )
+    vendor_serials = forms.CharField(
+        widget=forms.Textarea(attrs={"rows": 10, "placeholder": "One serial per line"}),
+        label="Serials",
+        help_text="One per line — blank lines are ignored.",
+        # required=False so a whitespace-only submission reaches
+        # clean_vendor_serials() below for the friendlier "enter at least
+        # one serial" message, instead of CharField's own required check
+        # (which runs on the post-strip value and would otherwise fire
+        # first with a generic "This field is required.").
+        required=False,
+    )
+    project_reference = forms.CharField(max_length=120, required=False, label="Project reference")
+    final_customer = forms.CharField(max_length=120, required=False, label="Final customer")
+    supplier = forms.CharField(max_length=120, required=False)
+    invoice_number = forms.CharField(max_length=60, required=False, label="Invoice number")
+    condition = forms.ChoiceField(choices=Condition.choices, required=False, initial=Condition.NEW)
+    accessories = forms.CharField(required=False, widget=forms.Textarea)
+    notes = forms.CharField(required=False, widget=forms.Textarea)
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["location"].queryset = (
+            accessible_locations(user).filter(is_active=True).order_by("level", "name")
+        )
+
+    def clean_vendor_serials(self):
+        lines = self.cleaned_data["vendor_serials"].splitlines()
+        if not any(line.strip() for line in lines):
+            raise forms.ValidationError("Enter at least one serial.")
+        return lines
+
+
 class _BaseMovementForm(forms.Form):
     """Shared by every movement form below: a scoped location field for a
     single optional quantity line, plus occurred_at/notes. Unit-asset

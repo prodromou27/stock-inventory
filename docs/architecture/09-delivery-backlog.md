@@ -533,6 +533,65 @@ unaffected). No migration drift beyond the one new `sysconfig.SystemSettings` ta
 shell/SCP access to the server; can sort the Assets grid by any of five columns; and no longer lose their filters
 by paging through a large result set.
 
+### Additional feature — Quick Receive (batch serials), Tailwind CSS build pipeline — done
+
+Added directly on user request, in the same conversation as the two entries above. Two unrelated asks handled
+together: "the current asset list may be in a grid so it can be easiest and faster to add new records" (clarified
+to mean: batch-entering many serials at once, not a spreadsheet-style inline-editable grid — the latter would mean
+arbitrary live-editing of every page's core business data with no service-layer validation boundary, a much larger
+and riskier feature than what was actually being asked for), and, separately mid-turn, "we may consider using
+Tailwind CSS?" — clarified to a real build pipeline (not the CDN script, which Tailwind's own docs say not to use
+in production) after which the user confirmed **Full Tailwind with a real build pipeline**.
+
+**Quick Receive** (`apps.inventory.views.QuickReceiveView`, linked from the Assets grid's page header and the
+Movements hub): one product/location/date, a textarea of serials (one per line), submitted together.
+`apps.inventory.services.receipts.receive_stock_batch()` — new, alongside the existing `receive_stock()` it calls
+once per line — deliberately does **not** write one `InventoryTransaction` with many lines; each physical unit's
+arrival stays its own receipt event, consistent with how a single manual receive already works, and a per-serial
+result list (created/duplicate/error) means one bad row doesn't cost the rest of the batch, unlike a single atomic
+all-or-nothing transaction would. Never auto-acknowledges a duplicate serial — that confirmation is a deliberate
+human decision (doc 05) — a duplicate row is reported back for the operator to resolve individually, not silently
+accepted. Permission/product-state checks run once up front, not per row.
+
+**One real bug caught by my own test, fixed**: `QuickReceiveForm.clean_vendor_serials()`'s "enter at least one
+serial" check was unreachable dead code — Django's `CharField` defaults to `strip=True`, so a whitespace-only
+submission already fails the field's own `required` check before any custom `clean_<field>()` method runs, and
+if the required check *passes* (non-blank after stripping only the string's outer edges), there necessarily was a
+non-blank line somewhere for my code to find. Fixed by making the field `required=False` so the friendlier custom
+message actually fires for the empty case.
+
+**Tailwind CSS build pipeline**: `static/css/app.css` is no longer hand-written or committed — it's a generated
+artifact of `assets/tailwind/input.css`, compiled by `npm run build:css` (`package.json`/`tailwind.config.js`,
+new). The existing hand-rolled design system's CSS is preserved **exactly** (every rule moved into Tailwind's
+`@layer base`/`@layer components`, values unchanged) rather than rewritten as utility-first classes across all 55
+templates — the templates' existing class names (`.btn`, `.card`, `.badge`, `.sidebar__link`, …) are untouched, so
+this is a genuine, working Tailwind build pipeline (Node, content-scanning, minification) with zero visual-
+regression risk and zero template churn, not a cosmetic rename. `tailwind.config.js`'s `theme.extend` maps
+Tailwind's utility scale (`bg-primary`, `rounded-md`, `shadow-sm`, …) onto the *same* CSS custom properties the
+design system already used for light/dark theming, so any future template that reaches for a Tailwind utility
+class directly gets automatic dark-mode support for free, with no `dark:` variants needed anywhere.
+
+Docker's dev and prod paths need different build strategies because their volume strategies already differ (doc
+09's earlier entries / `deploy/Dockerfile.prod`'s own comment): prod's `Dockerfile.prod` never bind-mounts source,
+so a `node:20-slim` build stage compiles the CSS once and only the compiled file crosses into the runtime image —
+Node itself never ships. Dev's `docker-compose.yml` bind-mounts the whole repo into `web` (`..:/app`), which would
+shadow anything compiled at `web`'s own image-build time, so a separate `assets` sidecar container runs
+`npm run watch:css` continuously against that same bind mount instead. Outside Docker, `npm install && npm run
+build:css` (or `watch:css`) is now a required one-time step — documented in `CLAUDE.md`'s new "Frontend build"
+section — since the page renders unstyled, not broken, until it's run at least once. CI (`.github/workflows/ci.yml`)
+runs the real build before pytest, since templates reference the compiled file directly.
+
+Verified live end-to-end (`npm install && npm run build:css` producing the exact expected rules/values, Django
+serving the compiled file and every spot-checked page rendering unchanged, Quick Receive's per-row outcomes for a
+mixed created/duplicate batch) before/alongside the pytest suite (`TestReceiveStockBatch` in
+`tests/test_inventory_receipts.py`, `TestQuickReceiveView` in `tests/test_inventory_views.py` — 15 new tests). 482
+tests pass locally (same 12 pre-existing, environment-only `tmp_path` failures noted in the entry above; CI
+unaffected). No migration drift.
+
+**Acceptance**: a Stock Manager can receive a whole box of serialized units in one submission instead of one
+per page load, with a clear per-serial outcome if something in the batch needs attention; the app's visual design
+is unchanged, now compiled by a real, verified Tailwind build pipeline instead of a hand-written stylesheet.
+
 ## Sequencing notes
 
 - Prompt 0 (this package) has no code dependency and is complete.

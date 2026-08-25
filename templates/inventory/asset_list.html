@@ -8,6 +8,9 @@
     <h1>Assets</h1>
     <div class="page-header__actions">
       <a class="btn" href="?{{ request.GET.urlencode }}&format=csv">Export CSV</a>
+      {% if user_is_administrator or "StockManager" in user_role_groups %}
+        <a class="btn btn--primary" href="{% url 'inventory:quick_receive' %}">+ Quick receive</a>
+      {% endif %}
     </div>
   </div>
 

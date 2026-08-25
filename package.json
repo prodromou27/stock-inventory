@@ -1,0 +1,12 @@
+{
+  "name": "stock-inventory-assets",
+  "private": true,
+  "description": "Tailwind CSS build for static/css/app.css — see CLAUDE.md's 'Frontend build (Tailwind CSS)' section.",
+  "scripts": {
+    "build:css": "tailwindcss -i ./assets/tailwind/input.css -o ./static/css/app.css --minify",
+    "watch:css": "tailwindcss -i ./assets/tailwind/input.css -o ./static/css/app.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.13"
+  }
+}

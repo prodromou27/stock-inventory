@@ -14,7 +14,11 @@ from apps.inventory.models import (
     UnitStatus,
 )
 from apps.inventory.services.duplicates import check_duplicate_serial
-from apps.inventory.services.receipts import DuplicateSerialError, receive_stock
+from apps.inventory.services.receipts import (
+    DuplicateSerialError,
+    receive_stock,
+    receive_stock_batch,
+)
 
 
 @pytest.mark.django_db
@@ -370,3 +374,139 @@ class TestLedgerImmutability:
             InventoryTransaction.objects.all().update(notes="x")
         with pytest.raises(ValueError):
             InventoryTransaction.objects.all().delete()
+
+
+@pytest.mark.django_db
+class TestReceiveStockBatch:
+    """apps.inventory.views.QuickReceiveView's service — one product/location,
+    many serials, each its own receive_stock() call.
+    """
+
+    def test_creates_one_unit_asset_per_serial(self, administrator, unit_product, location_tree):
+        results = receive_stock_batch(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serials=["SN-BATCH-1", "SN-BATCH-2", "SN-BATCH-3"],
+        )
+        assert [r["status"] for r in results] == ["created", "created", "created"]
+        assert UnitAsset.objects.filter(vendor_serial__startswith="SN-BATCH-").count() == 3
+
+    def test_blank_lines_are_ignored(self, administrator, unit_product, location_tree):
+        results = receive_stock_batch(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serials=["SN-BATCH-BLANK-1", "", "   ", "SN-BATCH-BLANK-2"],
+        )
+        assert len(results) == 2
+        assert all(r["status"] == "created" for r in results)
+
+    def test_repeated_serial_within_the_same_batch_is_flagged_not_duplicated(
+        self, administrator, unit_product, location_tree
+    ):
+        results = receive_stock_batch(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serials=["SN-BATCH-REPEAT", "SN-BATCH-REPEAT"],
+        )
+        assert results[0]["status"] == "created"
+        assert results[1]["status"] == "skipped_repeat_in_batch"
+        assert UnitAsset.objects.filter(vendor_serial="SN-BATCH-REPEAT").count() == 1
+
+    def test_serial_matching_a_pre_existing_asset_is_reported_as_duplicate_not_raised(
+        self, administrator, unit_product, location_tree
+    ):
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-BATCH-EXISTING",
+        )
+
+        results = receive_stock_batch(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serials=["SN-BATCH-NEW", "SN-BATCH-EXISTING"],
+        )
+        assert results[0]["status"] == "created"
+        assert results[1]["status"] == "duplicate"
+        # Still exactly one asset for the pre-existing serial — never
+        # auto-acknowledged/auto-created on top of it.
+        assert UnitAsset.objects.filter(vendor_serial="SN-BATCH-EXISTING").count() == 1
+
+    def test_one_bad_row_does_not_block_the_rest_of_the_batch(
+        self, administrator, unit_product, location_tree, other_location_tree
+    ):
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-BATCH-ALREADYTHERE",
+        )
+        results = receive_stock_batch(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serials=["SN-BATCH-BEFORE", "SN-BATCH-ALREADYTHERE", "SN-BATCH-AFTER"],
+        )
+        assert [r["status"] for r in results] == ["created", "duplicate", "created"]
+
+    def test_rejects_quantity_tracked_products(
+        self, administrator, quantity_product, location_tree
+    ):
+        with pytest.raises(ValidationError, match="serialized"):
+            receive_stock_batch(
+                user=administrator,
+                product=quantity_product,
+                location=location_tree["room"],
+                occurred_at=date.today(),
+                vendor_serials=["SN-1"],
+            )
+
+    def test_requires_role(self, read_only_user, unit_product, location_tree):
+        with pytest.raises(PermissionDenied):
+            receive_stock_batch(
+                user=read_only_user,
+                product=unit_product,
+                location=location_tree["room"],
+                occurred_at=date.today(),
+                vendor_serials=["SN-1"],
+            )
+
+    def test_enforces_location_scope_once_not_per_row(
+        self, stock_manager_with_room_access, unit_product, other_location_tree
+    ):
+        with pytest.raises(PermissionDenied):
+            receive_stock_batch(
+                user=stock_manager_with_room_access,
+                product=unit_product,
+                location=other_location_tree["site"],
+                occurred_at=date.today(),
+                vendor_serials=["SN-1", "SN-2", "SN-3"],
+            )
+        assert not UnitAsset.objects.filter(vendor_serial__in=["SN-1", "SN-2", "SN-3"]).exists()
+
+    def test_shared_fields_applied_to_every_row(self, administrator, unit_product, location_tree):
+        results = receive_stock_batch(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serials=["SN-BATCH-META-1", "SN-BATCH-META-2"],
+            project_reference="PROJ-42",
+            final_customer="Acme Co",
+        )
+        for row in results:
+            asset = UnitAsset.objects.get(vendor_serial=row["serial"])
+            assert asset.project_reference == "PROJ-42"
+            assert asset.final_customer == "Acme Co"

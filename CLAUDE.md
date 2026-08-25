@@ -55,8 +55,8 @@ docker compose -f deploy/docker-compose.yml exec web black --check .
 docker compose -f deploy/docker-compose.yml exec web python manage.py makemigrations --check --dry-run
 ```
 
-Without Docker (requires a local PostgreSQL 16+ with the `ltree` extension available, and a virtualenv with
-`requirements-dev.txt` installed):
+Without Docker (requires a local PostgreSQL 16+ with the `ltree` extension available, a virtualenv with
+`requirements-dev.txt` installed, and the frontend build below run at least once):
 
 ```
 python manage.py migrate
@@ -67,6 +67,25 @@ pytest
 ruff check .
 black --check .
 ```
+
+### Frontend build (Tailwind CSS)
+
+`static/css/app.css` is a **generated artifact** — compiled by Tailwind from `assets/tailwind/input.css` and
+gitignored, never hand-edited or committed directly. Docker handles this automatically (`deploy/docker-compose.yml`'s
+`assets` service watches and rebuilds it live for dev; `deploy/Dockerfile.prod`'s `assets` build stage compiles it
+once at image build for prod) — outside Docker, run it yourself once Node 20+ is installed:
+
+```
+npm install
+npm run build:css       # one-time build
+npm run watch:css       # rebuilds on every save while you're editing CSS/templates
+```
+
+Templates reference `{% static 'css/app.css' %}` directly, so the page renders unstyled (not broken, just plain
+HTML) until this has run at least once — a common trip-up right after a fresh non-Docker clone. Edit
+`assets/tailwind/input.css` (component classes like `.btn`/`.card`/`.badge`) or `tailwind.config.js` (design tokens,
+content-scanning paths), never `static/css/app.css` itself — a hand-edit there is silently overwritten by the next
+build.
 
 WeasyPrint (PDF generation, Phase 5+) needs native GTK3 libraries (Pango/Cairo/GObject) that Docker's image installs
 via `apt` automatically (see `deploy/Dockerfile`). Running outside Docker on Windows, install the GTK3 runtime first

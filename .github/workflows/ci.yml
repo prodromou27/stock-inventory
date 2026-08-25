@@ -42,6 +42,19 @@ jobs:
           cache: "pip"
           cache-dependency-path: requirements-dev.txt
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      # static/css/app.css is generated (gitignored — CLAUDE.md's "Frontend
+      # build" section) and templates reference it directly, so it needs to
+      # exist before pytest renders any page.
+      - name: Install npm dependencies and build CSS
+        run: |
+          npm ci
+          npm run build:css
+
       # WeasyPrint's PDF-rendering dependencies (docs/architecture/06-documents-and-snapshots.md)
       # — same packages deploy/Dockerfile installs for the app image.
       - name: Install system dependencies

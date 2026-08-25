@@ -9,3 +9,4 @@ media/
 venv/
 *.sqlite3
 docs/
+node_modules/
