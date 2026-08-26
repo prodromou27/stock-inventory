@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}Product Custom Fields — Stock Inventory{% endblock %}
+
+{% block content %}
+  <p><a href="{% url 'settings:hub' %}">&larr; All settings</a></p>
+  <div class="page-header">
+    <div>
+      <h1>Product custom fields</h1>
+      <div class="page-header__subtitle">
+        Extra fields shown on every product's create/edit form — added here, no code change needed. A field's
+        type can't be changed after creation (existing stored values would stop making sense); deactivate it
+        instead if it's no longer needed — its previously saved values are kept, just hidden from the form.
+      </div>
+    </div>
+    <div class="page-header__actions">
+      <a class="btn btn--primary" href="{% url 'catalog:custom_field_create' %}">+ New custom field</a>
+    </div>
+  </div>
+
+  {% if definitions %}
+    <table>
+      <thead>
+        <tr><th>Name</th><th>Type</th><th>Order</th><th>Status</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for definition in definitions %}
+          <tr>
+            <td>{{ definition.name }}</td>
+            <td>{{ definition.get_field_type_display }}</td>
+            <td>{{ definition.display_order }}</td>
+            <td>
+              {% if definition.is_active %}
+                <span class="badge badge--success">Active</span>
+              {% else %}
+                <span class="badge badge--neutral">Inactive</span>
+              {% endif %}
+            </td>
+            <td>
+              <form method="post" action="{% url 'catalog:custom_field_toggle_active' definition.pk %}" class="inline-form">
+                {% csrf_token %}
+                <button type="submit" class="btn btn--sm">
+                  {% if definition.is_active %}Deactivate{% else %}Activate{% endif %}
+                </button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty-state">No custom fields defined yet.</p>
+  {% endif %}
+{% endblock %}

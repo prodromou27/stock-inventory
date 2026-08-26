@@ -36,7 +36,30 @@
 
   <form method="post">
     {% csrf_token %}
-    {{ form.as_p }}
+    {% for field in form %}
+      {% if field.name|slice:":13" != "custom_field_" %}
+        <p>
+          {{ field.errors }}
+          {{ field.label_tag }}
+          {{ field }}
+          {% if field.help_text %}<span class="helptext">{{ field.help_text }}</span>{% endif %}
+        </p>
+      {% endif %}
+    {% endfor %}
+
+    {% if form.custom_field_definitions %}
+      <h2>Custom fields</h2>
+      {% for field in form %}
+        {% if field.name|slice:":13" == "custom_field_" %}
+          <p>
+            {{ field.errors }}
+            {{ field.label_tag }}
+            {{ field }}
+          </p>
+        {% endif %}
+      {% endfor %}
+    {% endif %}
+
     {% if show_duplicate_warning %}
       <p>
         <label>

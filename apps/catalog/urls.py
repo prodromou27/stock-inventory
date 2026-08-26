@@ -10,4 +10,19 @@ urlpatterns = [
     path("quick-add/", views.QuickAddProductsView.as_view(), name="quick_add"),
     path("<uuid:pk>/", views.ProductDetailView.as_view(), name="product_detail"),
     path("<uuid:pk>/edit/", views.ProductUpdateView.as_view(), name="product_update"),
+    path(
+        "custom-fields/",
+        views.ProductCustomFieldDefinitionListView.as_view(),
+        name="custom_field_list",
+    ),
+    path(
+        "custom-fields/new/",
+        views.ProductCustomFieldDefinitionCreateView.as_view(),
+        name="custom_field_create",
+    ),
+    path(
+        "custom-fields/<uuid:pk>/toggle-active/",
+        views.ProductCustomFieldDefinitionToggleActiveView.as_view(),
+        name="custom_field_toggle_active",
+    ),
 ]

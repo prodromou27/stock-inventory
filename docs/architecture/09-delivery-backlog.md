@@ -791,6 +791,49 @@ sort test moved onto the `level=`-filtered flat fallback (the only mode where `?
 rooted at exactly what they're granted, never ancestors above it; filtering by level still works as the familiar
 flat, sortable table it always was.
 
+### Additional feature — Product custom fields (Phase 3 of the structured-feature wave) — done
+
+Phase 3 of the 5-phase plan (`C:\Users\cprodromou\.claude\plans\silly-sniffing-moler.md`; Phases 1–2 above). An
+Administrator can add extra fields to the product form (e.g. "Warranty expiry") from Settings, no code deployment
+needed — matching Odoo/InvenTree-style custom-field support, scoped down to what this app actually needs.
+
+`apps.catalog.models.ProductCustomFieldDefinition` (new; `name` unique, `field_type` — Text/Number/Date/Yes-No —
+`is_active`, `display_order`) is Administrator-managed via a new screen linked from the Settings hub (kept in
+`apps.catalog`, not `apps.settings`, matching how Document templates/Scheduled export are already only *linked
+from* Settings while owned by their own apps). A definition's `field_type` can never be edited after creation —
+this codebase's established answer to "a type change would make existing stored values meaningless" is to lock
+rather than allow silent reinterpretation (the same reasoning `Product.tracking_method` already uses); deactivating
+a definition removes it from the form going forward without discarding values already stored under it.
+
+Values live in a new `Product.custom_field_values` `JSONField(default=dict)`, keyed by the definition's pk (stable
+across a later rename), no dynamic-schema library involved — the same bare-JSONField-for-flexible-data precedent
+already used by `AuditEvent.metadata`/`GeneratedDocument.context_snapshot`. `ProductForm.__init__` appends one field
+per currently-active definition (never hardcoded), so the product create/edit screen always reflects whatever
+Administrators have defined; `apps.catalog.services._validate_custom_field_values()` keeps only keys matching a
+currently-active definition and coerces each value into a JSON-safe shape (a `DateField` hands back a
+`datetime.date`, which `JSONField` can't store directly — coerced via `.isoformat()`) — an unrecognized key is
+silently dropped rather than raised, the same allow-list philosophy `apps.core.sorting.SortableListMixin` already
+established for user-controlled-but-safe field selection. `update_product()` merges rather than replaces: every
+existing key belonging to a definition that's since gone inactive is left untouched (it wasn't part of the
+submission — the form only ever renders active definitions), while every currently-active key reflects exactly
+what was just submitted, including being cleared if left blank.
+
+Verified live end-to-end via `manage.py shell` + `django.test.Client` against the dev database (migration applied;
+defined "Warranty expiry" via the new Settings-linked screen; it appeared on the product create form under a
+"Custom fields" heading; a submitted value round-tripped correctly keyed by the definition's pk; the edit form
+showed it back as the initial value) before/alongside the pytest suite. New tests:
+`tests/test_catalog_custom_fields.py` (definition CRUD and role checks, dynamic form-field
+appearance/disappearance, value round-trip through create/update, date-to-ISO-string coercion, unknown-key silently
+dropped, blank value not stored, a deactivated definition's value surviving an unrelated update, and the
+view-level create/toggle/initial-value paths) — 19 new tests, all passing; full catalog suite (63 tests) green
+alongside them. `ruff`/`black`/`makemigrations --check` clean. No changes to Quick Add Products — custom fields
+stay a follow-up edit on the created product, matching that flow's existing documented philosophy for
+description/notes/low-stock-threshold.
+
+**Acceptance**: an Administrator can add a custom field from Settings and it appears on every product's create/edit
+form immediately, no deployment; values persist correctly per product; deactivating a field hides it from the form
+without losing previously saved values; a field's type can't be changed once created.
+
 ## Sequencing notes
 
 - Prompt 0 (this package) has no code dependency and is complete.

@@ -1,7 +1,24 @@
 from django import forms
 from django.forms import formset_factory
 
-from .models import TrackingMethod
+from .models import ProductCustomFieldDefinition, ProductCustomFieldType, TrackingMethod
+
+CUSTOM_FIELD_PREFIX = "custom_field_"
+
+
+def custom_field_key(definition_id):
+    return f"{CUSTOM_FIELD_PREFIX}{definition_id}"
+
+
+def _custom_field_form_field(definition):
+    common = {"required": False, "label": definition.name}
+    if definition.field_type == ProductCustomFieldType.NUMBER:
+        return forms.FloatField(**common)
+    if definition.field_type == ProductCustomFieldType.DATE:
+        return forms.DateField(**common, widget=forms.DateInput(attrs={"type": "date"}))
+    if definition.field_type == ProductCustomFieldType.BOOLEAN:
+        return forms.BooleanField(**common)
+    return forms.CharField(max_length=500, **common)
 
 
 class ProductForm(forms.Form):
@@ -9,6 +26,13 @@ class ProductForm(forms.Form):
     so validation, duplicate detection, and audit logic live in one place.
     Brand/Type are free-text and resolved to Brand/ProductType rows via
     get-or-create in the service (docs/architecture/05-tracking-and-duplicates.md).
+
+    One extra field is appended per active ProductCustomFieldDefinition
+    (apps.catalog.views custom-field admin screens) — never hardcoded here,
+    since the whole point is an Administrator can add these without a code
+    change. get_custom_field_values() (call only after is_valid()) hands
+    back the {definition_id: value} dict services.update_product()/
+    create_product() expect.
     """
 
     brand_name = forms.CharField(
@@ -30,11 +54,34 @@ class ProductForm(forms.Form):
     low_stock_threshold = forms.IntegerField(required=False, min_value=0)
     is_active = forms.BooleanField(required=False, initial=True)
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.custom_field_definitions = list(
+            ProductCustomFieldDefinition.objects.filter(is_active=True)
+        )
+        for definition in self.custom_field_definitions:
+            self.fields[custom_field_key(definition.pk)] = _custom_field_form_field(definition)
+
     def clean(self):
         cleaned = super().clean()
         if cleaned.get("tracking_method") != TrackingMethod.QUANTITY:
             cleaned["low_stock_threshold"] = None
         return cleaned
+
+    def get_custom_field_values(self):
+        return {
+            str(definition.pk): self.cleaned_data.get(custom_field_key(definition.pk))
+            for definition in self.custom_field_definitions
+        }
+
+
+class ProductCustomFieldDefinitionForm(forms.Form):
+    name = forms.CharField(max_length=80)
+    field_type = forms.ChoiceField(choices=ProductCustomFieldType.choices)
+    display_order = forms.IntegerField(required=False, min_value=0, initial=0)
+
+    def clean_display_order(self):
+        return self.cleaned_data.get("display_order") or 0
 
 
 class QuickAddProductRowForm(forms.Form):

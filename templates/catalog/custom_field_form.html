@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}New Custom Field — Stock Inventory{% endblock %}
+
+{% block content %}
+  <p><a href="{% url 'catalog:custom_field_list' %}">&larr; Product custom fields</a></p>
+  <div class="page-header">
+    <h1>New product custom field</h1>
+  </div>
+
+  {% if form.non_field_errors %}
+    <p class="messages__item messages__item--error">{{ form.non_field_errors|join:" " }}</p>
+  {% endif %}
+
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <div class="form-actions">
+      <button type="submit" class="btn btn--primary">Create</button>
+    </div>
+  </form>
+{% endblock %}

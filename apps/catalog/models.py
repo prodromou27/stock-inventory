@@ -41,6 +41,41 @@ class TrackingMethod(models.TextChoices):
     QUANTITY = "quantity", "Quantity"
 
 
+class ProductCustomFieldType(models.TextChoices):
+    TEXT = "text", "Text"
+    NUMBER = "number", "Number"
+    DATE = "date", "Date"
+    BOOLEAN = "boolean", "Yes/No"
+
+
+class ProductCustomFieldDefinition(UUIDPrimaryKeyModel, TimestampedModel):
+    """An Administrator-defined extra field on Product (e.g. "Warranty
+    expiry"), added from Settings without a code deployment. Values live in
+    Product.custom_field_values, a plain JSONField keyed by this row's pk
+    (stable across a later rename) — no dynamic-schema library is used;
+    apps.catalog.services validates/coerces values against active
+    definitions at save time.
+
+    Never hard-deleted or edited once created — `field_type` changing after
+    values exist would make those stored values meaningless, and this
+    codebase's established pattern for exactly that situation (see
+    Product.tracking_method) is to lock rather than allow a silent
+    reinterpretation. `is_active=False` removes it from the product form
+    going forward without discarding values already stored for it.
+    """
+
+    name = models.CharField(max_length=80, unique=True)
+    field_type = models.CharField(max_length=10, choices=ProductCustomFieldType.choices)
+    is_active = models.BooleanField(default=True)
+    display_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["display_order", "name"]
+
+    def __str__(self):
+        return self.name
+
+
 class Product(UUIDPrimaryKeyModel, UserStampedModel):
     """docs/architecture/02-data-model.md's Product entity. `tracking_method`
     is immutable once the product has any movement — enforced in services.py,
@@ -59,6 +94,7 @@ class Product(UUIDPrimaryKeyModel, UserStampedModel):
     default_notes = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
     low_stock_threshold = models.PositiveIntegerField(null=True, blank=True)
+    custom_field_values = models.JSONField(default=dict, blank=True)
 
     class Meta:
         indexes = [

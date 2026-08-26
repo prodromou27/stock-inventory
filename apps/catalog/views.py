@@ -9,12 +9,19 @@ from django.views.generic import DetailView, ListView
 from apps.core.authorization import ADMINISTRATOR, STOCK_MANAGER, RoleRequiredMixin
 from apps.core.sorting import SortableListMixin
 
-from .forms import ProductForm, QuickAddProductFormSet
-from .models import Brand, Product, ProductType
+from .forms import (
+    ProductCustomFieldDefinitionForm,
+    ProductForm,
+    QuickAddProductFormSet,
+    custom_field_key,
+)
+from .models import Brand, Product, ProductCustomFieldDefinition, ProductType
 from .services import (
     DuplicateProductError,
+    create_custom_field_definition,
     create_product,
     create_products_batch,
+    set_custom_field_definition_active,
     update_product,
 )
 
@@ -111,6 +118,7 @@ class ProductCreateView(LoginRequiredMixin, RoleRequiredMixin, View):
                 default_notes=data["default_notes"],
                 low_stock_threshold=data["low_stock_threshold"],
                 duplicate_acknowledged=request.POST.get("duplicate_acknowledged") == "true",
+                custom_field_values=form.get_custom_field_values(),
             )
         except DuplicateProductError as exc:
             return render(
@@ -203,6 +211,15 @@ class ProductUpdateView(LoginRequiredMixin, RoleRequiredMixin, View):
                 "is_active": product.is_active,
             }
         )
+        # Custom-field initial values depend on which definitions are
+        # currently active, which the form itself already resolved in
+        # __init__ — reuse that instead of querying a second time.
+        form.initial.update(
+            {
+                custom_field_key(d.pk): product.custom_field_values.get(str(d.pk))
+                for d in form.custom_field_definitions
+            }
+        )
         return render(
             request,
             "catalog/product_form.html",
@@ -239,6 +256,7 @@ class ProductUpdateView(LoginRequiredMixin, RoleRequiredMixin, View):
                 default_notes=data["default_notes"],
                 low_stock_threshold=data["low_stock_threshold"],
                 is_active=data["is_active"],
+                custom_field_values=form.get_custom_field_values(),
             )
         except ValidationError as exc:
             form.add_error(None, exc)
@@ -250,3 +268,52 @@ class ProductUpdateView(LoginRequiredMixin, RoleRequiredMixin, View):
 
         messages.success(request, f"Updated product '{product}'.")
         return redirect(product.get_absolute_url())
+
+
+# --- Product custom fields ("from Settings", user request) ---------------
+
+
+class ProductCustomFieldDefinitionListView(LoginRequiredMixin, RoleRequiredMixin, View):
+    allowed_roles = (ADMINISTRATOR,)
+    template_name = "catalog/custom_field_list.html"
+
+    def get(self, request):
+        definitions = ProductCustomFieldDefinition.objects.all()
+        return render(request, self.template_name, {"definitions": definitions})
+
+
+class ProductCustomFieldDefinitionCreateView(LoginRequiredMixin, RoleRequiredMixin, View):
+    allowed_roles = (ADMINISTRATOR,)
+    template_name = "catalog/custom_field_form.html"
+
+    def get(self, request):
+        return render(request, self.template_name, {"form": ProductCustomFieldDefinitionForm()})
+
+    def post(self, request):
+        form = ProductCustomFieldDefinitionForm(request.POST)
+        if not form.is_valid():
+            return render(request, self.template_name, {"form": form})
+
+        try:
+            create_custom_field_definition(user=request.user, **form.cleaned_data)
+        except ValidationError as exc:
+            form.add_error(None, exc)
+            return render(request, self.template_name, {"form": form})
+
+        messages.success(request, "Custom field created.")
+        return redirect("catalog:custom_field_list")
+
+
+class ProductCustomFieldDefinitionToggleActiveView(LoginRequiredMixin, RoleRequiredMixin, View):
+    allowed_roles = (ADMINISTRATOR,)
+
+    def post(self, request, pk):
+        definition = get_object_or_404(ProductCustomFieldDefinition, pk=pk)
+        new_is_active = not definition.is_active
+        set_custom_field_definition_active(
+            definition=definition, user=request.user, is_active=new_is_active
+        )
+        messages.success(
+            request, f"{'Activated' if new_is_active else 'Deactivated'} '{definition.name}'."
+        )
+        return redirect("catalog:custom_field_list")
