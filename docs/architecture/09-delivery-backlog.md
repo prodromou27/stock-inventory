@@ -672,6 +672,62 @@ needed (no new models).
 list; blank rows are ignored; a duplicate or invalid row is reported per-row without blocking the rest of the
 batch; Brand/Type are auto-created exactly like the single-product form already does.
 
+### Additional feature — no-HTML document template editor (structured branding panel) — done
+
+Added directly on user request: "The report template editor can be something else except of html? it can be edit
+panel? ... I want the user to be able to edit it without the knowledge of HTML. Adding logos, space, change the
+Fonts, etc. The data of most of the reports will be dynamic mapped." Interpreted (confirmed via that answer) as: the
+actual report DATA fields must stay automatically mapped — never hand-typed as template syntax — while branding
+(logo, spacing, fonts) becomes a structured, no-code panel.
+
+Replaces the previous raw-HTML-textarea editor (`DocumentTemplateForm`, a `<textarea>` bound to
+`DocumentTemplate.html_source`) with `apps.documents.forms.DocumentTemplateStyleForm` — five fields, all branding,
+no template syntax anywhere in the UI: logo upload, logo position (left/center/right), an accent color (a real
+`<input type="color">`), a font choice, and a page-margin preset. Font choices are restricted to `fonts-liberation`
+(`deploy/Dockerfile`'s only installed font package) so "Font" always renders as chosen rather than silently
+substituting.
+
+**Design choice — additive, not a rewrite of the rendering pipeline**: `DocumentTemplate.html_source` (what
+`apps.documents.pdf.render_pdf()` actually reads) is unchanged in meaning — still the final composed template
+string — but an Administrator never types it directly anymore. `apps.documents.pdf.render_styleable_source()` (new)
+takes the four structured choices and composes it from a new packaged skeleton
+(`templates/documents/pdf/styleable_base.html`, the same data-field layout as the existing `form_v1.html` packaged
+default, just parameterized) via plain `str.replace()` on deliberately non-Django-template-syntax tokens
+(`__FONT_STACK__`, `__ACCENT_COLOR__`, etc.) — so this substitution can never collide with the `{{ }}`/`{% %}` data
+tags the skeleton already contains for `document_number`, `lines`, signatures, and so on. Those stay exactly where
+the skeleton puts them, satisfying "dynamic data mapping" by construction rather than by trusting an Administrator
+never to touch them.
+
+The four structured choices are also persisted as their own `DocumentTemplate` fields (`logo_position`,
+`accent_color`, `font_choice`, `page_margin` — migration `0004_documenttemplate_accent_color_and_more`, all with
+model defaults matching the packaged look), so re-opening the editor shows back the Administrator's actual previous
+choices rather than an unreadable composed HTML blob. `apps.documents.template_services.update_template()` gained
+these four as optional keyword arguments (default `None` — a value is only written when explicitly passed) purely
+so it keeps working unchanged for every existing/direct caller (this module's own test suite calls it with only
+`html_source=`); the structured editor is simply the one caller that also passes them. `accent_color` is validated
+against `^#[0-9a-fA-F]{6}$` before ever reaching the composed HTML's `<style>` block — an unvalidated value there
+would be a CSS-injection path into WeasyPrint's renderer.
+
+An untouched document type (no `DocumentTemplate` row ever saved) still renders via the original, unparameterized
+`templates/documents/pdf/form_v1.html` exactly as before `render_pdf()`'s fallback path is unchanged — so this is
+zero behavior change for every document type nobody has customized yet.
+
+Verified live end-to-end via `manage.py shell` + `django.test.Client` against the dev database (migration applied,
+GET confirmed no `<textarea>`/no raw `{{ }}` text on the page, POST saved all four structured fields and composed
+`html_source` correctly, Preview rendered a real PDF) before/alongside the pytest suite. New/updated tests:
+`tests/test_document_templates_services.py` (`TestRenderStyleableSource` — data fields match the packaged default,
+style values are applied, output renders as a real PDF; `TestUpdateTemplateStyleFields`) and
+`tests/test_document_templates_views.py`'s `TestEditView`/`TestPreviewView` rewritten for the structured form (a
+bad `accent_color` now surfaces as a field error/400, not a broken-template render failure, since the composed
+HTML can no longer be malformed by admin input). `ruff`/`black`/`makemigrations --check` clean; full suite
+527 passed (pre-existing, unrelated `tmp_path` Windows-permission caveat unchanged from earlier entries — CI
+unaffected).
+
+**Acceptance**: an Administrator can rebrand the assignment/delivery PDF (logo, its position, an accent color, a
+font, page margins) entirely through form controls — no HTML or template syntax visible anywhere in the editor —
+and the document's actual data (document number, transaction details, line items, signatures) is always placed
+automatically and can't be broken from this screen.
+
 ## Sequencing notes
 
 - Prompt 0 (this package) has no code dependency and is complete.

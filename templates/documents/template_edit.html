@@ -19,22 +19,36 @@
   <div class="template-editor-layout">
     <form method="post" enctype="multipart/form-data">
       {% csrf_token %}
-      <p class="form-row--wide">
-        <label for="{{ form.html_source.id_for_label }}">{{ form.html_source.label }}</label>
-        {{ form.html_source }}
-        {% if form.html_source.errors %}<div class="messages__item messages__item--error">{{ form.html_source.errors }}</div>{% endif %}
-      </p>
-
-      <p>
-        <label for="{{ form.logo.id_for_label }}">{{ form.logo.label }}</label>
-        {{ form.logo }}
-        {% if template_obj.logo %}
-          <span class="helptext">Current logo on file: {{ template_obj.logo.name }} — use Preview to see it rendered.</span>
-        {% endif %}
-      </p>
-      <p>
-        <label>{{ form.remove_logo }} {{ form.remove_logo.label }}</label>
-      </p>
+      <div class="card">
+        <p>
+          <label for="{{ form.logo.id_for_label }}">{{ form.logo.label }}</label>
+          {{ form.logo }}
+          {% if form.logo.errors %}<div class="messages__item messages__item--error">{{ form.logo.errors }}</div>{% endif %}
+          {% if template_obj.logo %}
+            <span class="helptext">Current logo on file: {{ template_obj.logo.name }} — use Preview to see it rendered.</span>
+          {% endif %}
+        </p>
+        <p>
+          <label>{{ form.remove_logo }} {{ form.remove_logo.label }}</label>
+        </p>
+        <p>
+          <label for="{{ form.logo_position.id_for_label }}">{{ form.logo_position.label }}</label>
+          {{ form.logo_position }}
+        </p>
+        <p>
+          <label for="{{ form.accent_color.id_for_label }}">{{ form.accent_color.label }}</label>
+          {{ form.accent_color }}
+          {% if form.accent_color.errors %}<div class="messages__item messages__item--error">{{ form.accent_color.errors }}</div>{% endif %}
+        </p>
+        <p>
+          <label for="{{ form.font_choice.id_for_label }}">{{ form.font_choice.label }}</label>
+          {{ form.font_choice }}
+        </p>
+        <p>
+          <label for="{{ form.page_margin.id_for_label }}">{{ form.page_margin.label }}</label>
+          {{ form.page_margin }}
+        </p>
+      </div>
 
       <div class="form-actions">
         <button type="submit" class="btn btn--primary">Save</button>
@@ -53,31 +67,21 @@
     {% endif %}
 
     <aside class="template-field-reference">
-      <h2>Available fields</h2>
-      <p>Plain Django template syntax — use these anywhere in the HTML:</p>
-      {% verbatim %}
+      <h2>How this works</h2>
+      <p>No HTML or template syntax to learn — everything here is branding. The document itself (document number,
+        transaction details, the line-item table, notes, and signature lines) is always laid out automatically and
+        filled in with the real transaction's data every time a PDF is generated; you can't break that layout from
+        this screen.</p>
+      <p>What you control:</p>
       <ul>
-        <li><code>{{ document_number }}</code>, <code>{{ transaction_number }}</code></li>
-        <li><code>{{ movement_type_display }}</code> — e.g. "Customer delivery"</li>
-        <li><code>{{ occurred_at }}</code> — ISO date</li>
-        <li><code>{{ employee_name }}</code> — set for assignments, blank for deliveries</li>
-        <li><code>{{ final_customer }}</code> — set for deliveries, blank for assignments</li>
-        <li><code>{{ project_reference }}</code></li>
-        <li><code>{{ source_locations|join:", " }}</code> — a list of location names</li>
-        <li><code>{{ notes }}</code></li>
-        <li><code>{{ prepared_by }}</code></li>
-        <li><code>{{ logo_data_uri }}</code> — your uploaded logo; use
-          <code>&lt;img src="{{ logo_data_uri }}"&gt;</code> (empty string if none uploaded)</li>
-        <li>
-          <code>lines</code> — loop with <code>{% for line in lines %}...{% endfor %}</code>:
-          <code>{{ line.brand }}</code>, <code>{{ line.model }}</code>, <code>{{ line.sku }}</code>,
-          <code>{{ line.type }}</code>, <code>{{ line.description }}</code>, <code>{{ line.serial }}</code>,
-          <code>{{ line.quantity }}</code>, <code>{{ line.condition }}</code>, <code>{{ line.accessories }}</code>
-        </li>
+        <li><strong>Logo</strong> — shown at the top of every generated PDF.</li>
+        <li><strong>Logo position</strong> — left, center, or right of the title.</li>
+        <li><strong>Accent color</strong> — used for the title and the rule under the header.</li>
+        <li><strong>Font</strong> — applied to the whole document.</li>
+        <li><strong>Page margins</strong> — how much blank space surrounds the page content.</li>
       </ul>
-      {% endverbatim %}
-      <p>Save runs your template against sample data first — a broken template is rejected with an error here,
-        never saved. Use Preview as often as you like to check a real rendered PDF before saving.</p>
+      <p>Save validates the result by rendering a real sample PDF first — a problem would be reported here, never
+        discovered the next time someone prints a real document. Use Preview as often as you like before saving.</p>
     </aside>
   </div>
 {% endblock %}

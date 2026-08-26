@@ -40,7 +40,27 @@ def _validate_logo(logo_file):
 
 
 @transaction.atomic
-def update_template(*, user, document_type, html_source, logo=None, remove_logo=False):
+def update_template(
+    *,
+    user,
+    document_type,
+    html_source,
+    logo=None,
+    remove_logo=False,
+    logo_position=None,
+    accent_color=None,
+    font_choice=None,
+    page_margin=None,
+):
+    """`html_source` is always the final, already-composed template — the
+    structured editor (apps.documents.views.DocumentTemplateEditView) builds
+    it via apps.documents.pdf.render_styleable_source() before calling this.
+    logo_position/accent_color/font_choice/page_margin are optional and
+    purely so the editor can show the Administrator's previous choices back
+    on the next GET — omitting them (older/direct callers, e.g. this
+    module's own tests) leaves those fields at their model defaults or
+    whatever was already saved, without affecting html_source itself.
+    """
     require_role(user, ADMINISTRATOR)
 
     _validate_template_renders(html_source)
@@ -56,6 +76,14 @@ def update_template(*, user, document_type, html_source, logo=None, remove_logo=
 
     template_obj.html_source = html_source
     template_obj.updated_by = user
+    if logo_position is not None:
+        template_obj.logo_position = logo_position
+    if accent_color is not None:
+        template_obj.accent_color = accent_color
+    if font_choice is not None:
+        template_obj.font_choice = font_choice
+    if page_margin is not None:
+        template_obj.page_margin = page_margin
     if logo is not None:
         template_obj.logo = logo
     elif remove_logo and template_obj.logo:

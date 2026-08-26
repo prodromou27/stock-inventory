@@ -5,8 +5,8 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 
 from apps.audit.models import AuditEvent
-from apps.documents.models import DocumentTemplate, DocumentType
-from apps.documents.pdf import default_template_source
+from apps.documents.models import DocumentTemplate, DocumentType, FontChoice, PageMargin
+from apps.documents.pdf import default_template_source, render_styleable_source
 from apps.documents.services import generate_document
 from apps.documents.template_services import (
     get_template,
@@ -144,6 +144,79 @@ class TestUpdateTemplate:
         assert AuditEvent.objects.filter(
             event_type=AuditEvent.EventType.RECORD_CREATED, object_type="DocumentTemplate"
         ).exists()
+
+
+@pytest.mark.django_db
+class TestRenderStyleableSource:
+    """apps.documents.pdf.render_styleable_source() — what the structured,
+    no-HTML editor (apps.documents.views.DocumentTemplateEditView) uses to
+    compose html_source; the data fields it produces must always match what
+    the packaged form_v1.html already exposes (default_template_source()),
+    since neither is ever hand-edited.
+    """
+
+    def test_includes_the_same_data_fields_as_the_packaged_default(self):
+        source = render_styleable_source(
+            logo_position="left",
+            accent_color="#123456",
+            font_choice=FontChoice.SANS,
+            page_margin=PageMargin.NORMAL,
+        )
+        for token in (
+            "{{ document_number }}",
+            "{{ transaction_number }}",
+            "{% for line in lines %}",
+        ):
+            assert token in source
+            assert token in default_template_source()
+
+    def test_applies_the_chosen_style_values(self):
+        source = render_styleable_source(
+            logo_position="right",
+            accent_color="#123456",
+            font_choice=FontChoice.SERIF,
+            page_margin=PageMargin.SPACIOUS,
+        )
+        assert "#123456" in source
+        assert "letterhead--right" in source
+        assert "Liberation Serif" in source
+        assert "margin: 2.5cm" in source
+
+    def test_renders_as_a_real_pdf(self):
+        source = render_styleable_source(
+            logo_position="center",
+            accent_color="#000000",
+            font_choice=FontChoice.MONO,
+            page_margin=PageMargin.COMPACT,
+        )
+        pdf_bytes = render_preview_pdf(document_type=DocumentType.DELIVERY, html_source=source)
+        assert pdf_bytes[:4] == b"%PDF"
+
+
+@pytest.mark.django_db
+class TestUpdateTemplateStyleFields:
+    def test_saves_the_structured_style_fields(self, administrator):
+        template_obj = update_template(
+            user=administrator,
+            document_type=DocumentType.DELIVERY,
+            html_source=VALID_HTML,
+            logo_position="right",
+            accent_color="#abcdef",
+            font_choice=FontChoice.SERIF,
+            page_margin=PageMargin.SPACIOUS,
+        )
+        assert template_obj.logo_position == "right"
+        assert template_obj.accent_color == "#abcdef"
+        assert template_obj.font_choice == FontChoice.SERIF
+        assert template_obj.page_margin == PageMargin.SPACIOUS
+
+    def test_omitted_style_fields_keep_model_defaults(self, administrator):
+        template_obj = update_template(
+            user=administrator, document_type=DocumentType.DELIVERY, html_source=VALID_HTML
+        )
+        assert template_obj.logo_position == "left"
+        assert template_obj.accent_color == "#444444"
+        assert template_obj.font_choice == FontChoice.SANS
 
 
 @pytest.mark.django_db

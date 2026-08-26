@@ -6,7 +6,13 @@ from apps.documents.models import DocumentTemplate, DocumentType
 from apps.documents.template_services import update_template
 
 VALID_HTML = "<html><body><h1>{{ document_number }}</h1></body></html>"
-BROKEN_HTML = "{% for x in %}broken"
+
+VALID_STYLE = {
+    "logo_position": "left",
+    "accent_color": "#336699",
+    "font_choice": "serif",
+    "page_margin": "compact",
+}
 
 
 @pytest.mark.django_db
@@ -42,27 +48,31 @@ class TestHub:
 
 @pytest.mark.django_db
 class TestEditView:
-    def test_get_shows_packaged_default_as_starting_point(self, client, administrator):
+    def test_get_shows_no_html_and_defaults_to_packaged_style(self, client, administrator):
         client.force_login(administrator)
         response = client.get(reverse("documents:template_edit", args=["delivery"]))
         assert response.status_code == 200
-        assert "{{ document_number }}" in response.content.decode()
+        content = response.content.decode()
+        assert "{{ document_number }}" not in content
+        assert "<textarea" not in content
 
-    def test_saves_a_valid_template(self, client, administrator):
+    def test_saves_valid_style_choices(self, client, administrator):
         client.force_login(administrator)
-        response = client.post(
-            reverse("documents:template_edit", args=["delivery"]), {"html_source": VALID_HTML}
-        )
+        response = client.post(reverse("documents:template_edit", args=["delivery"]), VALID_STYLE)
         assert response.status_code == 302
-        assert DocumentTemplate.objects.get(document_type="delivery").html_source == VALID_HTML
+        template_obj = DocumentTemplate.objects.get(document_type="delivery")
+        assert template_obj.logo_position == "left"
+        assert template_obj.accent_color == "#336699"
+        assert template_obj.font_choice == "serif"
+        assert template_obj.page_margin == "compact"
+        assert "{{ document_number }}" in template_obj.html_source
 
-    def test_rejects_a_broken_template_with_form_error(self, client, administrator):
+    def test_rejects_an_invalid_accent_color_with_form_error(self, client, administrator):
         client.force_login(administrator)
-        response = client.post(
-            reverse("documents:template_edit", args=["delivery"]), {"html_source": BROKEN_HTML}
-        )
+        data = {**VALID_STYLE, "accent_color": "#zzzzzz"}
+        response = client.post(reverse("documents:template_edit", args=["delivery"]), data)
         assert response.status_code == 200
-        assert "failed to render" in response.content.decode()
+        assert "#rrggbb" in response.content.decode()
         assert not DocumentTemplate.objects.filter(document_type="delivery").exists()
 
     def test_saves_with_a_logo_upload(self, client, administrator):
@@ -75,16 +85,14 @@ class TestEditView:
         logo = SimpleUploadedFile("logo.png", png_bytes, content_type="image/png")
         response = client.post(
             reverse("documents:template_edit", args=["delivery"]),
-            {"html_source": VALID_HTML, "logo": logo},
+            {**VALID_STYLE, "logo": logo},
         )
         assert response.status_code == 302
         assert DocumentTemplate.objects.get(document_type="delivery").logo
 
     def test_stock_manager_cannot_save(self, client, stock_manager):
         client.force_login(stock_manager)
-        response = client.post(
-            reverse("documents:template_edit", args=["delivery"]), {"html_source": VALID_HTML}
-        )
+        response = client.post(reverse("documents:template_edit", args=["delivery"]), VALID_STYLE)
         assert response.status_code == 403
         assert not DocumentTemplate.objects.filter(document_type="delivery").exists()
 
@@ -94,23 +102,22 @@ class TestPreviewView:
     def test_returns_a_real_pdf(self, client, administrator):
         client.force_login(administrator)
         response = client.post(
-            reverse("documents:template_preview", args=["delivery"]), {"html_source": VALID_HTML}
+            reverse("documents:template_preview", args=["delivery"]), VALID_STYLE
         )
         assert response.status_code == 200
         assert response["Content-Type"] == "application/pdf"
         assert response.content[:4] == b"%PDF"
 
-    def test_broken_template_returns_400_not_500(self, client, administrator):
+    def test_invalid_accent_color_returns_400_not_500(self, client, administrator):
         client.force_login(administrator)
-        response = client.post(
-            reverse("documents:template_preview", args=["delivery"]), {"html_source": BROKEN_HTML}
-        )
+        data = {**VALID_STYLE, "accent_color": "#zzzzzz"}
+        response = client.post(reverse("documents:template_preview", args=["delivery"]), data)
         assert response.status_code == 400
 
     def test_stock_manager_forbidden(self, client, stock_manager):
         client.force_login(stock_manager)
         response = client.post(
-            reverse("documents:template_preview", args=["delivery"]), {"html_source": VALID_HTML}
+            reverse("documents:template_preview", args=["delivery"]), VALID_STYLE
         )
         assert response.status_code == 403
 

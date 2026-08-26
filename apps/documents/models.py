@@ -33,6 +33,24 @@ class DocumentType(models.TextChoices):
     DELIVERY = "delivery", "Delivery"
 
 
+class LogoPosition(models.TextChoices):
+    LEFT = "left", "Left"
+    CENTER = "center", "Center"
+    RIGHT = "right", "Right"
+
+
+class FontChoice(models.TextChoices):
+    SANS = "sans", "Sans-serif"
+    SERIF = "serif", "Serif"
+    MONO = "mono", "Monospace"
+
+
+class PageMargin(models.TextChoices):
+    COMPACT = "compact", "Compact"
+    NORMAL = "normal", "Normal"
+    SPACIOUS = "spacious", "Spacious"
+
+
 class GeneratedDocument(UUIDPrimaryKeyModel, AppendOnlyModel):
     """A PDF snapshot of a completed assignment/delivery transaction. Never
     updated in place — "regenerate" creates a new row with a fresh
@@ -115,11 +133,31 @@ class DocumentTemplate(UUIDPrimaryKeyModel, TimestampedModel):
     Not append-only: unlike GeneratedDocument (an immutable snapshot of what
     was actually printed), this is live configuration that's explicitly
     meant to be edited and reset, not a historical record.
+
+    `html_source` is never typed by an Administrator directly — the editor
+    (apps.documents.views.DocumentTemplateEditView) only exposes the four
+    fields below (logo/logo_position/accent_color/font_choice/page_margin);
+    apps.documents.pdf.render_styleable_source() composes html_source from
+    those against the packaged styleable_base.html skeleton, so the actual
+    data fields (document_number, lines, signatures, ...) stay exactly
+    where the packaged template puts them — never hand-placed. html_source
+    itself remains the one thing pdf.py's render_pdf() reads, so nothing
+    about PDF rendering or GeneratedDocument snapshotting changes.
     """
 
     document_type = models.CharField(max_length=20, choices=DocumentType.choices, unique=True)
     html_source = models.TextField()
     logo = models.FileField(upload_to=_template_logo_upload_path, null=True, blank=True)
+    logo_position = models.CharField(
+        max_length=10, choices=LogoPosition.choices, default=LogoPosition.LEFT
+    )
+    accent_color = models.CharField(max_length=7, default="#444444")
+    font_choice = models.CharField(
+        max_length=10, choices=FontChoice.choices, default=FontChoice.SANS
+    )
+    page_margin = models.CharField(
+        max_length=10, choices=PageMargin.choices, default=PageMargin.NORMAL
+    )
     updated_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+"
     )

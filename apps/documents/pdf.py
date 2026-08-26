@@ -15,7 +15,25 @@ from weasyprint import HTML
 
 from apps.inventory.models import MovementType
 
+from .models import FontChoice, PageMargin
+
 CURRENT_TEMPLATE_VERSION = "form_v1"
+STYLEABLE_TEMPLATE_NAME = "documents/pdf/styleable_base.html"
+
+# Fonts actually installed in the runtime image (deploy/Dockerfile's
+# fonts-liberation package) — restricting the editor's choices to these
+# means "Font" always renders as chosen, never silently substitutes.
+_FONT_STACKS = {
+    FontChoice.SANS: '"Liberation Sans", Arial, sans-serif',
+    FontChoice.SERIF: '"Liberation Serif", "Times New Roman", serif',
+    FontChoice.MONO: '"Liberation Mono", "Courier New", monospace',
+}
+
+_PAGE_MARGINS_CM = {
+    PageMargin.COMPACT: "1.5",
+    PageMargin.NORMAL: "2",
+    PageMargin.SPACIOUS: "2.5",
+}
 
 _LOGO_SIGNATURES = (
     (b"\x89PNG\r\n\x1a\n", "image/png"),
@@ -126,6 +144,32 @@ def default_template_source():
     django_engine = engines["django"]
     template = django_engine.get_template(f"documents/pdf/{CURRENT_TEMPLATE_VERSION}.html")
     return template.template.source
+
+
+def render_styleable_source(*, logo_position, accent_color, font_choice, page_margin):
+    """Composes a DocumentTemplate.html_source string from the four choices
+    an Administrator makes in the structured editor (apps.documents.views.
+    DocumentTemplateEditView) — never hand-typed HTML. Starts from the
+    packaged styleable_base.html skeleton (same data fields/layout as
+    form_v1.html, the packaged default) and substitutes plain string tokens
+    for the style choices — deliberately not Django template syntax, so this
+    substitution can never collide with or interfere with the `{{ }}`/
+    `{% %}` data-field tags the skeleton already contains for document_number,
+    lines, signatures, etc. Those stay exactly where the skeleton puts them.
+
+    accent_color is expected to already be a validated "#rrggbb" string
+    (apps.documents.forms.DocumentTemplateStyleForm.clean_accent_color) —
+    interpolated directly into the PDF's <style> block, so an unvalidated
+    value here would be a CSS-injection path into WeasyPrint's renderer.
+    """
+    django_engine = engines["django"]
+    source = django_engine.get_template(STYLEABLE_TEMPLATE_NAME).template.source
+    return (
+        source.replace("__FONT_STACK__", _FONT_STACKS[font_choice])
+        .replace("__PAGE_MARGIN_CM__", _PAGE_MARGINS_CM[page_margin])
+        .replace("__ACCENT_COLOR__", accent_color)
+        .replace("__LOGO_POSITION_CLASS__", f"letterhead--{logo_position}")
+    )
 
 
 def sniff_logo_content_type(file_obj):

@@ -9,9 +9,9 @@ from apps.core.authorization import ADMINISTRATOR, STOCK_MANAGER, RoleRequiredMi
 from apps.inventory.access import require_transaction_access
 from apps.inventory.models import InventoryTransaction
 
-from .forms import AttachmentUploadForm, DocumentTemplateForm
+from .forms import AttachmentUploadForm, DocumentTemplateStyleForm
 from .models import Attachment, DocumentType, GeneratedDocument
-from .pdf import default_template_source
+from .pdf import render_styleable_source
 from .services import delete_attachment, generate_document, regenerate_document, upload_attachment
 from .template_services import get_template, render_preview_pdf, reset_template, update_template
 
@@ -158,30 +158,46 @@ def _require_valid_document_type(document_type):
 
 
 class DocumentTemplateEditView(LoginRequiredMixin, RoleRequiredMixin, View):
+    """A structured branding panel, not an HTML editor — logo, its position,
+    an accent color, a font, and page margins are the only things an
+    Administrator chooses. The report's actual data fields are always
+    placed automatically by the packaged skeleton (apps.documents.pdf.
+    render_styleable_source()); nothing here is typed as template syntax.
+    """
+
     allowed_roles = (ADMINISTRATOR,)
     template_name = "documents/template_edit.html"
 
     def get(self, request, document_type):
         _require_valid_document_type(document_type)
         template_obj = get_template(document_type)
-        initial_html = template_obj.html_source if template_obj else default_template_source()
-        form = DocumentTemplateForm(initial={"html_source": initial_html})
+        form = DocumentTemplateStyleForm(initial=self._initial(template_obj))
         return self._render(request, document_type, form, template_obj)
 
     def post(self, request, document_type):
         _require_valid_document_type(document_type)
         template_obj = get_template(document_type)
-        form = DocumentTemplateForm(request.POST, request.FILES)
+        form = DocumentTemplateStyleForm(request.POST, request.FILES)
         if not form.is_valid():
             return self._render(request, document_type, form, template_obj)
 
+        data = form.cleaned_data
         try:
             update_template(
                 user=request.user,
                 document_type=document_type,
-                html_source=form.cleaned_data["html_source"],
-                logo=form.cleaned_data.get("logo"),
-                remove_logo=form.cleaned_data.get("remove_logo", False),
+                html_source=render_styleable_source(
+                    logo_position=data["logo_position"],
+                    accent_color=data["accent_color"],
+                    font_choice=data["font_choice"],
+                    page_margin=data["page_margin"],
+                ),
+                logo=data.get("logo"),
+                remove_logo=data.get("remove_logo", False),
+                logo_position=data["logo_position"],
+                accent_color=data["accent_color"],
+                font_choice=data["font_choice"],
+                page_margin=data["page_margin"],
             )
         except ValidationError as exc:
             form.add_error(None, "; ".join(exc.messages) if hasattr(exc, "messages") else str(exc))
@@ -189,6 +205,17 @@ class DocumentTemplateEditView(LoginRequiredMixin, RoleRequiredMixin, View):
 
         messages.success(request, "Template saved.")
         return redirect("documents:template_edit", document_type=document_type)
+
+    @staticmethod
+    def _initial(template_obj):
+        if template_obj is None:
+            return {}
+        return {
+            "logo_position": template_obj.logo_position,
+            "accent_color": template_obj.accent_color,
+            "font_choice": template_obj.font_choice,
+            "page_margin": template_obj.page_margin,
+        }
 
     def _render(self, request, document_type, form, template_obj):
         return render(
@@ -208,11 +235,22 @@ class DocumentTemplatePreviewView(LoginRequiredMixin, RoleRequiredMixin, View):
 
     def post(self, request, document_type):
         _require_valid_document_type(document_type)
-        html_source = request.POST.get("html_source", "")
-        logo_file = request.FILES.get("logo")
+        form = DocumentTemplateStyleForm(request.POST, request.FILES)
+        if not form.is_valid():
+            return HttpResponseBadRequest(
+                "; ".join(f"{field}: {' '.join(errs)}" for field, errs in form.errors.items())
+            )
+
+        data = form.cleaned_data
+        html_source = render_styleable_source(
+            logo_position=data["logo_position"],
+            accent_color=data["accent_color"],
+            font_choice=data["font_choice"],
+            page_margin=data["page_margin"],
+        )
         try:
             pdf_bytes = render_preview_pdf(
-                document_type=document_type, html_source=html_source, logo_file=logo_file
+                document_type=document_type, html_source=html_source, logo_file=data.get("logo")
             )
         except ValidationError as exc:
             return HttpResponseBadRequest(
