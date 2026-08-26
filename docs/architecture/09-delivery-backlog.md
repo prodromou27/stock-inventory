@@ -728,6 +728,36 @@ font, page margins) entirely through form controls — no HTML or template synta
 and the document's actual data (document number, transaction details, line items, signatures) is always placed
 automatically and can't be broken from this screen.
 
+### Additional feature — Brand/Type autocomplete (Phase 1 of a 5-phase structured-feature wave) — done
+
+Added directly on user request, following a competitive-review prompt ("check similar products like Odoo/InvenTree
+... more structured") that was scoped into 5 concrete phases via a planning pass (see
+`C:\Users\cprodromou\.claude\plans\silly-sniffing-moler.md` for the full 5-phase plan). This is the first,
+lowest-risk phase; the other four (ad-hoc report builder, an indented location tree, admin-defined product custom
+fields, a spreadsheet-style product grid) follow as their own entries.
+
+`Brand`/`ProductType` were always normalized DB tables resolved via case-insensitive get-or-create
+(`apps.catalog.services.get_or_create_brand`/`get_or_create_product_type`), but every entry point
+(`ProductForm`, `QuickAddProductRowForm`) rendered `brand_name`/`product_type_name` as plain free-text inputs with
+no indication a predefined list existed. Fixed with a native HTML `<input list>`/`<datalist>` combo — deliberately
+not a JS-driven combobox, since this codebase has zero JS/AJAX infrastructure (confirmed during the phase-1
+exploration pass) and a native datalist needs none: `apps.catalog.views._catalog_choices()` (new) returns every
+active Brand/ProductType name, sorted, added to context on every render path of `ProductCreateView`,
+`ProductUpdateView`, and `QuickAddProductsView` (including error/duplicate/no-rows re-renders, not just the
+first GET); `product_form.html`/`quick_add_products.html` each gained two `<datalist>` blocks. Typing a name not in
+the list is unchanged — still creates a new Brand/ProductType exactly as before; this is purely a discovery aid,
+never a hard choice set (`get_or_create_*` still does the case-insensitive resolution it always did).
+
+Verified live end-to-end via `manage.py shell` + `django.test.Client` against the dev database (datalist renders
+with active brands, a newly-typed brand both creates the product and appears in the datalist on the next page
+load) before/alongside the pytest suite. New tests: `tests/test_catalog_views.py::TestBrandTypeAutocomplete` (sorted
+active-only choices on all three entry points, inactive brands excluded, a new name still creates). `ruff`/`black`/
+`makemigrations --check` clean — no model changes, no migration. Full suite unaffected (pre-existing, unrelated
+`tmp_path` Windows-permission caveat from earlier entries still applies; CI unaffected).
+
+**Acceptance**: typing in the Brand or Type field on any product-entry screen shows existing values as suggestions;
+picking one behaves identically to typing it manually; typing something new still creates it, exactly as before.
+
 ## Sequencing notes
 
 - Prompt 0 (this package) has no code dependency and is complete.

@@ -10,13 +10,32 @@ from apps.core.authorization import ADMINISTRATOR, STOCK_MANAGER, RoleRequiredMi
 from apps.core.sorting import SortableListMixin
 
 from .forms import ProductForm, QuickAddProductFormSet
-from .models import Product
+from .models import Brand, Product, ProductType
 from .services import (
     DuplicateProductError,
     create_product,
     create_products_batch,
     update_product,
 )
+
+
+def _catalog_choices():
+    """Populates the <datalist> options behind ProductForm/QuickAddProductRowForm's
+    brand_name/product_type_name inputs (apps.catalog.forms) — sorted, active
+    names only. Typing a name not in this list still works exactly as before
+    (get_or_create_brand/get_or_create_product_type in services.py); this is
+    purely a convenience for picking an existing one, never a hard choice set.
+    """
+    return {
+        "brand_choices": list(
+            Brand.objects.filter(is_active=True).order_by("name").values_list("name", flat=True)
+        ),
+        "product_type_choices": list(
+            ProductType.objects.filter(is_active=True)
+            .order_by("name")
+            .values_list("name", flat=True)
+        ),
+    }
 
 
 class ProductListView(LoginRequiredMixin, SortableListMixin, ListView):
@@ -69,12 +88,14 @@ class ProductCreateView(LoginRequiredMixin, RoleRequiredMixin, View):
 
     def get(self, request):
         form = ProductForm()
-        return render(request, "catalog/product_form.html", {"form": form})
+        return render(request, "catalog/product_form.html", {"form": form, **_catalog_choices()})
 
     def post(self, request):
         form = ProductForm(request.POST)
         if not form.is_valid():
-            return render(request, "catalog/product_form.html", {"form": form})
+            return render(
+                request, "catalog/product_form.html", {"form": form, **_catalog_choices()}
+            )
 
         data = form.cleaned_data
         try:
@@ -95,11 +116,18 @@ class ProductCreateView(LoginRequiredMixin, RoleRequiredMixin, View):
             return render(
                 request,
                 "catalog/product_form.html",
-                {"form": form, "duplicate_matches": exc.matches, "show_duplicate_warning": True},
+                {
+                    "form": form,
+                    "duplicate_matches": exc.matches,
+                    "show_duplicate_warning": True,
+                    **_catalog_choices(),
+                },
             )
         except ValidationError as exc:
             form.add_error(None, exc)
-            return render(request, "catalog/product_form.html", {"form": form})
+            return render(
+                request, "catalog/product_form.html", {"form": form, **_catalog_choices()}
+            )
 
         messages.success(request, f"Created product '{product}'.")
         return redirect(product.get_absolute_url())
@@ -117,12 +145,16 @@ class QuickAddProductsView(LoginRequiredMixin, RoleRequiredMixin, View):
     template_name = "catalog/quick_add_products.html"
 
     def get(self, request):
-        return render(request, self.template_name, {"formset": QuickAddProductFormSet()})
+        return render(
+            request,
+            self.template_name,
+            {"formset": QuickAddProductFormSet(), **_catalog_choices()},
+        )
 
     def post(self, request):
         formset = QuickAddProductFormSet(request.POST)
         if not formset.is_valid():
-            return render(request, self.template_name, {"formset": formset})
+            return render(request, self.template_name, {"formset": formset, **_catalog_choices()})
 
         # A blank row's cleaned_data is a dict of empty strings, not an
         # empty dict (Form.full_clean() always sets self.cleaned_data = {}
@@ -134,7 +166,11 @@ class QuickAddProductsView(LoginRequiredMixin, RoleRequiredMixin, View):
             return render(
                 request,
                 self.template_name,
-                {"formset": formset, "no_rows_error": "Enter at least one product."},
+                {
+                    "formset": formset,
+                    "no_rows_error": "Enter at least one product.",
+                    **_catalog_choices(),
+                },
             )
 
         results = create_products_batch(user=request.user, rows=rows)
@@ -144,7 +180,7 @@ class QuickAddProductsView(LoginRequiredMixin, RoleRequiredMixin, View):
         return render(
             request,
             self.template_name,
-            {"formset": QuickAddProductFormSet(), "results": results},
+            {"formset": QuickAddProductFormSet(), "results": results, **_catalog_choices()},
         )
 
 
@@ -170,14 +206,23 @@ class ProductUpdateView(LoginRequiredMixin, RoleRequiredMixin, View):
         return render(
             request,
             "catalog/product_form.html",
-            {"form": form, "product": product, "locked": product.has_movements()},
+            {
+                "form": form,
+                "product": product,
+                "locked": product.has_movements(),
+                **_catalog_choices(),
+            },
         )
 
     def post(self, request, pk):
         product = get_object_or_404(Product, pk=pk)
         form = ProductForm(request.POST)
         if not form.is_valid():
-            return render(request, "catalog/product_form.html", {"form": form, "product": product})
+            return render(
+                request,
+                "catalog/product_form.html",
+                {"form": form, "product": product, **_catalog_choices()},
+            )
 
         data = form.cleaned_data
         try:
@@ -197,7 +242,11 @@ class ProductUpdateView(LoginRequiredMixin, RoleRequiredMixin, View):
             )
         except ValidationError as exc:
             form.add_error(None, exc)
-            return render(request, "catalog/product_form.html", {"form": form, "product": product})
+            return render(
+                request,
+                "catalog/product_form.html",
+                {"form": form, "product": product, **_catalog_choices()},
+            )
 
         messages.success(request, f"Updated product '{product}'.")
         return redirect(product.get_absolute_url())

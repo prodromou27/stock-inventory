@@ -11,10 +11,18 @@ class ProductForm(forms.Form):
     get-or-create in the service (docs/architecture/05-tracking-and-duplicates.md).
     """
 
-    brand_name = forms.CharField(max_length=120, label="Brand")
+    brand_name = forms.CharField(
+        max_length=120,
+        label="Brand",
+        widget=forms.TextInput(attrs={"list": "brand-options", "autocomplete": "off"}),
+    )
     model = forms.CharField(max_length=120, label="Model")
     sku = forms.CharField(max_length=60, required=False, label="SKU")
-    product_type_name = forms.CharField(max_length=80, label="Type/category")
+    product_type_name = forms.CharField(
+        max_length=80,
+        label="Type/category",
+        widget=forms.TextInput(attrs={"list": "product-type-options", "autocomplete": "off"}),
+    )
     description = forms.CharField(required=False, widget=forms.Textarea)
     tracking_method = forms.ChoiceField(choices=TrackingMethod.choices)
     supplier = forms.CharField(max_length=120, required=False)
@@ -44,10 +52,20 @@ class QuickAddProductRowForm(forms.Form):
     operator never actually touched.
     """
 
-    brand_name = forms.CharField(max_length=120, required=False, label="Brand")
+    brand_name = forms.CharField(
+        max_length=120,
+        required=False,
+        label="Brand",
+        widget=forms.TextInput(attrs={"list": "brand-options", "autocomplete": "off"}),
+    )
     model = forms.CharField(max_length=120, required=False, label="Model")
     sku = forms.CharField(max_length=60, required=False, label="SKU")
-    product_type_name = forms.CharField(max_length=80, required=False, label="Type")
+    product_type_name = forms.CharField(
+        max_length=80,
+        required=False,
+        label="Type",
+        widget=forms.TextInput(attrs={"list": "product-type-options", "autocomplete": "off"}),
+    )
     tracking_method = forms.ChoiceField(choices=TrackingMethod.choices, required=False)
     supplier = forms.CharField(max_length=120, required=False)
 

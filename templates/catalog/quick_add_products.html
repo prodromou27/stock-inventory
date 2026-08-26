@@ -23,6 +23,13 @@
     <p class="messages__item messages__item--error">{{ no_rows_error }}</p>
   {% endif %}
 
+  <datalist id="brand-options">
+    {% for name in brand_choices %}<option value="{{ name }}">{% endfor %}
+  </datalist>
+  <datalist id="product-type-options">
+    {% for name in product_type_choices %}<option value="{{ name }}">{% endfor %}
+  </datalist>
+
   <form method="post">
     {% csrf_token %}
     {{ formset.management_form }}

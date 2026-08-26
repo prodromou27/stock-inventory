@@ -27,6 +27,13 @@
     </p>
   {% endif %}
 
+  <datalist id="brand-options">
+    {% for name in brand_choices %}<option value="{{ name }}">{% endfor %}
+  </datalist>
+  <datalist id="product-type-options">
+    {% for name in product_type_choices %}<option value="{{ name }}">{% endfor %}
+  </datalist>
+
   <form method="post">
     {% csrf_token %}
     {{ form.as_p }}

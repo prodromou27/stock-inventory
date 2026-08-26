@@ -109,6 +109,60 @@ class TestProductCreateView:
         assert Product.objects.filter(model=unit_product.model).count() == 2
 
 
+@pytest.mark.django_db
+class TestBrandTypeAutocomplete:
+    """Brand/ProductType datalist options (apps.catalog.views._catalog_choices)
+    on every product entry point.
+    """
+
+    def test_product_create_form_lists_active_brands_and_types_sorted(
+        self, client, stock_manager, unit_product, quantity_product
+    ):
+        client.force_login(stock_manager)
+        response = client.get(reverse("catalog:product_create"))
+        content = response.content.decode()
+        brand_names = list(response.context["brand_choices"])
+        assert brand_names == sorted(brand_names)
+        assert unit_product.brand.name in brand_names
+        assert quantity_product.brand.name in brand_names
+        assert 'id="brand-options"' in content
+        assert 'id="product-type-options"' in content
+        assert 'list="brand-options"' in content
+        assert 'list="product-type-options"' in content
+
+    def test_inactive_brand_excluded_from_choices(self, client, stock_manager, unit_product):
+        unit_product.brand.is_active = False
+        unit_product.brand.save(update_fields=["is_active"])
+        client.force_login(stock_manager)
+        response = client.get(reverse("catalog:product_create"))
+        assert unit_product.brand.name not in list(response.context["brand_choices"])
+
+    def test_product_update_form_includes_choices(self, client, stock_manager, unit_product):
+        client.force_login(stock_manager)
+        response = client.get(reverse("catalog:product_update", kwargs={"pk": unit_product.pk}))
+        assert unit_product.brand.name in list(response.context["brand_choices"])
+
+    def test_quick_add_form_includes_choices(self, client, stock_manager, unit_product):
+        client.force_login(stock_manager)
+        response = client.get(reverse("catalog:quick_add"))
+        assert unit_product.brand.name in list(response.context["brand_choices"])
+        assert 'id="brand-options"' in response.content.decode()
+
+    def test_typing_a_new_brand_still_creates_it(self, client, stock_manager):
+        client.force_login(stock_manager)
+        response = client.post(
+            reverse("catalog:product_create"),
+            {
+                "brand_name": "Brand New Co",
+                "model": "X1",
+                "product_type_name": "Widget",
+                "tracking_method": "unit",
+            },
+        )
+        assert response.status_code == 302
+        assert Product.objects.filter(brand__name="Brand New Co").exists()
+
+
 def _quick_add_management_form(num_forms):
     return {
         "form-TOTAL_FORMS": str(num_forms),
