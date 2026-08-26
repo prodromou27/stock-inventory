@@ -626,6 +626,52 @@ plus `tests/test_dashboard.py` — 8 new tests for `dashboard_summary()` and the
 **Acceptance**: every major grid (Assets, Products, Locations, Stock Balances, Transactions) supports click-to-sort
 on its key columns; the dashboard shows real, scoped, clickable numbers instead of only navigation links.
 
+### Additional feature — Quick Add Products (bulk product entry) — done
+
+Added directly on user request: "the products are shown in grid like excel? ... make sure that is useful for the
+users, simplify it if needed." Asked via `AskUserQuestion` how far to take the "spreadsheet-like" idea — the user
+picked bulk quick-add for new products specifically, not a true inline-editable grid on the existing list and not
+leaving the current table as-is.
+
+`apps.catalog.services.create_products_batch(*, user, rows)` mirrors `receive_stock_batch()`'s shape exactly: it
+calls the existing single-item `create_product()` once per row rather than a bulk insert, so each row gets its own
+duplicate check and audit event exactly like creating it individually would, and one bad row (a Brand/Model/SKU
+match, a validation failure) doesn't cost the rest of the batch — it returns a per-row outcome list
+(`created`/`duplicate`/`error`) instead of raising. A duplicate row is never auto-acknowledged; it's reported back
+for the operator to resolve individually, same reasoning as the single-product form
+(`docs/architecture/05-tracking-and-duplicates.md`).
+
+`apps.catalog.views.QuickAddProductsView` renders a 10-row `django.forms.formset_factory` grid
+(`QuickAddProductFormSet`/`QuickAddProductRowForm` in `apps/catalog/forms.py`) with only the fields needed to
+create a product fast (Brand/Model/SKU/Type/Tracking/Supplier) — description, supplier notes, and low-stock
+threshold stay follow-up edits on the created product rather than bulk-entry fields. Reachable from the Products
+list via a new "+ Quick add (multiple)" button next to "+ New product".
+
+**Bug found and fixed during live verification** (not caught by any test, since none existed yet for this feature):
+submitting two filled rows out of ten produced spurious "Required." errors on filled-in fields. Root cause was two
+compounding issues:
+1. `QuickAddProductRowForm.tracking_method` originally set `initial=TrackingMethod.UNIT` and `clean()` gated
+   "is this row blank" on `self.has_changed()` — but a `<select>` always submits a concrete value once rendered,
+   so there's no true "untouched" state to compare against `initial`, and `has_changed()` misfired on rows the
+   operator never touched. Fixed by removing the field-level `initial` and gating blank-row detection on whether
+   the *identifying* fields (brand_name/model/product_type_name) are non-blank instead.
+2. `Form.full_clean()` always sets `self.cleaned_data = {}` before running field validation, so even a "blank" row
+   ends up with a `cleaned_data` dict of empty strings — truthy, not `{}`. The view's original
+   `[row for row in formset.cleaned_data if row]` used dict truthiness and would have kept blank rows. Fixed to
+   filter on `row.get("brand_name")` specifically.
+
+Verified live end-to-end via `manage.py shell` + `django.test.Client` after both fixes (multi-row creation
+succeeding correctly) before writing the pytest suite, so the tests codify the fixed behavior rather than the bug.
+`tests/test_catalog_services.py::TestCreateProductsBatch` (created/duplicate/one-bad-row-does-not-block-the-rest/
+role requirement) and `tests/test_catalog_views.py::TestQuickAddProductsView` (anonymous/read-only-forbidden,
+multi-row creation, blank rows silently skipped, no-rows-entered error, partial row shows field errors, mixed
+created/duplicate outcome) — 11 new tests, all passing. `ruff`/`black`/`makemigrations --check` clean; no migration
+needed (no new models).
+
+**Acceptance**: Stock Managers/Administrators can create several products in one submission from the Products
+list; blank rows are ignored; a duplicate or invalid row is reported per-row without blocking the rest of the
+batch; Brand/Type are auto-created exactly like the single-product form already does.
+
 ## Sequencing notes
 
 - Prompt 0 (this package) has no code dependency and is complete.

@@ -9,9 +9,14 @@ from django.views.generic import DetailView, ListView
 from apps.core.authorization import ADMINISTRATOR, STOCK_MANAGER, RoleRequiredMixin
 from apps.core.sorting import SortableListMixin
 
-from .forms import ProductForm
+from .forms import ProductForm, QuickAddProductFormSet
 from .models import Product
-from .services import DuplicateProductError, create_product, update_product
+from .services import (
+    DuplicateProductError,
+    create_product,
+    create_products_batch,
+    update_product,
+)
 
 
 class ProductListView(LoginRequiredMixin, SortableListMixin, ListView):
@@ -98,6 +103,49 @@ class ProductCreateView(LoginRequiredMixin, RoleRequiredMixin, View):
 
         messages.success(request, f"Created product '{product}'.")
         return redirect(product.get_absolute_url())
+
+
+class QuickAddProductsView(LoginRequiredMixin, RoleRequiredMixin, View):
+    """A formset of QuickAddProductFormSet's 10 rows — several products
+    created from one submission instead of one page load each. Only rows
+    the operator actually filled in are sent to create_products_batch();
+    a blank row is silently skipped (Django's own empty_permitted formset
+    behavior — see apps.catalog.forms.QuickAddProductRowForm), not an error.
+    """
+
+    allowed_roles = (ADMINISTRATOR, STOCK_MANAGER)
+    template_name = "catalog/quick_add_products.html"
+
+    def get(self, request):
+        return render(request, self.template_name, {"formset": QuickAddProductFormSet()})
+
+    def post(self, request):
+        formset = QuickAddProductFormSet(request.POST)
+        if not formset.is_valid():
+            return render(request, self.template_name, {"formset": formset})
+
+        # A blank row's cleaned_data is a dict of empty strings, not an
+        # empty dict (Form.full_clean() always sets self.cleaned_data = {}
+        # before running field validation), so filter on the fields that
+        # actually identify a product rather than dict truthiness — see
+        # QuickAddProductRowForm.clean()'s docstring.
+        rows = [row for row in formset.cleaned_data if row.get("brand_name")]
+        if not rows:
+            return render(
+                request,
+                self.template_name,
+                {"formset": formset, "no_rows_error": "Enter at least one product."},
+            )
+
+        results = create_products_batch(user=request.user, rows=rows)
+
+        created = sum(1 for r in results if r["status"] == "created")
+        messages.success(request, f"Created {created} of {len(results)} product(s).")
+        return render(
+            request,
+            self.template_name,
+            {"formset": QuickAddProductFormSet(), "results": results},
+        )
 
 
 class ProductUpdateView(LoginRequiredMixin, RoleRequiredMixin, View):

@@ -1007,6 +1007,19 @@
     font-size: 0.9rem;
   }
 
+  /* A spreadsheet-like entry grid — many rows of plain inputs, one per
+     cell, tight padding so it reads as a grid rather than a stack of
+     separate form fields (Quick Add Products / Quick Receive-style forms). */
+  .dense-table td {
+    padding: 0.35rem 0.5rem;
+  }
+
+  .dense-table input,
+  .dense-table select {
+    min-width: 8rem;
+    margin: 0;
+  }
+
   /* ---------- document template editor ---------- */
 
   .template-editor-layout {

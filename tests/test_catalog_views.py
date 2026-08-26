@@ -109,6 +109,127 @@ class TestProductCreateView:
         assert Product.objects.filter(model=unit_product.model).count() == 2
 
 
+def _quick_add_management_form(num_forms):
+    return {
+        "form-TOTAL_FORMS": str(num_forms),
+        "form-INITIAL_FORMS": "0",
+        "form-MIN_NUM_FORMS": "0",
+        "form-MAX_NUM_FORMS": "1000",
+    }
+
+
+def _quick_add_row(index, **fields):
+    row = {
+        f"form-{index}-brand_name": "",
+        f"form-{index}-model": "",
+        f"form-{index}-sku": "",
+        f"form-{index}-product_type_name": "",
+        f"form-{index}-tracking_method": "",
+        f"form-{index}-supplier": "",
+    }
+    row.update({f"form-{index}-{key}": value for key, value in fields.items()})
+    return row
+
+
+@pytest.mark.django_db
+class TestQuickAddProductsView:
+    def test_anonymous_redirected_to_login(self, client):
+        response = client.get(reverse("catalog:quick_add"))
+        assert response.status_code == 302
+
+    def test_read_only_user_cannot_access(self, client, read_only_user):
+        client.force_login(read_only_user)
+        response = client.get(reverse("catalog:quick_add"))
+        assert response.status_code == 403
+
+    def test_stock_manager_can_create_several_rows_at_once(self, client, stock_manager):
+        client.force_login(stock_manager)
+        data = _quick_add_management_form(2)
+        data.update(
+            _quick_add_row(
+                0,
+                brand_name="Cisco",
+                model="RV340",
+                product_type_name="Router",
+                tracking_method="unit",
+            )
+        )
+        data.update(
+            _quick_add_row(
+                1,
+                brand_name="Cisco",
+                model="RV345",
+                product_type_name="Router",
+                tracking_method="unit",
+            )
+        )
+        response = client.post(reverse("catalog:quick_add"), data)
+        assert response.status_code == 200
+        assert [r["status"] for r in response.context["results"]] == ["created", "created"]
+        assert Product.objects.filter(model="RV340").exists()
+        assert Product.objects.filter(model="RV345").exists()
+
+    def test_blank_rows_are_silently_skipped(self, client, stock_manager):
+        client.force_login(stock_manager)
+        data = _quick_add_management_form(3)
+        data.update(
+            _quick_add_row(0, brand_name="Cisco", model="RV340", product_type_name="Router")
+        )
+        data.update(_quick_add_row(1))
+        data.update(_quick_add_row(2))
+        response = client.post(reverse("catalog:quick_add"), data)
+        assert response.status_code == 200
+        assert len(response.context["results"]) == 1
+        assert response.context["results"][0]["status"] == "created"
+
+    def test_no_rows_entered_shows_error_without_creating_anything(self, client, stock_manager):
+        client.force_login(stock_manager)
+        data = _quick_add_management_form(3)
+        data.update(_quick_add_row(0))
+        data.update(_quick_add_row(1))
+        data.update(_quick_add_row(2))
+        response = client.post(reverse("catalog:quick_add"), data)
+        assert response.status_code == 200
+        assert response.context["no_rows_error"]
+        assert Product.objects.count() == 0
+
+    def test_partially_filled_row_reports_field_errors(self, client, stock_manager):
+        client.force_login(stock_manager)
+        data = _quick_add_management_form(1)
+        data.update(_quick_add_row(0, brand_name="Cisco"))
+        response = client.post(reverse("catalog:quick_add"), data)
+        assert response.status_code == 200
+        formset = response.context["formset"]
+        assert not formset.is_valid()
+        assert Product.objects.count() == 0
+
+    def test_mixed_outcome_batch_reports_each_row(self, client, stock_manager, unit_product):
+        client.force_login(stock_manager)
+        data = _quick_add_management_form(2)
+        data.update(
+            _quick_add_row(
+                0,
+                brand_name=unit_product.brand.name,
+                model=unit_product.model,
+                product_type_name=unit_product.product_type.name,
+                tracking_method="unit",
+            )
+        )
+        data.update(
+            _quick_add_row(
+                1,
+                brand_name="Cisco",
+                model="RV340",
+                product_type_name="Router",
+                tracking_method="unit",
+            )
+        )
+        response = client.post(reverse("catalog:quick_add"), data)
+        assert response.status_code == 200
+        statuses = [r["status"] for r in response.context["results"]]
+        assert statuses == ["duplicate", "created"]
+
+
 @pytest.mark.django_db
 class TestProductUpdateView:
     def test_read_only_user_cannot_edit(self, client, read_only_user, unit_product):

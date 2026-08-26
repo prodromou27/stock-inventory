@@ -8,6 +8,7 @@
     <h1>Products</h1>
     {% if user_is_administrator or "StockManager" in user_role_groups %}
       <div class="page-header__actions">
+        <a class="btn" href="{% url 'catalog:quick_add' %}">+ Quick add (multiple)</a>
         <a class="btn btn--primary" href="{% url 'catalog:product_create' %}">+ New product</a>
       </div>
     {% endif %}

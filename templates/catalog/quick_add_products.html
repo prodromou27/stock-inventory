@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+
+{% block title %}Quick Add Products — Stock Inventory{% endblock %}
+
+{% block content %}
+  <p><a href="{% url 'catalog:product_list' %}">&larr; Products</a></p>
+  <div class="page-header">
+    <div>
+      <h1>Quick add products</h1>
+      <div class="page-header__subtitle">
+        Fill in as many rows as you need — blank rows are ignored. Brand/Type are created automatically if they
+        don't exist yet. Need description, supplier notes, or a low-stock threshold too? Use
+        <a href="{% url 'catalog:product_create' %}">the single-product form</a> instead, or edit the product
+        afterward.
+      </div>
+    </div>
+  </div>
+
+  {% if formset.non_form_errors %}
+    <p class="messages__item messages__item--error">{{ formset.non_form_errors|join:" " }}</p>
+  {% endif %}
+  {% if no_rows_error %}
+    <p class="messages__item messages__item--error">{{ no_rows_error }}</p>
+  {% endif %}
+
+  <form method="post">
+    {% csrf_token %}
+    {{ formset.management_form }}
+    <table class="dense-table">
+      <thead>
+        <tr>
+          <th>Brand</th>
+          <th>Model</th>
+          <th>SKU</th>
+          <th>Type</th>
+          <th>Tracking</th>
+          <th>Supplier</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for form in formset %}
+          <tr>
+            <td>
+              {{ form.brand_name }}
+              {% if form.brand_name.errors %}<div class="errorlist">{{ form.brand_name.errors|join:" " }}</div>{% endif %}
+            </td>
+            <td>
+              {{ form.model }}
+              {% if form.model.errors %}<div class="errorlist">{{ form.model.errors|join:" " }}</div>{% endif %}
+            </td>
+            <td>{{ form.sku }}</td>
+            <td>
+              {{ form.product_type_name }}
+              {% if form.product_type_name.errors %}<div class="errorlist">{{ form.product_type_name.errors|join:" " }}</div>{% endif %}
+            </td>
+            <td>{{ form.tracking_method }}</td>
+            <td>{{ form.supplier }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="form-actions">
+      <button type="submit" class="btn btn--primary">Create all</button>
+    </div>
+  </form>
+
+  {% if results %}
+    <h2>Results</h2>
+    <table>
+      <thead>
+        <tr><th>Brand</th><th>Model</th><th>Outcome</th><th>Detail</th></tr>
+      </thead>
+      <tbody>
+        {% for row in results %}
+          <tr>
+            <td>{{ row.brand_name }}</td>
+            <td>{{ row.model }}</td>
+            <td>
+              {% if row.status == "created" %}
+                <span class="badge badge--success">Created</span>
+              {% elif row.status == "duplicate" %}
+                <span class="badge badge--warning">Duplicate</span>
+              {% else %}
+                <span class="badge badge--danger">Error</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if row.status == "created" %}
+                <a href="{{ row.product.get_absolute_url }}">View</a>
+              {% elif row.status == "duplicate" %}
+                Matches an existing product — use the single-item form and confirm it deliberately if intended.
+              {% else %}
+                {{ row.detail }}
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+{% endblock %}

@@ -7,6 +7,7 @@ from apps.catalog.services import (
     DuplicateProductError,
     check_duplicate_products,
     create_product,
+    create_products_batch,
     get_or_create_brand,
     get_or_create_product_type,
     update_product,
@@ -162,6 +163,123 @@ class TestCreateProduct:
             object_id=str(product.pk),
             event_type=AuditEvent.EventType.RECORD_CREATED,
         ).exists()
+
+
+@pytest.mark.django_db
+class TestCreateProductsBatch:
+    """apps.catalog.views.QuickAddProductsView's service — several rows,
+    each its own create_product() call.
+    """
+
+    def test_creates_one_product_per_row(self, administrator):
+        results = create_products_batch(
+            user=administrator,
+            rows=[
+                {
+                    "brand_name": "Fortinet",
+                    "model": "FG-100F",
+                    "sku": "",
+                    "product_type_name": "Firewall",
+                    "tracking_method": TrackingMethod.UNIT,
+                    "supplier": "",
+                },
+                {
+                    "brand_name": "HP",
+                    "model": "26A",
+                    "sku": "",
+                    "product_type_name": "Toner",
+                    "tracking_method": TrackingMethod.QUANTITY,
+                    "supplier": "",
+                },
+            ],
+        )
+        assert [r["status"] for r in results] == ["created", "created"]
+        assert Product.objects.filter(model="FG-100F").exists()
+        assert Product.objects.filter(model="26A").exists()
+
+    def test_duplicate_row_is_reported_not_raised(self, administrator):
+        product = create_product(
+            user=administrator,
+            brand_name="Fortinet",
+            model="FG-100F",
+            product_type_name="Firewall",
+            tracking_method=TrackingMethod.UNIT,
+        )
+
+        results = create_products_batch(
+            user=administrator,
+            rows=[
+                {
+                    "brand_name": product.brand.name,
+                    "model": product.model,
+                    "sku": "",
+                    "product_type_name": product.product_type.name,
+                    "tracking_method": TrackingMethod.UNIT,
+                    "supplier": "",
+                }
+            ],
+        )
+        assert results[0]["status"] == "duplicate"
+        assert results[0]["matches"] == [product]
+        assert Product.objects.filter(model="FG-100F").count() == 1
+
+    def test_one_bad_row_does_not_block_the_rest_of_the_batch(self, administrator):
+        product = create_product(
+            user=administrator,
+            brand_name="Fortinet",
+            model="FG-100F",
+            product_type_name="Firewall",
+            tracking_method=TrackingMethod.UNIT,
+        )
+
+        results = create_products_batch(
+            user=administrator,
+            rows=[
+                {
+                    "brand_name": "Cisco",
+                    "model": "RV340",
+                    "sku": "",
+                    "product_type_name": "Router",
+                    "tracking_method": TrackingMethod.UNIT,
+                    "supplier": "",
+                },
+                {
+                    "brand_name": product.brand.name,
+                    "model": product.model,
+                    "sku": "",
+                    "product_type_name": product.product_type.name,
+                    "tracking_method": TrackingMethod.UNIT,
+                    "supplier": "",
+                },
+                {
+                    "brand_name": "Cisco",
+                    "model": "RV345",
+                    "sku": "",
+                    "product_type_name": "Router",
+                    "tracking_method": TrackingMethod.UNIT,
+                    "supplier": "",
+                },
+            ],
+        )
+        assert [r["status"] for r in results] == ["created", "duplicate", "created"]
+        assert Product.objects.filter(model="RV340").exists()
+        assert Product.objects.filter(model="RV345").exists()
+
+    def test_read_only_user_cannot_batch_create(self, read_only_user):
+        with pytest.raises(Exception):
+            create_products_batch(
+                user=read_only_user,
+                rows=[
+                    {
+                        "brand_name": "Fortinet",
+                        "model": "FG-100F",
+                        "sku": "",
+                        "product_type_name": "Firewall",
+                        "tracking_method": TrackingMethod.UNIT,
+                        "supplier": "",
+                    }
+                ],
+            )
 
 
 @pytest.mark.django_db

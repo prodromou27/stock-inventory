@@ -143,6 +143,59 @@ def create_product(
     return product
 
 
+def create_products_batch(*, user, rows):
+    """Quick Add (apps.catalog.views.QuickAddProductsView) — several products
+    entered as one submission instead of one page load each. Calls
+    create_product() once per row rather than a single bulk insert, so each
+    row gets its own duplicate check/audit event exactly like creating it
+    individually would, and one bad row (a Brand/Model/SKU match, a bad
+    tracking method) doesn't cost the rest of the batch — returns a per-row
+    outcome list instead of raising. Never auto-acknowledges a duplicate;
+    a duplicate row is reported back for the operator to resolve
+    individually (docs/architecture/05-tracking-and-duplicates.md's
+    reasoning for the single-product flow applies here too).
+
+    `rows` is a list of dicts with the same keys create_product() accepts
+    (brand_name/model/product_type_name/tracking_method required; sku/
+    supplier optional) — apps.catalog.forms.QuickAddProductRowForm's
+    cleaned_data shape.
+    """
+    require_role(user, ADMINISTRATOR, STOCK_MANAGER)
+
+    results = []
+    for row in rows:
+        try:
+            product = create_product(user=user, **row)
+        except DuplicateProductError as exc:
+            results.append(
+                {
+                    "brand_name": row["brand_name"],
+                    "model": row["model"],
+                    "status": "duplicate",
+                    "matches": list(exc.matches),
+                }
+            )
+        except ValidationError as exc:
+            results.append(
+                {
+                    "brand_name": row["brand_name"],
+                    "model": row["model"],
+                    "status": "error",
+                    "detail": "; ".join(exc.messages) if hasattr(exc, "messages") else str(exc),
+                }
+            )
+        else:
+            results.append(
+                {
+                    "brand_name": row["brand_name"],
+                    "model": row["model"],
+                    "status": "created",
+                    "product": product,
+                }
+            )
+    return results
+
+
 @transaction.atomic
 def update_product(
     *,
