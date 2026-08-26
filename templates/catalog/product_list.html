@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load ui_extras %}
 
 {% block title %}Products — Stock Inventory{% endblock %}
 
@@ -27,12 +28,12 @@
     <table>
       <thead>
         <tr>
-          <th>Brand</th>
-          <th>Model</th>
-          <th>SKU</th>
-          <th>Type</th>
+          {% sort_th "brand" "Brand" %}
+          {% sort_th "model" "Model" %}
+          {% sort_th "sku" "SKU" %}
+          {% sort_th "type" "Type" %}
           <th>Tracking</th>
-          <th>Status</th>
+          {% sort_th "status" "Status" %}
         </tr>
       </thead>
       <tbody>

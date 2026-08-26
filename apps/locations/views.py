@@ -6,6 +6,7 @@ from django.views import View
 from django.views.generic import DetailView, ListView
 
 from apps.core.authorization import ADMINISTRATOR, RoleRequiredMixin
+from apps.core.sorting import SortableListMixin
 
 from .forms import LocationForm
 from .models import Location
@@ -13,11 +14,19 @@ from .scoping import require_location_access, scope_queryset
 from .services import create_location, deactivate_location, reactivate_location
 
 
-class LocationListView(LoginRequiredMixin, ListView):
+class LocationListView(LoginRequiredMixin, SortableListMixin, ListView):
     model = Location
     template_name = "locations/location_list.html"
     context_object_name = "locations"
     paginate_by = 50
+
+    sort_fields = {
+        "name": "name",
+        "level": "level",
+        "parent": "parent__name",
+        "status": "is_active",
+    }
+    default_ordering = ("level", "name")
 
     def get_queryset(self):
         queryset = scope_queryset(
@@ -30,7 +39,7 @@ class LocationListView(LoginRequiredMixin, ListView):
             queryset = queryset.filter(level=level)
         if self.request.GET.get("show_inactive") != "1":
             queryset = queryset.filter(is_active=True)
-        return queryset.order_by("level", "name")
+        return self.apply_sort(queryset)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

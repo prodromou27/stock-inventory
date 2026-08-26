@@ -118,3 +118,31 @@ class TestTransactionListView:
         response = client.get(reverse("inventory:transaction_list"), {"movement_type": "receipt"})
         numbers = {t.transaction_number for t in response.context["transactions"]}
         assert assign_txn.transaction_number not in numbers
+
+    def test_sort_by_number_ascending(self, client, administrator, unit_product, location_tree):
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-TL5",
+        )
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-TL6",
+        )
+
+        client.force_login(administrator)
+        response = client.get(
+            reverse("inventory:transaction_list"), {"sort": "number", "dir": "asc"}
+        )
+        numbers = [t.transaction_number for t in response.context["transactions"]]
+        assert numbers == sorted(numbers)
+
+    def test_unknown_sort_key_falls_back_to_default(self, client, administrator):
+        client.force_login(administrator)
+        response = client.get(reverse("inventory:transaction_list"), {"sort": "not-a-field"})
+        assert response.status_code == 200

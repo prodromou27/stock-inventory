@@ -592,6 +592,40 @@ unaffected). No migration drift.
 per page load, with a clear per-serial outcome if something in the batch needs attention; the app's visual design
 is unchanged, now compiled by a real, verified Tailwind build pipeline instead of a hand-written stylesheet.
 
+### Additional feature — sortable columns everywhere, dashboard KPIs — done
+
+Added directly on user request, continuing the same conversation: "make sure that our product is useful, with
+modern UI, all the relevant features that needed exist... must be useful, and not time consuming." Two changes,
+both extending patterns already built rather than inventing new ones.
+
+**Sortable columns** (`apps.inventory.views.UnitAssetListView`'s `?sort=`/`?dir=` support, added in the entry
+above) is now `apps.core.sorting.SortableListMixin` — pulled out once a fifth view needed the identical ~15 lines,
+not before. Applied to Products, Locations, Stock Balances, and Transactions, each with its own explicit
+`sort_fields` allow-list (never a raw user-supplied field path) and `default_ordering` tiebreaker matching what
+that view already used unsorted. `StockBalance.available_quantity` is a computed `@property` (on_hand minus
+reserved), not a database column, so it's deliberately left out of the sortable set rather than adding an
+`.annotate()` for it — on-hand and reserved alone cover sorting by either component. `UnitAssetListView` itself
+was refactored onto the shared mixin too, so there's exactly one implementation of this logic now, not five.
+
+**Dashboard KPIs**: `apps.core.views.HomeView` no longer just links to other screens — `apps.reporting.queries.
+dashboard_summary()` (new, alongside this module's other report queries, following the same
+`scope_queryset()`/`scope_transaction_queryset()` pattern every one of them already uses, so the numbers respect
+the viewer's location access exactly like every list/report screen already does) returns seven cheap counts/
+aggregates — units in stock, quantity on hand, low-stock alerts, active reservations, damaged, lost, and
+transactions in the last 7 days — rendered as clickable `.stat-card`s that jump straight to the relevant filtered
+list or report. Every value is a `.count()`/aggregate, never a loaded queryset, so this stays cheap regardless of
+inventory size — verified live against the `seed_bulk_inventory`-seeded dev database (8,000+ assets) before
+writing the pytest suite, not just against small fixture data.
+
+Verified live end-to-end (sorting each of the four newly-wired grids by every one of their sortable columns, the
+dashboard's real numbers against the bulk-seeded database) before/alongside the pytest suite (`apps/core/
+sorting.py`'s behavior re-verified through each view's own light sort tests rather than duplicated in isolation,
+plus `tests/test_dashboard.py` — 8 new tests for `dashboard_summary()` and the view). Full count and pre-existing
+`tmp_path` caveat unchanged from the entry above; CI unaffected. No migration drift.
+
+**Acceptance**: every major grid (Assets, Products, Locations, Stock Balances, Transactions) supports click-to-sort
+on its key columns; the dashboard shows real, scoped, clickable numbers instead of only navigation links.
+
 ## Sequencing notes
 
 - Prompt 0 (this package) has no code dependency and is complete.

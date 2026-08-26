@@ -7,17 +7,27 @@ from django.views import View
 from django.views.generic import DetailView, ListView
 
 from apps.core.authorization import ADMINISTRATOR, STOCK_MANAGER, RoleRequiredMixin
+from apps.core.sorting import SortableListMixin
 
 from .forms import ProductForm
 from .models import Product
 from .services import DuplicateProductError, create_product, update_product
 
 
-class ProductListView(LoginRequiredMixin, ListView):
+class ProductListView(LoginRequiredMixin, SortableListMixin, ListView):
     model = Product
     template_name = "catalog/product_list.html"
     context_object_name = "products"
     paginate_by = 50
+
+    sort_fields = {
+        "brand": "brand__name",
+        "model": "model",
+        "sku": "sku",
+        "type": "product_type__name",
+        "status": "is_active",
+    }
+    default_ordering = ("brand__name", "model")
 
     def get_queryset(self):
         queryset = Product.objects.select_related("brand", "product_type")
@@ -31,7 +41,7 @@ class ProductListView(LoginRequiredMixin, ListView):
             )
         if self.request.GET.get("show_inactive") != "1":
             queryset = queryset.filter(is_active=True)
-        return queryset.order_by("brand__name", "model")
+        return self.apply_sort(queryset)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

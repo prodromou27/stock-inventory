@@ -294,6 +294,40 @@ class TestStockBalanceListAndDetail:
         assert response.status_code == 200
         assert len(response.context["lines"]) == 1
 
+    def test_sort_by_on_hand_descending(
+        self, client, administrator, quantity_product, unit_product, location_tree
+    ):
+        from apps.catalog.models import TrackingMethod
+        from apps.catalog.services import create_product
+
+        other_product = create_product(
+            user=administrator,
+            brand_name="Zebra",
+            model="Z-1",
+            product_type_name="Widget",
+            tracking_method=TrackingMethod.QUANTITY,
+        )
+        receive_stock(
+            user=administrator,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=5,
+        )
+        receive_stock(
+            user=administrator,
+            product=other_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=50,
+        )
+
+        client.force_login(administrator)
+        response = client.get(reverse("inventory:balance_list"), {"sort": "on_hand", "dir": "desc"})
+        on_hand_values = [b.on_hand_quantity for b in response.context["balances"]]
+        assert on_hand_values == sorted(on_hand_values, reverse=True)
+        assert on_hand_values[0] == 50
+
 
 @pytest.mark.django_db
 class TestTransactionDetailView:

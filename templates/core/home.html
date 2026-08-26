@@ -16,6 +16,37 @@
     <p class="messages__item messages__item--warning">No role group assigned yet. Contact an Administrator.</p>
   {% endif %}
 
+  <div class="stat-grid">
+    <a class="stat-card" href="{% url 'inventory:asset_list' %}?status=in_stock">
+      <div class="stat-card__value">{{ stats.assets_in_stock }}</div>
+      <div class="stat-card__label">Units in stock</div>
+    </a>
+    <a class="stat-card" href="{% url 'inventory:balance_list' %}">
+      <div class="stat-card__value">{{ stats.quantity_on_hand }}</div>
+      <div class="stat-card__label">Quantity on hand</div>
+    </a>
+    <a class="stat-card" href="{% url 'reporting:low_stock' %}">
+      <div class="stat-card__value">{{ stats.low_stock_count }}</div>
+      <div class="stat-card__label">Low stock alerts</div>
+    </a>
+    <a class="stat-card" href="{% url 'reporting:reserved_stock' %}">
+      <div class="stat-card__value">{{ stats.active_reservations }}</div>
+      <div class="stat-card__label">Active reservations</div>
+    </a>
+    <a class="stat-card" href="{% url 'reporting:damaged_assets' %}">
+      <div class="stat-card__value">{{ stats.damaged_count }}</div>
+      <div class="stat-card__label">Damaged</div>
+    </a>
+    <a class="stat-card" href="{% url 'reporting:lost_assets' %}">
+      <div class="stat-card__value">{{ stats.lost_count }}</div>
+      <div class="stat-card__label">Lost</div>
+    </a>
+    <a class="stat-card" href="{% url 'inventory:transaction_list' %}">
+      <div class="stat-card__value">{{ stats.recent_transactions }}</div>
+      <div class="stat-card__label">Transactions (7d)</div>
+    </a>
+  </div>
+
   <h2>Catalog &amp; inventory</h2>
   <div class="card-grid">
     <a class="action-card" href="{% url 'catalog:product_list' %}">

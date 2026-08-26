@@ -35,6 +35,21 @@ class TestLocationListView:
         names = {loc.name for loc in response.context["locations"]}
         assert other_location_tree["country"].name in names
 
+    def test_sort_by_name_descending(self, client, administrator, location_tree):
+        client.force_login(administrator)
+        response = client.get(
+            reverse("locations:list"), {"show_inactive": "1", "sort": "name", "dir": "desc"}
+        )
+        names = [loc.name for loc in response.context["locations"]]
+        # "Wonderland" (country) sorts after "Room A" ascending, so
+        # descending puts it first.
+        assert names.index("Wonderland") < names.index("Room A")
+
+    def test_unknown_sort_key_falls_back_to_default(self, client, administrator, location_tree):
+        client.force_login(administrator)
+        response = client.get(reverse("locations:list"), {"sort": "not-a-field"})
+        assert response.status_code == 200
+
 
 @pytest.mark.django_db
 class TestLocationDetailView:

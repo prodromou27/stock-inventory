@@ -24,6 +24,19 @@ class TestProductListView:
         assert unit_product.model in names
         assert quantity_product.model not in names
 
+    def test_sort_by_brand_descending(self, client, read_only_user, unit_product, quantity_product):
+        # unit_product is Fortinet, quantity_product is HP (tests/conftest.py) —
+        # HP sorts after Fortinet ascending, so descending puts it first.
+        client.force_login(read_only_user)
+        response = client.get(reverse("catalog:product_list"), {"sort": "brand", "dir": "desc"})
+        brands = [p.brand.name for p in response.context["products"]]
+        assert brands.index("HP") < brands.index("Fortinet")
+
+    def test_unknown_sort_key_falls_back_to_default(self, client, read_only_user, unit_product):
+        client.force_login(read_only_user)
+        response = client.get(reverse("catalog:product_list"), {"sort": "not-a-field"})
+        assert response.status_code == 200
+
 
 @pytest.mark.django_db
 class TestProductDetailView:

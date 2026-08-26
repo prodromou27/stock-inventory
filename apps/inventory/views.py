@@ -9,6 +9,7 @@ from django.views.generic import DetailView, ListView
 from apps.catalog.models import Product
 from apps.core.authorization import ADMINISTRATOR, STOCK_MANAGER, RoleRequiredMixin
 from apps.core.csv_export import CSVExportMixin
+from apps.core.sorting import SortableListMixin
 from apps.locations.scoping import accessible_locations, require_location_access, scope_queryset
 
 from .access import require_transaction_access, scope_transaction_queryset
@@ -178,7 +179,7 @@ class QuickReceiveView(LoginRequiredMixin, RoleRequiredMixin, View):
         )
 
 
-class UnitAssetListView(LoginRequiredMixin, CSVExportMixin, ListView):
+class UnitAssetListView(LoginRequiredMixin, CSVExportMixin, SortableListMixin, ListView):
     model = UnitAsset
     template_name = "inventory/asset_list.html"
     context_object_name = "assets"
@@ -201,13 +202,16 @@ class UnitAssetListView(LoginRequiredMixin, CSVExportMixin, ListView):
     # Explicit allow-list, never a raw user-supplied field path — keeps
     # ?sort= from reaching into unrelated relations. Column click order
     # matches templates/inventory/asset_list.html's <th>s.
-    SORT_FIELDS = {
+    sort_fields = {
         "product": "product__brand__name",
         "serial": "vendor_serial",
         "status": "status",
         "location": "current_location__name",
         "arrival_date": "arrival_date",
     }
+    # Unset/unrecognized ?sort=: the long-standing default — most recently
+    # received first — not one of the clickable columns itself.
+    default_ordering = ("-created_at",)
 
     def get_queryset(self):
         queryset = scope_queryset(
@@ -221,19 +225,7 @@ class UnitAssetListView(LoginRequiredMixin, CSVExportMixin, ListView):
         if product_id:
             queryset = queryset.filter(product_id=product_id)
         queryset = filter_unit_assets(queryset, self.request.GET)
-        return self._apply_sort(queryset)
-
-    def _apply_sort(self, queryset):
-        sort_key = self.request.GET.get("sort")
-        if sort_key not in self.SORT_FIELDS:
-            # Unset/unrecognized: the long-standing default — most recently
-            # received first — not one of the clickable columns itself.
-            return queryset.order_by("-created_at")
-        field = self.SORT_FIELDS[sort_key]
-        if self.request.GET.get("dir") == "desc":
-            field = f"-{field}"
-        # created_at as a stable tiebreaker for rows sharing the same sort value.
-        return queryset.order_by(field, "-created_at")
+        return self.apply_sort(queryset)
 
     def csv_rows(self, queryset):
         for asset in queryset:
@@ -258,8 +250,6 @@ class UnitAssetListView(LoginRequiredMixin, CSVExportMixin, ListView):
         context["statuses"] = UnitStatus.choices
         context["locations"] = accessible_locations(self.request.user).order_by("level", "name")
         context["filters"] = self.request.GET
-        context["sort_key"] = self.request.GET.get("sort", "")
-        context["sort_dir"] = self.request.GET.get("dir", "asc")
         return context
 
 
@@ -284,13 +274,24 @@ class UnitAssetDetailView(LoginRequiredMixin, DetailView):
         return context
 
 
-class StockBalanceListView(LoginRequiredMixin, CSVExportMixin, ListView):
+class StockBalanceListView(LoginRequiredMixin, CSVExportMixin, SortableListMixin, ListView):
     model = StockBalance
     template_name = "inventory/balance_list.html"
     context_object_name = "balances"
     paginate_by = 50
     csv_filename = "stock_balances.csv"
     csv_headers = ["Brand", "Model", "SKU", "Type", "Location", "On Hand", "Reserved", "Available"]
+
+    # available_quantity is a computed @property (on_hand - reserved), not a
+    # DB column, so it isn't sortable without an .annotate() — on_hand and
+    # reserved cover the common case.
+    sort_fields = {
+        "product": "product__brand__name",
+        "location": "location__name",
+        "on_hand": "on_hand_quantity",
+        "reserved": "reserved_quantity",
+    }
+    default_ordering = ("product__brand__name", "product__model", "location__name")
 
     def get_queryset(self):
         queryset = scope_queryset(
@@ -304,7 +305,7 @@ class StockBalanceListView(LoginRequiredMixin, CSVExportMixin, ListView):
         if product_id:
             queryset = queryset.filter(product_id=product_id)
         queryset = filter_stock_balances(queryset, self.request.GET)
-        return queryset.order_by("product__brand__name", "product__model", "location__name")
+        return self.apply_sort(queryset)
 
     def csv_rows(self, queryset):
         for balance in queryset:
@@ -350,13 +351,21 @@ class StockBalanceDetailView(LoginRequiredMixin, DetailView):
         return context
 
 
-class TransactionListView(LoginRequiredMixin, ListView):
+class TransactionListView(LoginRequiredMixin, SortableListMixin, ListView):
     """The "Transactions and documents" screen (spec §14)."""
 
     model = InventoryTransaction
     template_name = "inventory/transaction_list.html"
     context_object_name = "transactions"
     paginate_by = 50
+
+    sort_fields = {
+        "number": "transaction_number",
+        "type": "movement_type",
+        "date": "occurred_at",
+        "performed_by": "performed_by__username",
+    }
+    default_ordering = ("-occurred_at", "-transaction_number")
 
     def get_queryset(self):
         queryset = scope_transaction_queryset(
@@ -375,7 +384,7 @@ class TransactionListView(LoginRequiredMixin, ListView):
             queryset = queryset.filter(occurred_at__gte=occurred_after)
         if occurred_before := self.request.GET.get("occurred_before", "").strip():
             queryset = queryset.filter(occurred_at__lte=occurred_before)
-        return queryset.order_by("-occurred_at", "-transaction_number")
+        return self.apply_sort(queryset)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load ui_extras %}
 
 {% block title %}Stock Balances — Stock Inventory{% endblock %}
 
@@ -33,10 +34,10 @@
     <table>
       <thead>
         <tr>
-          <th>Product</th>
-          <th>Location</th>
-          <th>On hand</th>
-          <th>Reserved</th>
+          {% sort_th "product" "Product" %}
+          {% sort_th "location" "Location" %}
+          {% sort_th "on_hand" "On hand" %}
+          {% sort_th "reserved" "Reserved" %}
           <th>Available</th>
         </tr>
       </thead>

@@ -26,3 +26,15 @@ class HealthCheckView(View):
 
 class HomeView(LoginRequiredMixin, TemplateView):
     template_name = "core/home.html"
+
+    def get_context_data(self, **kwargs):
+        # Imported here, not at module level — apps.reporting depends on
+        # apps.inventory/apps.locations, and apps.core is meant to stay the
+        # dependency-free foundational layer everything else builds on
+        # (apps.core.authorization's docstring); only this one view, not the
+        # module itself, needs reporting's dashboard_summary().
+        from apps.reporting.queries import dashboard_summary
+
+        context = super().get_context_data(**kwargs)
+        context["stats"] = dashboard_summary(self.request.user)
+        return context

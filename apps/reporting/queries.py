@@ -5,13 +5,17 @@ docs/architecture/04-permission-matrix.md ("reports honor user storage
 permissions" the same way list screens do).
 """
 
+from datetime import timedelta
+
 from django.db.models import Count, F, Sum
+from django.utils import timezone
 
 from apps.inventory.access import scope_asset_status_history_queryset, scope_transaction_queryset
 from apps.inventory.models import (
     AssetStatusHistory,
     InventoryTransaction,
     MovementType,
+    ReservationStatus,
     StockBalance,
     StockReservation,
     UnitAsset,
@@ -202,3 +206,31 @@ def low_stock_balances(user):
         .filter(available__lte=F("product__low_stock_threshold"))
         .order_by("product__brand__name", "product__model")
     )
+
+
+def dashboard_summary(user):
+    """apps.core.views.HomeView's stat cards — every number scoped to the
+    user's accessible locations the same way every list/report screen is
+    (this module's docstring). Cheap: every value is a .count()/aggregate,
+    never a loaded queryset, so this is safe to run on every dashboard
+    visit regardless of inventory size (spec §21.15's pagination/volume
+    concern applies here too, even though there's no list to paginate).
+    """
+    # occurred_at is a DateField, not DateTimeField.
+    since = timezone.now().date() - timedelta(days=7)
+    on_hand_total = _scoped_balances(user).aggregate(total=Sum("on_hand_quantity"))["total"] or 0
+    return {
+        "assets_in_stock": _scoped_assets(user, status=UnitStatus.IN_STOCK).count(),
+        "quantity_on_hand": on_hand_total,
+        "low_stock_count": low_stock_balances(user).count(),
+        "active_reservations": scope_queryset(
+            user,
+            StockReservation.objects.filter(status=ReservationStatus.ACTIVE),
+            location_field="location",
+        ).count(),
+        "damaged_count": damaged_assets(user).count(),
+        "lost_count": lost_assets(user).count(),
+        "recent_transactions": scope_transaction_queryset(
+            user, InventoryTransaction.objects.filter(occurred_at__gte=since)
+        ).count(),
+    }
