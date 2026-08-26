@@ -6,7 +6,7 @@
 {% block content %}
   <div class="page-header">
     <h1>Locations</h1>
-    {% if user_is_administrator %}
+    {% if user_is_administrator or user_is_stock_manager %}
       <div class="page-header__actions">
         <a class="btn btn--primary" href="{% url 'locations:create' %}">+ New location</a>
       </div>
@@ -30,7 +30,7 @@
   </form>
 
   {% if locations %}
-    <table>
+    <div class="table-scroll" tabindex="0" aria-label="Locations"><table>
       <thead>
         <tr>
           {% sort_th "name" "Name" %}
@@ -55,7 +55,7 @@
           </tr>
         {% endfor %}
       </tbody>
-    </table>
+    </table></div>
 
     {% if is_paginated %}
       <nav class="pagination">

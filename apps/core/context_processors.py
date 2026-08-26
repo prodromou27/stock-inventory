@@ -1,4 +1,4 @@
-from .authorization import is_administrator
+from .authorization import STOCK_MANAGER, is_administrator
 
 
 def role_context(request):
@@ -8,7 +8,9 @@ def role_context(request):
     user = getattr(request, "user", None)
     if user is None or not user.is_authenticated:
         return {}
+    roles = list(user.groups.values_list("name", flat=True))
     return {
-        "user_role_groups": list(user.groups.values_list("name", flat=True)),
+        "user_role_groups": roles,
         "user_is_administrator": is_administrator(user),
+        "user_is_stock_manager": user.is_superuser or STOCK_MANAGER in roles,
     }

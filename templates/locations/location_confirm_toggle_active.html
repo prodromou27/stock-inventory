@@ -11,7 +11,7 @@
   {% else %}
     <h1>Reactivate '{{ location.name }}'?</h1>
   {% endif %}
-  <form method="post">
+  <form method="post" class="card" data-confirm="{% if location.is_active %}Deactivate this location? Existing history will be preserved.{% else %}Reactivate this location?{% endif %}">
     {% csrf_token %}
     <div class="form-actions">
       <button type="submit" class="btn {% if location.is_active %}btn--danger{% else %}btn--primary{% endif %}">

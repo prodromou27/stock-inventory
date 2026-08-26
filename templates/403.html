@@ -3,7 +3,8 @@
 {% block title %}Access denied — Stock Inventory{% endblock %}
 
 {% block content %}
-  <div class="card" style="max-width: 30rem;">
+  <div class="card error-card">
+    <div class="error-code">403</div>
     <h1>Access denied</h1>
     <p>You don't have permission to view this page. If you believe this is a mistake, contact an Administrator.</p>
     <a class="btn btn--primary" href="{% url 'core:home' %}">Return to the dashboard</a>

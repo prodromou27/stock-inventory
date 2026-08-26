@@ -1,11 +1,18 @@
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 
 from apps.audit.models import AuditEvent
 from apps.audit.services import record_event
-from apps.core.authorization import ADMINISTRATOR, require_role
+from apps.core.authorization import (
+    ADMINISTRATOR,
+    STOCK_MANAGER,
+    has_role,
+    is_administrator,
+    require_role,
+)
 
 from .models import Location
+from .scoping import require_location_access
 
 
 def normalize_name(name):
@@ -21,11 +28,19 @@ def _expected_parent_level(level):
 
 @transaction.atomic
 def create_location(*, level, name, user, parent=None, code=""):
-    """Administrator-only. Validates level ordering before writing, so the
+    """Create a location allowed by the actor's role and country scope.
+
+    Administrators manage the complete hierarchy. Stock Managers may add
+    storage rooms and shelf/bins under existing, accessible parents only.
+    Validates level ordering before writing, so the
     error the user sees is a clear ValidationError rather than the database
     trigger's exception (docs/architecture/02-data-model.md).
     """
-    require_role(user, ADMINISTRATOR)
+    require_role(user, ADMINISTRATOR, STOCK_MANAGER)
+    if not is_administrator(user):
+        if level not in (Location.Level.STORAGE_ROOM, Location.Level.SHELF_BIN):
+            raise PermissionDenied("Stock Managers may create storage rooms and shelves only.")
+        require_location_access(user, parent)
 
     name = normalize_name(name)
     if not name:
@@ -65,9 +80,50 @@ def create_location(*, level, name, user, parent=None, code=""):
     return location
 
 
+def can_manage_location(user, location):
+    if is_administrator(user):
+        return True
+    if not has_role(user, STOCK_MANAGER) or location.level not in (
+        Location.Level.STORAGE_ROOM,
+        Location.Level.SHELF_BIN,
+    ):
+        return False
+    try:
+        require_location_access(user, location)
+    except PermissionDenied:
+        return False
+    return True
+
+
+@transaction.atomic
+def update_location(*, location, name, code, user):
+    require_role(user, ADMINISTRATOR, STOCK_MANAGER)
+    if not can_manage_location(user, location):
+        raise PermissionDenied("You cannot edit this location.")
+
+    old_values = {"name": location.name, "code": location.code}
+    location.name = normalize_name(name)
+    location.code = (code or "").strip()
+    if not location.name:
+        raise ValidationError("Name is required.")
+    location.full_clean(exclude=["path"])
+    location.save(update_fields=["name", "code", "updated_at"])
+    record_event(
+        actor=user,
+        event_type=AuditEvent.EventType.RECORD_UPDATED,
+        obj=location,
+        summary=f"Updated {location.get_level_display()} '{location.name}'",
+        old_values=old_values,
+        new_values={"name": location.name, "code": location.code},
+    )
+    return location
+
+
 @transaction.atomic
 def deactivate_location(*, location, user):
-    require_role(user, ADMINISTRATOR)
+    require_role(user, ADMINISTRATOR, STOCK_MANAGER)
+    if not can_manage_location(user, location):
+        raise PermissionDenied("You cannot deactivate this location.")
     if not location.is_active:
         return location
 
@@ -86,7 +142,9 @@ def deactivate_location(*, location, user):
 
 @transaction.atomic
 def reactivate_location(*, location, user):
-    require_role(user, ADMINISTRATOR)
+    require_role(user, ADMINISTRATOR, STOCK_MANAGER)
+    if not can_manage_location(user, location):
+        raise PermissionDenied("You cannot reactivate this location.")
     if location.is_active:
         return location
 

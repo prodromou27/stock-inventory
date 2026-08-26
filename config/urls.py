@@ -1,9 +1,16 @@
+from django.conf import settings
 from django.contrib import admin
 from django.urls import include, path
+from django.views.generic import RedirectView
 
 from apps.accounts.views import ForcedPasswordChangeView
 
 urlpatterns = [
+    path(
+        "favicon.ico",
+        RedirectView.as_view(url=f"{settings.STATIC_URL}icons/favicon.svg", permanent=True),
+        name="favicon",
+    ),
     path("admin/", admin.site.urls),
     # Shadows the "password_change" URL django.contrib.auth.urls defines below —
     # registered first so it wins both for incoming requests and for reverse()

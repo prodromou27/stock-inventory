@@ -14,7 +14,7 @@
     </div>
   </div>
 
-  <form method="get" class="toolbar">
+  <form method="get" class="toolbar toolbar--filters">
     <label>Search
       <input type="text" name="q" value="{{ query }}" placeholder="Brand, model, SKU, type, serial, project, customer">
     </label>
@@ -36,9 +36,6 @@
         {% endfor %}
       </select>
     </label>
-    <button type="submit" class="btn btn--primary">Filter</button>
-  </form>
-  <form method="get" class="toolbar">
     <label>Brand<input type="text" name="brand" value="{{ filters.brand }}"></label>
     <label>Model<input type="text" name="model" value="{{ filters.model }}"></label>
     <label>SKU<input type="text" name="sku" value="{{ filters.sku }}"></label>
@@ -51,18 +48,22 @@
       <input type="checkbox" name="duplicate_serial" value="1" {% if filters.duplicate_serial == "1" %}checked{% endif %}>
       Duplicate serials only
     </label>
-    <button type="submit" class="btn btn--primary">Apply</button>
-  </form>
-  <form method="get" class="toolbar">
     <label>Arrival from <input type="date" name="arrival_after" value="{{ filters.arrival_after }}"></label>
     <label>to <input type="date" name="arrival_before" value="{{ filters.arrival_before }}"></label>
     <label>Removal from <input type="date" name="removal_after" value="{{ filters.removal_after }}"></label>
     <label>to <input type="date" name="removal_before" value="{{ filters.removal_before }}"></label>
-    <button type="submit" class="btn btn--primary">Apply</button>
+    <div class="form-actions">
+      <button type="submit" class="btn btn--primary">Apply filters</button>
+      <a class="btn btn--ghost" href="{% url 'inventory:asset_list' %}">Clear</a>
+    </div>
   </form>
 
+  {% if query or selected_status or filters.location or filters.brand or filters.model or filters.sku or filters.type or filters.project_reference or filters.final_customer or filters.supplier or filters.invoice_number or filters.duplicate_serial or filters.arrival_after or filters.arrival_before or filters.removal_after or filters.removal_before %}
+    <div class="active-filters" aria-label="Active filters"><strong>Active filters</strong><span class="filter-chip">Filtered results</span><a href="{% url 'inventory:asset_list' %}">Clear all</a></div>
+  {% endif %}
+
   {% if assets %}
-    <table>
+    <div class="table-scroll" tabindex="0" aria-label="Asset results"><table>
       <thead>
         <tr>
           {% sort_th "product" "Product" %}
@@ -83,7 +84,7 @@
           </tr>
         {% endfor %}
       </tbody>
-    </table>
+    </table></div>
 
     {% if is_paginated %}
       <nav class="pagination">

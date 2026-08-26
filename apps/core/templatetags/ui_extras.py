@@ -9,6 +9,20 @@ from django import template
 
 register = template.Library()
 
+_SECTION_LABELS = {
+    "accounts": "Access management",
+    "audit": "Audit log",
+    "catalog": "Product catalog",
+    "core": "Dashboard",
+    "documents": "Documents",
+    "exports": "Exports",
+    "imports": "Excel import",
+    "inventory": "Inventory",
+    "locations": "Locations",
+    "reporting": "Reports",
+    "sysconfig": "Settings",
+}
+
 _SUCCESS = ("active", "available", "in_stock", "in stock", "new", "good", "healthy", "completed")
 _INFO = ("reserved", "assigned", "in_transit", "in transit", "pending", "processing")
 _WARNING = ("damaged", "fair", "returned")
@@ -73,3 +87,13 @@ def nav_active_app(context, *app_names):
     if match is None:
         return ""
     return "is-active" if match.app_name in app_names else ""
+
+
+@register.simple_tag(takes_context=True)
+def current_section(context):
+    """Human-friendly current area label for the shared header/breadcrumb."""
+    request = context.get("request")
+    match = getattr(request, "resolver_match", None)
+    if match is None:
+        return "Stock Inventory"
+    return _SECTION_LABELS.get(match.app_name, (match.app_name or "Stock Inventory").title())

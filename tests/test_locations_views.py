@@ -140,3 +140,67 @@ class TestLocationMutationPermissions:
         assert response.status_code == 302
         location_tree["room"].refresh_from_db()
         assert location_tree["room"].is_active is False
+
+    def test_stock_manager_can_create_room_in_assigned_country(
+        self, client, administrator, stock_manager, location_tree
+    ):
+        grant_location_access(
+            user=stock_manager, location=location_tree["country"], granted_by=administrator
+        )
+        client.force_login(stock_manager)
+        response = client.post(
+            reverse("locations:create"),
+            {
+                "level": Location.Level.STORAGE_ROOM,
+                "name": "Manager Room",
+                "parent": location_tree["floor"].pk,
+            },
+        )
+        assert response.status_code == 302
+        assert Location.objects.filter(name="Manager Room", parent=location_tree["floor"]).exists()
+
+    def test_stock_manager_cannot_create_room_outside_assigned_country(
+        self, client, administrator, stock_manager, location_tree, other_location_tree
+    ):
+        grant_location_access(
+            user=stock_manager, location=location_tree["country"], granted_by=administrator
+        )
+        client.force_login(stock_manager)
+        response = client.post(
+            reverse("locations:create"),
+            {
+                "level": Location.Level.STORAGE_ROOM,
+                "name": "Out of scope",
+                "parent": other_location_tree["site"].pk,
+            },
+        )
+        assert response.status_code == 200
+        assert not Location.objects.filter(name="Out of scope").exists()
+
+    def test_stock_manager_can_edit_and_deactivate_in_scope_room(
+        self, client, administrator, stock_manager, location_tree
+    ):
+        grant_location_access(
+            user=stock_manager, location=location_tree["country"], granted_by=administrator
+        )
+        client.force_login(stock_manager)
+        edit_url = reverse("locations:edit", kwargs={"pk": location_tree["room"].pk})
+        response = client.post(edit_url, {"name": "Secure Room", "code": "SEC"})
+        assert response.status_code == 302
+        location_tree["room"].refresh_from_db()
+        assert (location_tree["room"].name, location_tree["room"].code) == ("Secure Room", "SEC")
+
+        response = client.post(
+            reverse("locations:toggle_active", kwargs={"pk": location_tree["room"].pk})
+        )
+        assert response.status_code == 302
+        location_tree["room"].refresh_from_db()
+        assert location_tree["room"].is_active is False
+
+    def test_read_only_user_cannot_edit_direct_url(self, client, read_only_user, location_tree):
+        client.force_login(read_only_user)
+        response = client.post(
+            reverse("locations:edit", kwargs={"pk": location_tree["room"].pk}),
+            {"name": "Nope", "code": ""},
+        )
+        assert response.status_code == 403

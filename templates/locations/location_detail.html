@@ -14,12 +14,13 @@
 
   <div class="page-header">
     <h1>{{ location.name }}</h1>
-    {% if user_is_administrator %}
+    {% if can_manage_location or can_add_child %}
       <div class="page-header__actions">
-        <a class="btn" href="{% url 'locations:create' %}?parent={{ location.pk }}">+ Add child location</a>
-        <a class="btn {% if location.is_active %}btn--danger{% endif %}" href="{% url 'locations:toggle_active' location.pk %}">
+        {% if can_manage_location %}<a class="btn" href="{% url 'locations:edit' location.pk %}">Edit</a>{% endif %}
+        {% if can_add_child %}<a class="btn" href="{% url 'locations:create' %}?parent={{ location.pk }}">+ Add child location</a>{% endif %}
+        {% if can_manage_location %}<a class="btn {% if location.is_active %}btn--danger{% endif %}" href="{% url 'locations:toggle_active' location.pk %}">
           {% if location.is_active %}Deactivate{% else %}Reactivate{% endif %}
-        </a>
+        </a>{% endif %}
       </div>
     {% endif %}
   </div>
@@ -41,14 +42,14 @@
 
   <h2>Children</h2>
   {% if children %}
-    <ul>
+    <div class="card"><ul class="location-children">
       {% for child in children %}
         <li>
           <a href="{{ child.get_absolute_url }}">{{ child.name }}</a>
           ({{ child.get_level_display }}{% if not child.is_active %}, inactive{% endif %})
         </li>
       {% endfor %}
-    </ul>
+    </ul></div>
   {% else %}
     <p class="text-muted">No child locations.</p>
   {% endif %}

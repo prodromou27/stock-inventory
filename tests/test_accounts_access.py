@@ -42,14 +42,27 @@ class TestGrantAndRevokeViews:
 
         response = client.post(
             reverse("accounts:grant_access"),
-            {"user": stock_manager.pk, "location": location_tree["room"].pk},
+            {"user": stock_manager.pk, "location": location_tree["country"].pk},
         )
         assert response.status_code == 302
-        access = UserLocationAccess.objects.get(user=stock_manager, location=location_tree["room"])
+        access = UserLocationAccess.objects.get(
+            user=stock_manager, location=location_tree["country"]
+        )
 
         response = client.post(reverse("accounts:revoke_access", kwargs={"pk": access.pk}))
         assert response.status_code == 302
         assert not UserLocationAccess.objects.filter(pk=access.pk).exists()
+
+    def test_grant_form_only_accepts_country_scope(
+        self, client, administrator, stock_manager, location_tree
+    ):
+        client.force_login(administrator)
+        response = client.post(
+            reverse("accounts:grant_access"),
+            {"user": stock_manager.pk, "location": location_tree["room"].pk},
+        )
+        assert response.status_code == 200
+        assert "Select a valid choice" in response.content.decode()
 
     def test_stock_manager_cannot_revoke_access(
         self, client, administrator, stock_manager, location_tree

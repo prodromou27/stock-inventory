@@ -1,17 +1,23 @@
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
 from django.views.generic import DetailView, ListView
 
-from apps.core.authorization import ADMINISTRATOR, RoleRequiredMixin
+from apps.core.authorization import ADMINISTRATOR, STOCK_MANAGER, RoleRequiredMixin
 from apps.core.sorting import SortableListMixin
 
-from .forms import LocationForm
+from .forms import LocationEditForm, LocationForm
 from .models import Location
 from .scoping import require_location_access, scope_queryset
-from .services import create_location, deactivate_location, reactivate_location
+from .services import (
+    can_manage_location,
+    create_location,
+    deactivate_location,
+    reactivate_location,
+    update_location,
+)
 
 
 class LocationListView(LoginRequiredMixin, SortableListMixin, ListView):
@@ -65,22 +71,40 @@ class LocationDetailView(LoginRequiredMixin, DetailView):
         context["children"] = scope_queryset(
             self.request.user, self.object.children.all(), location_field=None
         ).order_by("name")
+        context["can_manage_location"] = can_manage_location(self.request.user, self.object)
+        if (
+            self.request.user.groups.filter(name=STOCK_MANAGER).exists()
+            and not self.request.user.is_superuser
+        ):
+            context["can_add_child"] = self.object.level in (
+                Location.Level.FLOOR,
+                Location.Level.RACK_CABINET,
+            )
+        else:
+            context["can_add_child"] = self.object.level != Location.Level.SHELF_BIN
         return context
 
 
 class LocationCreateView(LoginRequiredMixin, RoleRequiredMixin, View):
-    allowed_roles = (ADMINISTRATOR,)
+    allowed_roles = (ADMINISTRATOR, STOCK_MANAGER)
 
     def get(self, request):
         initial = {}
         parent_id = request.GET.get("parent")
         if parent_id:
             initial["parent"] = parent_id
-        form = LocationForm(initial=initial)
+        form = LocationForm(initial=initial, user=request.user)
         return render(request, "locations/location_form.html", {"form": form})
 
     def post(self, request):
-        form = LocationForm(request.POST)
+        if (
+            not request.user.is_superuser
+            and request.user.groups.filter(name=STOCK_MANAGER).exists()
+            and request.POST.get("level")
+            not in (Location.Level.STORAGE_ROOM, Location.Level.SHELF_BIN)
+        ):
+            raise PermissionDenied("Stock Managers may create storage rooms and shelves only.")
+        form = LocationForm(request.POST, user=request.user)
         if not form.is_valid():
             return render(request, "locations/location_form.html", {"form": form})
 
@@ -100,17 +124,51 @@ class LocationCreateView(LoginRequiredMixin, RoleRequiredMixin, View):
         return redirect(location.get_absolute_url())
 
 
-class LocationToggleActiveView(LoginRequiredMixin, RoleRequiredMixin, View):
-    allowed_roles = (ADMINISTRATOR,)
+class LocationEditView(LoginRequiredMixin, RoleRequiredMixin, View):
+    allowed_roles = (ADMINISTRATOR, STOCK_MANAGER)
+
+    def _get_location(self, request, pk):
+        location = get_object_or_404(Location, pk=pk)
+        if not can_manage_location(request.user, location):
+            raise PermissionDenied("You cannot edit this location.")
+        return location
 
     def get(self, request, pk):
+        location = self._get_location(request, pk)
+        form = LocationEditForm(initial={"name": location.name, "code": location.code})
+        return render(request, "locations/location_form.html", {"form": form, "location": location})
+
+    def post(self, request, pk):
+        location = self._get_location(request, pk)
+        form = LocationEditForm(request.POST)
+        if form.is_valid():
+            try:
+                update_location(location=location, user=request.user, **form.cleaned_data)
+            except ValidationError as exc:
+                form.add_error(None, exc)
+            else:
+                messages.success(request, f"Updated '{location.name}'.")
+                return redirect(location.get_absolute_url())
+        return render(request, "locations/location_form.html", {"form": form, "location": location})
+
+
+class LocationToggleActiveView(LoginRequiredMixin, RoleRequiredMixin, View):
+    allowed_roles = (ADMINISTRATOR, STOCK_MANAGER)
+
+    def _get_location(self, request, pk):
         location = get_object_or_404(Location, pk=pk)
+        if not can_manage_location(request.user, location):
+            raise PermissionDenied("You cannot change this location.")
+        return location
+
+    def get(self, request, pk):
+        location = self._get_location(request, pk)
         return render(
             request, "locations/location_confirm_toggle_active.html", {"location": location}
         )
 
     def post(self, request, pk):
-        location = get_object_or_404(Location, pk=pk)
+        location = self._get_location(request, pk)
         if location.is_active:
             deactivate_location(location=location, user=request.user)
             messages.success(request, f"Deactivated '{location.name}'.")
