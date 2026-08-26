@@ -284,6 +284,120 @@ class TestQuickAddProductsView:
         assert statuses == ["duplicate", "created"]
 
 
+def _grid_management_form(num_forms):
+    return {
+        "form-TOTAL_FORMS": str(num_forms),
+        "form-INITIAL_FORMS": str(num_forms),
+        "form-MIN_NUM_FORMS": "0",
+        "form-MAX_NUM_FORMS": "1000",
+    }
+
+
+def _grid_row(index, product, **overrides):
+    is_active = overrides.pop("is_active", product.is_active)
+    row = {
+        f"form-{index}-id": str(product.pk),
+        f"form-{index}-brand_name": product.brand.name,
+        f"form-{index}-model": product.model,
+        f"form-{index}-sku": product.sku,
+        f"form-{index}-product_type_name": product.product_type.name,
+        f"form-{index}-tracking_method": product.tracking_method,
+        f"form-{index}-supplier": product.supplier,
+    }
+    if is_active:
+        row[f"form-{index}-is_active"] = "on"
+    row.update({f"form-{index}-{key}": value for key, value in overrides.items()})
+    return row
+
+
+@pytest.mark.django_db
+class TestProductGridView:
+    def test_anonymous_redirected_to_login(self, client):
+        response = client.get(reverse("catalog:product_grid"))
+        assert response.status_code == 302
+
+    def test_read_only_user_cannot_access(self, client, read_only_user):
+        client.force_login(read_only_user)
+        response = client.get(reverse("catalog:product_grid"))
+        assert response.status_code == 403
+
+    def test_get_prefills_one_row_per_product(self, client, stock_manager, unit_product):
+        client.force_login(stock_manager)
+        response = client.get(reverse("catalog:product_grid"))
+        assert response.status_code == 200
+        assert unit_product.model in response.content.decode()
+
+    def test_changed_row_is_updated(self, client, stock_manager, unit_product):
+        client.force_login(stock_manager)
+        data = _grid_management_form(1)
+        data.update(_grid_row(0, unit_product, supplier="New Supplier Co"))
+        response = client.post(reverse("catalog:product_grid"), data)
+        assert response.status_code == 200
+        assert [r["status"] for r in response.context["results"]] == ["updated"]
+        unit_product.refresh_from_db()
+        assert unit_product.supplier == "New Supplier Co"
+
+    def test_untouched_row_is_reported_unchanged_and_not_saved(
+        self, client, stock_manager, unit_product
+    ):
+        client.force_login(stock_manager)
+        data = _grid_management_form(1)
+        data.update(_grid_row(0, unit_product))
+        response = client.post(reverse("catalog:product_grid"), data)
+        assert response.status_code == 200
+        assert [r["status"] for r in response.context["results"]] == ["unchanged"]
+
+    def test_tracking_method_change_on_moved_product_is_locked_not_saved(
+        self, client, administrator, stock_manager, unit_product, location_tree
+    ):
+        from datetime import date
+
+        from apps.inventory.services.receipts import receive_stock
+
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-GRID-LOCK",
+        )
+        client.force_login(stock_manager)
+        data = _grid_management_form(1)
+        data.update(_grid_row(0, unit_product, tracking_method="quantity"))
+        response = client.post(reverse("catalog:product_grid"), data)
+        assert response.status_code == 200
+        results = response.context["results"]
+        assert results[0]["status"] == "locked"
+        unit_product.refresh_from_db()
+        assert unit_product.tracking_method == "unit"
+
+    def test_row_limit_caps_the_number_of_products_shown(self, client, stock_manager):
+        from apps.catalog.models import Brand, Product, ProductType
+        from apps.catalog.services import get_or_create_brand, get_or_create_product_type
+        from apps.catalog.views import GRID_ROW_LIMIT
+
+        brand = get_or_create_brand("BulkBrand", user=stock_manager)
+        product_type = get_or_create_product_type("BulkType", user=stock_manager)
+        Product.objects.bulk_create(
+            [
+                Product(
+                    brand=brand,
+                    model=f"BULK-{i:03d}",
+                    product_type=product_type,
+                    tracking_method="unit",
+                    created_by=stock_manager,
+                    updated_by=stock_manager,
+                )
+                for i in range(GRID_ROW_LIMIT + 5)
+            ]
+        )
+        client.force_login(stock_manager)
+        response = client.get(reverse("catalog:product_grid"))
+        assert len(response.context["formset"].forms) == GRID_ROW_LIMIT
+        assert Brand.objects.filter(pk=brand.pk).exists()  # sanity: fixture didn't no-op
+        assert ProductType.objects.filter(pk=product_type.pk).exists()
+
+
 @pytest.mark.django_db
 class TestProductUpdateView:
     def test_read_only_user_cannot_edit(self, client, read_only_user, unit_product):

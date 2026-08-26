@@ -12,6 +12,7 @@ from apps.core.sorting import SortableListMixin
 from .forms import (
     ProductCustomFieldDefinitionForm,
     ProductForm,
+    ProductGridFormSet,
     QuickAddProductFormSet,
     custom_field_key,
 )
@@ -24,6 +25,8 @@ from .services import (
     set_custom_field_definition_active,
     update_product,
 )
+
+GRID_ROW_LIMIT = 50
 
 
 def _catalog_choices():
@@ -45,6 +48,26 @@ def _catalog_choices():
     }
 
 
+def _filtered_products(request):
+    """The search/show_inactive filtering shared by ProductListView and
+    ProductGridView — factored out once the grid needed the identical
+    "what is the operator currently looking at" set, minus sorting/
+    pagination (each view applies those differently).
+    """
+    queryset = Product.objects.select_related("brand", "product_type")
+    query = request.GET.get("q", "").strip()
+    if query:
+        queryset = queryset.filter(
+            Q(brand__name__icontains=query)
+            | Q(model__icontains=query)
+            | Q(sku__icontains=query)
+            | Q(product_type__name__icontains=query)
+        )
+    if request.GET.get("show_inactive") != "1":
+        queryset = queryset.filter(is_active=True)
+    return queryset
+
+
 class ProductListView(LoginRequiredMixin, SortableListMixin, ListView):
     model = Product
     template_name = "catalog/product_list.html"
@@ -61,18 +84,7 @@ class ProductListView(LoginRequiredMixin, SortableListMixin, ListView):
     default_ordering = ("brand__name", "model")
 
     def get_queryset(self):
-        queryset = Product.objects.select_related("brand", "product_type")
-        query = self.request.GET.get("q", "").strip()
-        if query:
-            queryset = queryset.filter(
-                Q(brand__name__icontains=query)
-                | Q(model__icontains=query)
-                | Q(sku__icontains=query)
-                | Q(product_type__name__icontains=query)
-            )
-        if self.request.GET.get("show_inactive") != "1":
-            queryset = queryset.filter(is_active=True)
-        return self.apply_sort(queryset)
+        return self.apply_sort(_filtered_products(self.request))
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -190,6 +202,119 @@ class QuickAddProductsView(LoginRequiredMixin, RoleRequiredMixin, View):
             self.template_name,
             {"formset": QuickAddProductFormSet(), "results": results, **_catalog_choices()},
         )
+
+
+class ProductGridView(LoginRequiredMixin, RoleRequiredMixin, View):
+    """A spreadsheet-style page for editing many *existing* products in one
+    submission — apps.catalog.services.update_product() reused per changed
+    row (see apps.catalog.forms.ProductGridRowForm's docstring). Reuses
+    ProductListView's search/show_inactive filters so an operator can
+    narrow down what they're editing, capped at GRID_ROW_LIMIT rows so a
+    bulk-seeded database's full catalog never loads into one formset.
+    """
+
+    allowed_roles = (ADMINISTRATOR, STOCK_MANAGER)
+    template_name = "catalog/product_grid.html"
+
+    def _queryset(self, request):
+        return _filtered_products(request).order_by("brand__name", "model")[:GRID_ROW_LIMIT]
+
+    def _initial_rows(self, products):
+        return [
+            {
+                "id": str(product.pk),
+                "brand_name": product.brand.name,
+                "model": product.model,
+                "sku": product.sku,
+                "product_type_name": product.product_type.name,
+                "tracking_method": product.tracking_method,
+                "supplier": product.supplier,
+                "is_active": product.is_active,
+            }
+            for product in products
+        ]
+
+    def _render(self, request, formset, results=None):
+        return render(
+            request,
+            self.template_name,
+            {
+                "formset": formset,
+                "results": results,
+                "row_limit": GRID_ROW_LIMIT,
+                "query": request.GET.get("q", ""),
+                "show_inactive": request.GET.get("show_inactive") == "1",
+                **_catalog_choices(),
+            },
+        )
+
+    def get(self, request):
+        formset = ProductGridFormSet(initial=self._initial_rows(self._queryset(request)))
+        return self._render(request, formset)
+
+    def post(self, request):
+        formset = ProductGridFormSet(request.POST)
+        if not formset.is_valid():
+            return self._render(request, formset)
+
+        results = [self._apply_row(request.user, row) for row in formset.cleaned_data]
+
+        updated = sum(1 for r in results if r["status"] == "updated")
+        messages.success(request, f"Updated {updated} of {len(results)} product(s).")
+
+        new_formset = ProductGridFormSet(initial=self._initial_rows(self._queryset(request)))
+        return self._render(request, new_formset, results=results)
+
+    def _apply_row(self, user, row):
+        product = get_object_or_404(
+            Product.objects.select_related("brand", "product_type"), pk=row["id"]
+        )
+        label = f"{row['brand_name']} {row['model']}"
+
+        unchanged = (
+            product.brand.name == row["brand_name"]
+            and product.model == row["model"]
+            and product.sku == row["sku"]
+            and product.product_type.name == row["product_type_name"]
+            and product.tracking_method == row["tracking_method"]
+            and product.supplier == row["supplier"]
+            and product.is_active == row["is_active"]
+        )
+        if unchanged:
+            return {"label": label, "status": "unchanged"}
+
+        if row["tracking_method"] != product.tracking_method and product.has_movements():
+            return {
+                "label": label,
+                "status": "locked",
+                "detail": (
+                    "Tracking method can't change — this product already has recorded movements."
+                ),
+            }
+
+        try:
+            update_product(
+                product=product,
+                user=user,
+                brand_name=row["brand_name"],
+                model=row["model"],
+                sku=row["sku"],
+                product_type_name=row["product_type_name"],
+                description=product.description,
+                tracking_method=row["tracking_method"],
+                supplier=row["supplier"],
+                default_notes=product.default_notes,
+                low_stock_threshold=product.low_stock_threshold,
+                is_active=row["is_active"],
+                custom_field_values=product.custom_field_values,
+            )
+        except ValidationError as exc:
+            return {
+                "label": label,
+                "status": "error",
+                "detail": "; ".join(exc.messages) if hasattr(exc, "messages") else str(exc),
+            }
+        return {"label": label, "status": "updated"}
 
 
 class ProductUpdateView(LoginRequiredMixin, RoleRequiredMixin, View):

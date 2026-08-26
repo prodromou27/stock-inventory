@@ -134,3 +134,36 @@ class QuickAddProductRowForm(forms.Form):
 
 
 QuickAddProductFormSet = formset_factory(QuickAddProductRowForm, extra=10)
+
+
+class ProductGridRowForm(forms.Form):
+    """One row of apps.catalog.views.ProductGridView's formset — a
+    spreadsheet-style page for editing many *existing* products in one
+    submission (apps.catalog.services.update_product() per changed row,
+    same reasoning as QuickAddProductRowForm/create_product() above:
+    reusing the single-product service means duplicate-checking,
+    audit events, and the tracking_method lock all keep working with zero
+    new logic). `id` is a hidden field identifying which Product this row
+    is; description/default_notes/low_stock_threshold/custom fields stay a
+    single-product-form concern, matching Quick Add's same scope decision.
+    """
+
+    id = forms.CharField(widget=forms.HiddenInput)
+    brand_name = forms.CharField(
+        max_length=120,
+        label="Brand",
+        widget=forms.TextInput(attrs={"list": "brand-options", "autocomplete": "off"}),
+    )
+    model = forms.CharField(max_length=120, label="Model")
+    sku = forms.CharField(max_length=60, required=False, label="SKU")
+    product_type_name = forms.CharField(
+        max_length=80,
+        label="Type",
+        widget=forms.TextInput(attrs={"list": "product-type-options", "autocomplete": "off"}),
+    )
+    tracking_method = forms.ChoiceField(choices=TrackingMethod.choices)
+    supplier = forms.CharField(max_length=120, required=False)
+    is_active = forms.BooleanField(required=False)
+
+
+ProductGridFormSet = formset_factory(ProductGridRowForm, extra=0)

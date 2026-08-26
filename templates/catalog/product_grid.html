@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Products (Grid) — Stock Inventory{% endblock %}
+
+{% block content %}
+  <p><a href="{% url 'catalog:product_list' %}">&larr; Products</a></p>
+  <div class="page-header">
+    <div>
+      <h1>Edit products</h1>
+      <div class="page-header__subtitle">
+        Edit many products at once, spreadsheet-style — change whatever cells you need, then Save changes. Only
+        rows that actually changed are updated; a product whose tracking method is locked (it already has recorded
+        movements) is reported instead of saved if you try to change that cell. Shows up to {{ row_limit }} products
+        at a time — use search to narrow down which ones.
+      </div>
+    </div>
+  </div>
+
+  <form method="get" class="toolbar">
+    <label>Search
+      <input type="text" name="q" value="{{ query }}" placeholder="Brand, model, SKU, type">
+    </label>
+    <label>
+      <input type="checkbox" name="show_inactive" value="1" {% if show_inactive %}checked{% endif %}>
+      Show inactive
+    </label>
+    <button type="submit" class="btn btn--primary">Search</button>
+  </form>
+
+  {% if formset.non_form_errors %}
+    <p class="messages__item messages__item--error">{{ formset.non_form_errors|join:" " }}</p>
+  {% endif %}
+
+  <datalist id="brand-options">
+    {% for name in brand_choices %}<option value="{{ name }}">{% endfor %}
+  </datalist>
+  <datalist id="product-type-options">
+    {% for name in product_type_choices %}<option value="{{ name }}">{% endfor %}
+  </datalist>
+
+  {% if formset %}
+    <form method="post">
+      {% csrf_token %}
+      {{ formset.management_form }}
+      <div class="table-scroll" tabindex="0" aria-label="Edit products">
+        <table class="dense-table">
+          <thead>
+            <tr>
+              <th>Brand</th>
+              <th>Model</th>
+              <th>SKU</th>
+              <th>Type</th>
+              <th>Tracking</th>
+              <th>Supplier</th>
+              <th>Active</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for form in formset %}
+              <tr>
+                {{ form.id }}
+                <td>
+                  {{ form.brand_name }}
+                  {% if form.brand_name.errors %}<div class="errorlist">{{ form.brand_name.errors|join:" " }}</div>{% endif %}
+                </td>
+                <td>
+                  {{ form.model }}
+                  {% if form.model.errors %}<div class="errorlist">{{ form.model.errors|join:" " }}</div>{% endif %}
+                </td>
+                <td>{{ form.sku }}</td>
+                <td>
+                  {{ form.product_type_name }}
+                  {% if form.product_type_name.errors %}<div class="errorlist">{{ form.product_type_name.errors|join:" " }}</div>{% endif %}
+                </td>
+                <td>{{ form.tracking_method }}</td>
+                <td>{{ form.supplier }}</td>
+                <td>{{ form.is_active }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn--primary">Save changes</button>
+      </div>
+    </form>
+  {% else %}
+    <p class="empty-state">No products match this search.</p>
+  {% endif %}
+
+  {% if results %}
+    <h2>Results</h2>
+    <table>
+      <thead>
+        <tr><th>Product</th><th>Outcome</th><th>Detail</th></tr>
+      </thead>
+      <tbody>
+        {% for row in results %}
+          <tr>
+            <td>{{ row.label }}</td>
+            <td>
+              {% if row.status == "updated" %}
+                <span class="badge badge--success">Updated</span>
+              {% elif row.status == "unchanged" %}
+                <span class="badge badge--neutral">Unchanged</span>
+              {% elif row.status == "locked" %}
+                <span class="badge badge--warning">Locked</span>
+              {% else %}
+                <span class="badge badge--danger">Error</span>
+              {% endif %}
+            </td>
+            <td>{{ row.detail|default:"—" }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+{% endblock %}

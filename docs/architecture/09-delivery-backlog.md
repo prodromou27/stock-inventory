@@ -834,6 +834,48 @@ description/notes/low-stock-threshold.
 form immediately, no deployment; values persist correctly per product; deactivating a field hides it from the form
 without losing previously saved values; a field's type can't be changed once created.
 
+### Additional feature — spreadsheet-style product grid (Phase 4 of the structured-feature wave) — done
+
+Phase 4 of the 5-phase plan (`C:\Users\cprodromou\.claude\plans\silly-sniffing-moler.md`; Phases 1–3 above). A new
+"Edit in grid" screen (`ProductGridView`, linked from the Products list toolbar) lets an operator edit many
+*existing* products in one dense-table submission — Brand/Model/SKU/Type/Tracking/Supplier/Active per row.
+
+**Design deviation, flagged to the user before this phase started and left unchanged**: the request asked for a
+true inline-editable grid (click a cell, it saves immediately). This codebase has zero JS/AJAX infrastructure and
+no optimistic-locking/conflict-detection pattern anywhere (last-write-wins throughout), so real per-cell autosave
+would mean writing untested-by-pytest JS from scratch. Built instead as the same dense-`<table>`-formset,
+one-submit pattern already shipped and approved twice this session (Quick Add Products, Quick Receive) —
+functionally and visually a spreadsheet, without new JS or concurrency risk.
+
+`apps.catalog.forms.ProductGridRowForm` (hidden `id` + the 7 editable fields) /`ProductGridFormSet`
+(`formset_factory(..., extra=0)` — editing only, no blank rows) mirror `QuickAddProductRowForm`'s shape.
+`ProductGridView.get()` reuses `ProductListView`'s search/`show_inactive` filtering (factored out into a new
+`_filtered_products()` helper both views now share) capped at `GRID_ROW_LIMIT = 50` rows, so a bulk-seeded
+database's full catalog never loads into one formset — an operator narrows down what they're editing via the same
+search box first. `post()` calls the existing `update_product()` once per row that actually changed (a per-row
+comparison against the 7 grid fields' current DB values decides "unchanged" vs. "updated" — an unchanged row is
+never saved and never generates an audit event), and short-circuits to a `locked` outcome *before* attempting the
+service call when a row tries to change `tracking_method` on a product that already `has_movements()` (the
+existing, unchanged lock in `update_product()`), rather than relying on catching its `ValidationError` — that gives
+a specific "Locked" badge instead of a generic error. Crucially, the grid always forwards the product's *current*
+`description`/`default_notes`/`low_stock_threshold`/`custom_field_values` back into `update_product()` unchanged
+(fields the grid deliberately doesn't expose, matching Quick Add's same "follow-up edit on the single-product form"
+scope decision) — passing service defaults instead would have silently wiped those fields on every grid save, a
+real bug caught and fixed during design before any test was written.
+
+Verified live end-to-end via `manage.py shell` + `django.test.Client` against the dev database (search-filtered
+GET rendered the dense grid with hidden row ids; a changed supplier field POSTed correctly, reported "Updated,"
+and persisted) before/alongside the pytest suite. New tests: `tests/test_catalog_views.py::TestProductGridView`
+(role checks, prefilled rows, a changed row updates and persists, an untouched row reports "unchanged" and isn't
+saved, a tracking-method change on a moved product reports "locked" and isn't saved, the 50-row cap using
+`bulk_create` for speed) — 7 new tests; full catalog suite (70 tests) green alongside them. `ruff`/`black`/
+`makemigrations --check` clean — no model changes, no migration.
+
+**Acceptance**: an operator can open a filtered set of existing products as one editable grid, change several
+cells across several rows, and save them all in one submission; only genuinely changed rows are written/audited;
+a locked tracking-method change is reported per-row without failing the rest of the batch; fields the grid doesn't
+expose are never touched by a grid save.
+
 ## Sequencing notes
 
 - Prompt 0 (this package) has no code dependency and is complete.
