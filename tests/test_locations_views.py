@@ -35,20 +35,67 @@ class TestLocationListView:
         names = {loc.name for loc in response.context["locations"]}
         assert other_location_tree["country"].name in names
 
-    def test_sort_by_name_descending(self, client, administrator, location_tree):
+    def test_sort_by_name_descending(
+        self, client, administrator, location_tree, other_location_tree
+    ):
+        # A level filter is what still uses the flat, sortable table (see
+        # TestLocationListTreeMode below for the default tree view, which
+        # doesn't use ?sort= — a level filter and a tree don't compose).
         client.force_login(administrator)
         response = client.get(
-            reverse("locations:list"), {"show_inactive": "1", "sort": "name", "dir": "desc"}
+            reverse("locations:list"),
+            {"level": "site", "show_inactive": "1", "sort": "name", "dir": "desc"},
         )
         names = [loc.name for loc in response.context["locations"]]
-        # "Wonderland" (country) sorts after "Room A" ascending, so
-        # descending puts it first.
-        assert names.index("Wonderland") < names.index("Room A")
+        # "Other HQ" sorts after "HQ" ascending, so descending puts it first.
+        assert names.index("Other HQ") < names.index("HQ")
 
     def test_unknown_sort_key_falls_back_to_default(self, client, administrator, location_tree):
         client.force_login(administrator)
-        response = client.get(reverse("locations:list"), {"sort": "not-a-field"})
+        response = client.get(
+            reverse("locations:list"), {"level": "storage_room", "sort": "not-a-field"}
+        )
         assert response.status_code == 200
+
+
+@pytest.mark.django_db
+class TestLocationListTreeMode:
+    """The default (no ?level=) view — a nested tree, not the flat table."""
+
+    def test_default_view_is_tree_mode(self, client, administrator, location_tree):
+        client.force_login(administrator)
+        response = client.get(reverse("locations:list"))
+        assert response.context["is_tree_mode"] is True
+
+    def test_level_filter_switches_to_flat_mode(self, client, administrator, location_tree):
+        client.force_login(administrator)
+        response = client.get(reverse("locations:list"), {"level": "storage_room"})
+        assert response.context["is_tree_mode"] is False
+        assert response.context["location_tree"] == []  # not built in flat mode
+
+    def test_tree_roots_and_children_are_alphabetical(
+        self, client, administrator, location_tree, other_location_tree
+    ):
+        client.force_login(administrator)
+        response = client.get(reverse("locations:list"), {"show_inactive": "1"})
+        tree = response.context["location_tree"]
+        root_names = [node["location"].name for node in tree]
+        assert root_names == sorted(root_names)
+        assert "Elsewhere" in root_names and "Wonderland" in root_names
+
+        wonderland_node = next(n for n in tree if n["location"].name == "Wonderland")
+        assert [c["location"].name for c in wonderland_node["children"]] == ["HQ"]
+
+    def test_scoped_stock_manager_tree_roots_at_their_granted_node(
+        self, client, stock_manager_with_room_access, location_tree
+    ):
+        # A Stock Manager granted only "Room A" never sees the Country/Site/
+        # Floor above it (apps.locations.scoping) — their tree roots at the
+        # granted node itself, not at a Country-level node.
+        client.force_login(stock_manager_with_room_access)
+        response = client.get(reverse("locations:list"))
+        tree = response.context["location_tree"]
+        assert [node["location"].name for node in tree] == ["Room A"]
 
 
 @pytest.mark.django_db

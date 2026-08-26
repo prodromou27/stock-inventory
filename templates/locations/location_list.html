@@ -30,43 +30,51 @@
   </form>
 
   {% if locations %}
-    <div class="table-scroll" tabindex="0" aria-label="Locations"><table>
-      <thead>
-        <tr>
-          {% sort_th "name" "Name" %}
-          {% sort_th "level" "Level" %}
-          {% sort_th "parent" "Parent" %}
-          {% sort_th "status" "Status" %}
-        </tr>
-      </thead>
-      <tbody>
-        {% for location in locations %}
-          <tr>
-            <td><a href="{{ location.get_absolute_url }}">{{ location.name }}</a></td>
-            <td>{{ location.get_level_display }}</td>
-            <td>{% if location.parent %}{{ location.parent.name }}{% else %}—{% endif %}</td>
-            <td>
-              {% if location.is_active %}
-                <span class="badge badge--success">Active</span>
-              {% else %}
-                <span class="badge badge--neutral">Inactive</span>
-              {% endif %}
-            </td>
-          </tr>
+    {% if is_tree_mode %}
+      <ul class="location-tree">
+        {% for node in location_tree %}
+          {% include "locations/_location_tree_node.html" with node=node %}
         {% endfor %}
-      </tbody>
-    </table></div>
+      </ul>
+    {% else %}
+      <div class="table-scroll" tabindex="0" aria-label="Locations"><table>
+        <thead>
+          <tr>
+            {% sort_th "name" "Name" %}
+            {% sort_th "level" "Level" %}
+            {% sort_th "parent" "Parent" %}
+            {% sort_th "status" "Status" %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for location in locations %}
+            <tr>
+              <td><a href="{{ location.get_absolute_url }}">{{ location.name }}</a></td>
+              <td>{{ location.get_level_display }}</td>
+              <td>{% if location.parent %}{{ location.parent.name }}{% else %}—{% endif %}</td>
+              <td>
+                {% if location.is_active %}
+                  <span class="badge badge--success">Active</span>
+                {% else %}
+                  <span class="badge badge--neutral">Inactive</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
 
-    {% if is_paginated %}
-      <nav class="pagination">
-        {% if page_obj.has_previous %}
-          <a href="{% querystring page=page_obj.previous_page_number %}">Previous</a>
-        {% endif %}
-        <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
-        {% if page_obj.has_next %}
-          <a href="{% querystring page=page_obj.next_page_number %}">Next</a>
-        {% endif %}
-      </nav>
+      {% if is_paginated %}
+        <nav class="pagination">
+          {% if page_obj.has_previous %}
+            <a href="{% querystring page=page_obj.previous_page_number %}">Previous</a>
+          {% endif %}
+          <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+          {% if page_obj.has_next %}
+            <a href="{% querystring page=page_obj.next_page_number %}">Next</a>
+          {% endif %}
+        </nav>
+      {% endif %}
     {% endif %}
   {% else %}
     <p class="empty-state">No locations found in your authorized scope.</p>

@@ -20,6 +20,39 @@ from .services import (
 )
 
 
+def _build_location_tree(locations):
+    """Nests a flat, already-scoped/filtered list of Locations into
+    {"location", "children"} dicts, sorted by name at every level — not a
+    simple `.order_by("path")` because sibling order in the ltree path is by
+    each node's (effectively random) UUID-hex label, not name.
+
+    A "root" is any location whose parent isn't itself present in
+    `locations` — normally that's exactly the Country-level rows, but for a
+    non-Administrator, apps.locations.scoping.scope_queryset() only returns
+    a granted node and its descendants, never the ancestors above it, so
+    that granted node (whatever its level) becomes the root of their tree.
+    """
+    locations = list(locations)
+    by_id = {loc.id: loc for loc in locations}
+    children_by_parent = {}
+    for loc in locations:
+        children_by_parent.setdefault(loc.parent_id, []).append(loc)
+    for children in children_by_parent.values():
+        children.sort(key=lambda loc: loc.name.lower())
+
+    def build(loc):
+        return {
+            "location": loc,
+            "children": [build(child) for child in children_by_parent.get(loc.id, [])],
+        }
+
+    roots = sorted(
+        (loc for loc in locations if loc.parent_id is None or loc.parent_id not in by_id),
+        key=lambda loc: loc.name.lower(),
+    )
+    return [build(loc) for loc in roots]
+
+
 class LocationListView(LoginRequiredMixin, SortableListMixin, ListView):
     model = Location
     template_name = "locations/location_list.html"
@@ -34,24 +67,40 @@ class LocationListView(LoginRequiredMixin, SortableListMixin, ListView):
     }
     default_ordering = ("level", "name")
 
+    def _level_filter_active(self):
+        return bool(self.request.GET.get("level"))
+
+    def get_paginate_by(self, queryset):
+        # A level filter falls back to the flat, paginated table (see
+        # get_queryset()); the default tree view shows everything at once —
+        # locations are a bounded, human-curated hierarchy, not a large list.
+        return self.paginate_by if self._level_filter_active() else None
+
     def get_queryset(self):
         queryset = scope_queryset(
             self.request.user,
             Location.objects.select_related("parent"),
             location_field=None,
         )
-        level = self.request.GET.get("level")
-        if level:
-            queryset = queryset.filter(level=level)
         if self.request.GET.get("show_inactive") != "1":
             queryset = queryset.filter(is_active=True)
-        return self.apply_sort(queryset)
+        level = self.request.GET.get("level")
+        if level:
+            # A level filter and a tree view don't compose (filtering to one
+            # level discards the ancestry a tree needs), so fall back to the
+            # flat, sortable table for this case.
+            return self.apply_sort(queryset.filter(level=level))
+        return queryset
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["levels"] = Location.Level.choices
         context["selected_level"] = self.request.GET.get("level", "")
         context["show_inactive"] = self.request.GET.get("show_inactive") == "1"
+        context["is_tree_mode"] = not self._level_filter_active()
+        context["location_tree"] = (
+            _build_location_tree(context["locations"]) if context["is_tree_mode"] else []
+        )
         return context
 
 

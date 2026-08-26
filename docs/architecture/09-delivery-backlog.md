@@ -758,6 +758,39 @@ active-only choices on all three entry points, inactive brands excluded, a new n
 **Acceptance**: typing in the Brand or Type field on any product-entry screen shows existing values as suggestions;
 picking one behaves identically to typing it manually; typing something new still creates it, exactly as before.
 
+### Additional feature — location tree view (Phase 2 of the structured-feature wave) — done
+
+Phase 2 of the 5-phase plan (`C:\Users\cprodromou\.claude\plans\silly-sniffing-moler.md`; Phase 1 was Brand/Type
+autocomplete, above). The flat, paginated `LocationListView`/`location_list.html` becomes a nested, expandable tree
+by default — `<details>/<summary>` per node, no JavaScript.
+
+The tree is built in Python (`apps.locations.views._build_location_tree()`), not via `.order_by("path")`, because
+sibling order in the ltree path is each node's UUID-hex label — effectively random — not name; the new function
+groups the already-scoped/filtered flat queryset by `parent_id` and sorts every level alphabetically. A "root" is
+any location whose parent isn't itself present in the (already-scoped) list — for an Administrator that's exactly
+the Country-level rows, but `apps.locations.scoping.scope_queryset()` only ever returns a non-Administrator's
+granted node(s) and their descendants, never the ancestors above them, so a Stock Manager granted a Storage Room
+gets a tree rooted at that Storage Room directly, not at a Country node they can't see — confirmed by a live check
+against the dev database and by `TestLocationListTreeMode::test_scoped_stock_manager_tree_roots_at_their_granted_node`.
+
+The existing `level` filter doesn't compose with a tree (filtering to one level discards the ancestry a tree needs
+to nest), so it now falls back to exactly the prior flat, sortable, paginated table — `LocationListView.
+get_paginate_by()` returns `None` in tree mode (unpaginated; locations are a bounded, curated hierarchy) and the
+existing `paginate_by = 50` only when a level filter is active. `SortableListMixin`/`?sort=`/`?dir=` still work in
+that flat fallback; they don't apply to (and are silently ignored by) the default tree view, since there's no
+column-header table to sort in tree mode.
+
+Verified live end-to-end via `manage.py shell` + `django.test.Client` against the dev database (tree renders with
+`<details>/<summary>`, no pagination nav; a `?level=` filter renders the old flat table instead, no tree markup)
+before/alongside the pytest suite. New/updated tests: `tests/test_locations_views.py::TestLocationListTreeMode`
+(tree-mode flag, alphabetical root/child ordering, the scoped-root behavior above) and `TestLocationListView`'s
+sort test moved onto the `level=`-filtered flat fallback (the only mode where `?sort=` still has an effect).
+`ruff`/`black`/`makemigrations --check` clean — no model changes, no migration. Full suite unaffected.
+
+**Acceptance**: the Locations page shows an expandable/collapsible tree by default; a Stock Manager sees a tree
+rooted at exactly what they're granted, never ancestors above it; filtering by level still works as the familiar
+flat, sortable table it always was.
+
 ## Sequencing notes
 
 - Prompt 0 (this package) has no code dependency and is complete.

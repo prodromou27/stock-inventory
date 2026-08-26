@@ -1,0 +1,18 @@
+<li>
+  <details {% if node.children %}open{% endif %}>
+    <summary>
+      <a href="{{ node.location.get_absolute_url }}">{{ node.location.name }}</a>
+      <span class="location-tree__level">{{ node.location.get_level_display }}</span>
+      {% if not node.location.is_active %}
+        <span class="badge badge--neutral">Inactive</span>
+      {% endif %}
+    </summary>
+    {% if node.children %}
+      <ul class="location-tree__children">
+        {% for child in node.children %}
+          {% include "locations/_location_tree_node.html" with node=child %}
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </details>
+</li>
