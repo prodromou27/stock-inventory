@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}{{ report.name }} — Stock Inventory{% endblock %}
+
+{% block content %}
+  <p><a href="{% url 'reporting:saved_report_list' %}">&larr; My custom reports</a></p>
+  <div class="page-header">
+    <h1>{{ report.name }}</h1>
+    <div class="page-header__actions">
+      <a class="btn" href="?format=csv">Export CSV</a>
+      {% if can_delete %}
+        <form method="post" action="{% url 'reporting:saved_report_delete' report.pk %}" class="inline-form"
+              onsubmit="return confirm('Delete this report?');">
+          {% csrf_token %}
+          <button type="submit" class="btn btn--danger">Delete</button>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if truncated %}
+    <p class="messages__item messages__item--warning">
+      Showing the first {{ row_cap }} rows — narrow this report with a filter to see fewer.
+    </p>
+  {% endif %}
+
+  {% if rows %}
+    <div class="table-scroll" tabindex="0" aria-label="{{ report.name }}">
+      <table>
+        <thead>
+          <tr>
+            {% for column in columns %}<th>{{ column }}</th>{% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+            <tr>
+              {% for value in row %}<td>{{ value }}</td>{% endfor %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="empty-state">No results within your accessible locations.</p>
+  {% endif %}
+{% endblock %}

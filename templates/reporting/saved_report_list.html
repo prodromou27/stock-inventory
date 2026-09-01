@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}Custom Reports — Stock Inventory{% endblock %}
+
+{% block content %}
+  <p><a href="{% url 'reporting:hub' %}">&larr; Reports</a></p>
+  <div class="page-header">
+    <h1>My custom reports</h1>
+    <div class="page-header__actions">
+      <a class="btn btn--primary" href="{% url 'reporting:builder_start' %}">+ Build a new report</a>
+    </div>
+  </div>
+
+  {% if reports %}
+    <table>
+      <thead>
+        <tr><th>Name</th><th>Owner</th><th>Visibility</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for report in reports %}
+          <tr>
+            <td><a href="{% url 'reporting:saved_report_run' report.pk %}">{{ report.name }}</a></td>
+            <td>{{ report.created_by|default:"—" }}</td>
+            <td>
+              {% if report.is_shared %}
+                <span class="badge badge--info">Shared</span>
+              {% else %}
+                <span class="badge badge--neutral">Only me</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if report.created_by_id == request.user.id %}
+                <form method="post" action="{% url 'reporting:saved_report_delete' report.pk %}" class="inline-form"
+                      onsubmit="return confirm('Delete this report?');">
+                  {% csrf_token %}
+                  <button type="submit" class="btn btn--sm btn--danger">Delete</button>
+                </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty-state">No custom reports yet.</p>
+  {% endif %}
+{% endblock %}

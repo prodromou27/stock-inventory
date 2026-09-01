@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block title %}Build a Report — Stock Inventory{% endblock %}
+
+{% block content %}
+  <p><a href="{% url 'reporting:builder_start' %}">&larr; Change data source</a></p>
+  <div class="page-header">
+    <div>
+      <h1>Build a custom report</h1>
+      <div class="page-header__subtitle">Reporting on: {{ base_model_label }}</div>
+    </div>
+  </div>
+
+  {% if form.non_field_errors %}
+    <p class="messages__item messages__item--error">{{ form.non_field_errors|join:" " }}</p>
+  {% endif %}
+  {% if filter_formset.non_form_errors %}
+    <p class="messages__item messages__item--error">{{ filter_formset.non_form_errors|join:" " }}</p>
+  {% endif %}
+
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="base_model" value="{{ base_model }}">
+
+    <div class="card">
+      <p>
+        <label for="{{ form.name.id_for_label }}">{{ form.name.label }}</label>
+        {{ form.name }}
+        {% if form.name.errors %}<div class="messages__item messages__item--error">{{ form.name.errors }}</div>{% endif %}
+      </p>
+      <p>
+        <label>{{ form.selected_fields.label }}</label>
+        {{ form.selected_fields }}
+        {% if form.selected_fields.errors %}<div class="messages__item messages__item--error">{{ form.selected_fields.errors }}</div>{% endif %}
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>Filters (optional)</h2>
+      {{ filter_formset.management_form }}
+      <table class="dense-table">
+        <thead>
+          <tr><th>Field</th><th>Is</th><th>Value</th></tr>
+        </thead>
+        <tbody>
+          {% for filter_form in filter_formset %}
+            <tr>
+              <td>{{ filter_form.field_key }}</td>
+              <td>{{ filter_form.op }}</td>
+              <td>
+                {{ filter_form.value }}
+                {% if filter_form.errors %}<div class="errorlist">{{ filter_form.errors }}</div>{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="helptext">"Is" accepts: exact match, contains, at least (gte), at most (lte), or a
+        comma-separated list ("in"). Leave a row's Field blank to skip it.</p>
+    </div>
+
+    <p>
+      <label>{{ form.is_shared }} {{ form.is_shared.label }}</label>
+    </p>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn--primary">Save and run</button>
+    </div>
+  </form>
+{% endblock %}

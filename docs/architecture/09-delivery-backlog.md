@@ -876,6 +876,80 @@ cells across several rows, and save them all in one submission; only genuinely c
 a locked tracking-method change is reported per-row without failing the rest of the batch; fields the grid doesn't
 expose are never touched by a grid save.
 
+### Additional feature — ad-hoc report builder (Phase 5 of the structured-feature wave) — done
+
+Phase 5, the last and highest-risk phase of the 5-phase plan
+(`C:\Users\cprodromou\.claude\plans\silly-sniffing-moler.md`; Phases 1–4 above). Any authenticated user can now
+build their own report — pick a data source, pick columns, add up to three filters, save it — instead of being
+limited to the 13 fixed reports in `apps.reporting.queries`. Reachable from the Reports hub's new "Custom reports"
+section.
+
+**The one requirement that could not be compromised on**: a user-composed report must never be able to see data
+outside the viewer's accessible locations — the same guarantee every fixed report already gives
+(`apps.reporting.queries`'s module docstring). New `apps/reporting/report_builder.py` is the single place a
+`SavedReport` (or an in-progress selection) ever becomes a real queryset:
+`build_queryset(user=..., base_model=..., selected_fields=..., filters=...)` always calls the right *existing*
+scoping function for that model — `apps.locations.scoping.scope_queryset()` (Assets, Stock Balances),
+`apps.inventory.access.scope_transaction_queryset()` (Transactions), or `scope_asset_status_history_queryset()`
+(Asset Status History) — **before** a single user-controlled field or filter is ever applied. Transaction Lines had
+no existing scoping helper (nothing needed one before), so `apps.inventory.access.scope_transaction_line_queryset()`
+was added there, alongside its two siblings, mirroring `scope_asset_status_history_queryset()`'s shape exactly
+(from_location/to_location, direct FKs on the line itself) rather than inventing ad-hoc location-filtering logic
+inside the reporting app.
+
+**Field/filter safety**: `REPORTABLE_FIELDS` is a fixed `{base_model: {friendly_key: orm_path}}` allow-list dict —
+the exact same "user supplies a key, never a raw ORM path" pattern `apps.core.sorting.SortableListMixin` already
+established for sortable columns. A selected field or filter key not present in this dict for the chosen
+`base_model`, or a filter operator outside `ALLOWED_FILTER_OPS` (exact/icontains/gte/lte/in), is silently dropped —
+never interpolated into `.filter(**{...})` — both when the report actually runs (`build_queryset()`) and again,
+independently, when it's saved (`apps.reporting.services.create_saved_report()`); a `SavedReport` row is never
+trusted as its own authorization boundary. `is_shared` (visible to every user, not just its creator) can only be
+set by an Administrator — enforced in the service layer, silently forced back to `False` otherwise, not merely
+hidden in the form. `selected_fields`/`filters` are plain `JSONField`s (no schema library), the same precedent
+`apps.documents.DocumentTemplate` and `apps.catalog.Product.custom_field_values` already established.
+
+**Two real bugs found and fixed while wiring up the query, before any of this reached a template**: (1)
+`Product.custom_field_values`-style JSONField default checking doesn't apply here the same way —
+`SavedReport.selected_fields`/`filters` needed `blank=True` added, since Django's `full_clean()` treats an empty
+list `[]` as "blank" by default and rejects a perfectly valid "no filters chosen" report. (2) The first
+implementation renamed each `.values()` row's key to the friendly field name via `.values(key=F(orm_path))` —
+Django's `annotate()` refuses any alias that collides with a real field name already on the model (`"status"` on
+`UnitAsset`, concretely), raising `ValueError: The annotation 'status' conflicts with a field on the model`, not a
+silent problem. Fixed by using plain positional `.values(*orm_paths)` (never subject to that alias-collision
+check) and adding a small `friendly_rows()` helper that remaps a queryset's raw ORM-path-keyed rows into
+friendly-keyed ones only after slicing/capping — `build_queryset()` itself stays a genuinely lazy, sliceable
+queryset throughout, which the row cap below depends on.
+
+**Two-step builder UI, deliberately not one page**: this codebase has no JS to refresh a dependent dropdown's
+options in place, so choosing which columns/filters are available (they depend on the data source) needed its own
+step (`ReportBuilderStartView` picks the model, redirects to `ReportBuilderView?base_model=...`) rather than one
+form with a client-side cascading select. Filters are a fixed 3-slot `formset_factory` (matching this codebase's
+established fixed-slot pattern for optional bulk rows — `apps.catalog.forms.QuickAddProductRowForm`), not a
+JS-driven "add another filter" button; a row with no field chosen is silently skipped. Saving immediately runs and
+redirects to the report (no separate preview step) — the simplest thing that's actually useful, matching this
+session's "must be useful, not time consuming" guidance. Results are capped at `SAVED_REPORT_ROW_CAP = 1000` rows
+(no pagination UI for a first version) for both the HTML table and CSV export, with a visible "showing the first
+1,000 rows" notice when truncated.
+
+Verified live end-to-end via `manage.py shell` + `django.test.Client` against the dev database's real bulk-seeded
+data (8,000+ assets) — built a report filtered to `status=in_stock` with three columns, saved it, confirmed the
+HTML table and the CSV export both showed correctly filtered, correctly-labeled results — before/alongside the
+pytest suite. New `tests/test_reporting_builder.py` (34 tests): `scope_transaction_line_queryset()` directly
+(administrator sees everything, a scoped user sees only granted lines, a user with no grant sees nothing);
+`build_queryset()` scoping parity for Assets and Transactions (the two different scoping code shapes), unknown
+field/filter keys and disallowed operators silently dropped rather than raised, the `icontains`/`in` operators,
+every one of the 5 base models producing a runnable queryset; `create_saved_report()`/`delete_saved_report()`
+authorization (any user can create unshared reports, only an Administrator can share, only the owner or an
+Administrator can delete); the full view-level flow including a private report 404ing for a non-owner, a shared
+report staying visible, and CSV export. Full existing report suite (`tests/test_reporting.py`, 21 tests) and
+transaction/scoping suites (`tests/test_inventory_transaction_access.py`, `tests/test_scoping.py`) green alongside
+it — zero changes to any of the 13 existing fixed reports. `ruff`/`black`/`makemigrations --check` clean.
+
+**Acceptance**: any user can build and save a custom report over Assets/Stock Balances/Transactions/Transaction
+Lines/Asset Status History, choosing columns and up to three filters; a saved report can be shared (Administrator
+only) or kept private; running any custom report — including someone else's shared one — never surfaces a single
+row outside the viewer's own accessible locations, proven by test, not just by construction.
+
 ## Sequencing notes
 
 - Prompt 0 (this package) has no code dependency and is complete.

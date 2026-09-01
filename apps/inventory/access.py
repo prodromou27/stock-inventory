@@ -118,6 +118,29 @@ def scope_transaction_queryset(user, queryset):
     )
 
 
+def scope_transaction_line_queryset(user, queryset):
+    """Same idea as scope_asset_status_history_queryset() but for
+    InventoryTransactionLine directly — used by the ad-hoc report builder
+    (apps.reporting.report_builder), which reports on lines rather than
+    whole transactions. A line's own from_location/to_location are direct
+    FKs, so (unlike scope_transaction_queryset(), which also has to fold in
+    its parent transaction's header locations) this needs no join back to
+    InventoryTransaction at all.
+    """
+    if is_administrator(user):
+        return queryset
+
+    paths = granted_location_paths(user)
+    if not paths:
+        return queryset.none()
+
+    query = Q()
+    for path in paths:
+        query |= Q(from_location__path__descendant_or_self=path)
+        query |= Q(to_location__path__descendant_or_self=path)
+    return queryset.filter(query)
+
+
 def scope_asset_status_history_queryset(user, queryset):
     """Same idea as scope_transaction_queryset() but for AssetStatusHistory
     (the "Complete asset movement history" report, spec §15) — scoped via

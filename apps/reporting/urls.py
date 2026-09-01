@@ -32,4 +32,13 @@ urlpatterns = [
     path("disposed-items/", views.DisposedItemsView.as_view(), name="disposed_items"),
     path("movement-history/", views.MovementHistoryView.as_view(), name="movement_history"),
     path("low-stock/", views.LowStockView.as_view(), name="low_stock"),
+    path("custom/", views.SavedReportListView.as_view(), name="saved_report_list"),
+    path("custom/new/", views.ReportBuilderStartView.as_view(), name="builder_start"),
+    path("custom/build/", views.ReportBuilderView.as_view(), name="builder"),
+    path("custom/<uuid:pk>/", views.SavedReportRunView.as_view(), name="saved_report_run"),
+    path(
+        "custom/<uuid:pk>/delete/",
+        views.SavedReportDeleteView.as_view(),
+        name="saved_report_delete",
+    ),
 ]

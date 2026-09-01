@@ -57,4 +57,18 @@
       <span class="action-card__desc">Empty unless a product has a threshold configured.</span>
     </a>
   </div>
+
+  <div class="page-header">
+    <h1>Custom reports</h1>
+  </div>
+  <div class="card-grid">
+    <a class="action-card" href="{% url 'reporting:saved_report_list' %}">
+      <span class="action-card__title">My custom reports</span>
+      <span class="action-card__desc">Reports you've built, plus anything shared with everyone.</span>
+    </a>
+    <a class="action-card" href="{% url 'reporting:builder_start' %}">
+      <span class="action-card__title">+ Build a new report</span>
+      <span class="action-card__desc">Pick a data source, choose columns and filters, save it.</span>
+    </a>
+  </div>
 {% endblock %}

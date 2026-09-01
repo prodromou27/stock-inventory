@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Build a Report — Stock Inventory{% endblock %}
+
+{% block content %}
+  <p><a href="{% url 'reporting:hub' %}">&larr; Reports</a></p>
+  <div class="page-header">
+    <h1>Build a custom report</h1>
+  </div>
+
+  {% if form.non_field_errors %}
+    <p class="messages__item messages__item--error">{{ form.non_field_errors|join:" " }}</p>
+  {% endif %}
+
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <div class="form-actions">
+      <button type="submit" class="btn btn--primary">Next: choose columns</button>
+    </div>
+  </form>
+{% endblock %}
