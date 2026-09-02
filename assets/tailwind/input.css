@@ -500,6 +500,21 @@
     font-weight: 600;
   }
 
+  .topbar__search {
+    flex: 0 1 20rem;
+    position: relative;
+  }
+
+  .topbar__search input {
+    width: 100%;
+    margin: 0;
+    padding: 0.4rem 0.75rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-full, 999px);
+    background: var(--color-surface-muted, var(--color-surface));
+    font-size: 0.85rem;
+  }
+
   .sidebar-toggle {
     display: none;
     width: 2.25rem;
@@ -854,10 +869,9 @@
     color: var(--color-danger);
   }
 
-  /* static/js/movement_forms.js: a type-to-filter box injected right
-     before a long Product/Location <select> — the select itself is
-     unchanged (still submits a real value), this only hides its
-     non-matching <option>s as the box is typed into. */
+  /* static/js/movement_forms.js: templates/inventory/_asset_picker.html's
+     row-filter box — hides non-matching <tr>s as it's typed into. (The
+     Product/Location <select> filter uses Tom Select instead, styled below.) */
   .select-filter {
     margin-bottom: 0.35rem;
   }
@@ -1369,6 +1383,7 @@
     .sidebar-toggle { display: inline-flex; }
 
     .topbar { padding: 0 1rem; }
+    .topbar__search { flex-basis: auto; max-width: 9rem; }
     .user-menu__identity { display: none; }
 
     .content {
@@ -1380,5 +1395,120 @@
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
   }
+}
+
+/* Tom Select (static/css/vendor/tom-select.min.css, static/js/vendor/,
+   static/js/movement_forms.js) — the vendor stylesheet ships light-theme
+   colors hardcoded; these overrides remap it onto this app's existing
+   design tokens so it matches both light and dark mode automatically, same
+   as every other component class above. Deliberately kept OUTSIDE @layer:
+   Tailwind's content-based purge only keeps a hand-written @layer rule when
+   one of its selector's classes also appears literally in a scanned
+   template, and every ts-* class here is injected at runtime by the vendor
+   JS, never written in a template — inside a layer, most of this block was
+   silently dropped at build time. */
+.ts-wrapper .ts-control,
+.ts-wrapper.single .ts-control {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  box-shadow: none;
+  padding: 0.45rem 0.6rem;
+}
+.ts-wrapper.focus .ts-control {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 25%, transparent);
+}
+.ts-control input {
+  color: var(--color-text);
+}
+.ts-control input::placeholder {
+  color: var(--color-text-muted);
+}
+.ts-dropdown {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+  color: var(--color-text);
+  z-index: 30;
+}
+.ts-dropdown .ts-dropdown-content .option,
+.ts-dropdown .no-results {
+  color: var(--color-text);
+}
+.ts-dropdown .option.active {
+  background: color-mix(in srgb, var(--color-primary) 16%, transparent);
+  color: var(--color-text);
+}
+.ts-dropdown [data-selectable] .highlight {
+  background: color-mix(in srgb, var(--color-primary) 35%, transparent);
+  color: var(--color-text);
+}
+.ts-wrapper.single .ts-control .item {
+  color: var(--color-text);
+}
+
+/* static/js/search.js's topbar live-preview dropdown — kept outside @layer
+   for the same reason as the Tom Select block above: every class here
+   (.search-suggest*, .is-active) is created by JS at runtime, never written
+   in a template, so Tailwind's content-based purge would silently drop it
+   from inside @layer components. */
+.search-suggest {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  right: 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  padding: 0.5rem 0;
+  max-height: 70vh;
+  overflow-y: auto;
+  z-index: 30;
+}
+.search-suggest__group {
+  padding: 0.15rem 0;
+}
+.search-suggest__group h3 {
+  margin: 0;
+  padding: 0.3rem 0.9rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.search-suggest__group a,
+.search-suggest__all {
+  display: block;
+  padding: 0.45rem 0.9rem;
+  color: var(--color-text);
+  text-decoration: none;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.search-suggest__group a.is-active,
+.search-suggest__group a:hover,
+.search-suggest__all.is-active,
+.search-suggest__all:hover {
+  background: color-mix(in srgb, var(--color-primary) 14%, transparent);
+}
+.search-suggest__all {
+  border-top: 1px solid var(--color-border);
+  margin-top: 0.35rem;
+  padding-top: 0.6rem;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+.search-suggest__empty {
+  margin: 0;
+  padding: 0.6rem 0.9rem;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
 }
 

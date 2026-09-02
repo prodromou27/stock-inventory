@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% load ui_extras %}
+
+{% block title %}Search — Stock Inventory{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <h1>Search results{% if query %} for "{{ query }}"{% endif %}</h1>
+  </div>
+
+  <form method="get" class="toolbar toolbar--filters">
+    <label>Search
+      <input type="search" name="q" value="{{ query }}" placeholder="Brand, model, SKU, serial, project, customer, transaction #" autofocus>
+    </label>
+    <div class="form-actions">
+      <button type="submit" class="btn btn--primary">Search</button>
+    </div>
+  </form>
+
+  {% if not query %}
+    <p class="empty-state">Type a brand, model, SKU, serial number, project reference, customer, or transaction number above.</p>
+  {% else %}
+    <h2>Products{% if products %} ({{ products|length }}{% if products|length == 15 %}+{% endif %}){% endif %}</h2>
+    {% if products %}
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Brand</th><th>Model</th><th>SKU</th><th>Type</th><th>Tracking</th></tr></thead>
+          <tbody>
+            {% for product in products %}
+              <tr>
+                <td><a href="{{ product.get_absolute_url }}">{{ product.brand.name }}</a></td>
+                <td>{{ product.model }}</td>
+                <td>{{ product.sku }}</td>
+                <td>{{ product.product_type.name }}</td>
+                <td>{{ product.get_tracking_method_display }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="empty-state">No matching products.</p>
+    {% endif %}
+
+    <h2>Assets{% if assets %} ({{ assets|length }}{% if assets|length == 15 %}+{% endif %}){% endif %}</h2>
+    {% if assets %}
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Product</th><th>Serial</th><th>Status</th><th>Location</th></tr></thead>
+          <tbody>
+            {% for asset in assets %}
+              <tr>
+                <td><a href="{{ asset.get_absolute_url }}">{{ asset.product }}</a></td>
+                <td>{{ asset.vendor_serial|default:"—" }}</td>
+                <td><span class="badge {{ asset.status|badge_class }}">{{ asset.get_status_display }}</span></td>
+                <td>{{ asset.current_location|default:"—" }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="empty-state">No matching assets in your authorized scope.</p>
+    {% endif %}
+
+    <h2>Transactions{% if transactions %} ({{ transactions|length }}{% if transactions|length == 15 %}+{% endif %}){% endif %}</h2>
+    {% if transactions %}
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Number</th><th>Type</th><th>Date</th><th>Performed by</th></tr></thead>
+          <tbody>
+            {% for txn in transactions %}
+              <tr>
+                <td><a href="{{ txn.get_absolute_url }}">{{ txn.transaction_number }}</a></td>
+                <td>{{ txn.get_movement_type_display }}</td>
+                <td>{{ txn.occurred_at }}</td>
+                <td>{{ txn.performed_by.get_username }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="empty-state">No matching transactions in your authorized scope.</p>
+    {% endif %}
+  {% endif %}
+{% endblock %}

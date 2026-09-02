@@ -28,30 +28,25 @@
     select.addEventListener("change", () => applyTrackingVisibility(select));
   });
 
-  // Type-to-filter for long <select> lists (Product/Location pickers) —
-  // no AJAX, no new value format: the element stays a real <select> and
-  // submits exactly as before, this only hides non-matching <option>s as
-  // the paired text input is typed into. Opt in per-select via
-  // data-filterable (added by templates/inventory/*_form.html next to any
-  // Product/Location field), skipped entirely below a size threshold where
-  // filtering wouldn't help.
-  document.querySelectorAll("select[data-filterable]").forEach((select) => {
-    if (select.options.length < 8) return;
-    const filterInput = document.createElement("input");
-    filterInput.type = "search";
-    filterInput.className = "select-filter";
-    filterInput.placeholder = `Filter ${select.options.length} options…`;
-    filterInput.setAttribute("aria-label", `Filter ${select.name}`);
-    select.insertAdjacentElement("beforebegin", filterInput);
-
-    const options = Array.from(select.options);
-    filterInput.addEventListener("input", () => {
-      const query = filterInput.value.trim().toLowerCase();
-      options.forEach((option) => {
-        option.hidden = query.length > 0 && !option.text.toLowerCase().includes(query);
+  // Search-as-you-type for long <select> lists (Product/Location pickers) —
+  // Tom Select (static/js/vendor/, self-hosted, no jQuery/build step) wraps
+  // the existing native <select> in place: no new value format, no AJAX, the
+  // element still submits exactly as before, and it still fires a real
+  // `change` event (applyTrackingVisibility above keeps working unmodified).
+  // Opt in per-select via data-filterable (apps/inventory/forms.py's
+  // _apply_scoped_location / TrackingMethodSelect), skipped below a size
+  // threshold where a combobox wouldn't help, and skipped entirely if the
+  // script failed to load — the plain <select> stays fully usable either way.
+  if (window.TomSelect) {
+    document.querySelectorAll("select[data-filterable]").forEach((select) => {
+      if (select.options.length < 8) return;
+      new TomSelect(select, {
+        create: false,
+        maxOptions: 300,
+        maxItems: select.multiple ? null : 1,
       });
     });
-  });
+  }
 
   // Same idea for templates/inventory/_asset_picker.html's checkbox table —
   // an <input data-table-filter-for="table-id"> hides non-matching <tr>s.

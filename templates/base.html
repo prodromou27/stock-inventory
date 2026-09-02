@@ -6,9 +6,12 @@
   <title>{% block title %}{{ site_name }}{% endblock %}</title>
   <meta name="theme-color" content="#172554">
   <link rel="icon" href="{% static 'icons/favicon.svg' %}" type="image/svg+xml">
+  <link rel="stylesheet" href="{% static 'css/vendor/tom-select.min.css' %}">
   <link rel="stylesheet" href="{% static 'css/app.css' %}">
+  <script src="{% static 'js/vendor/tom-select.base.min.js' %}" defer></script>
   <script src="{% static 'js/app.js' %}" defer></script>
   <script src="{% static 'js/movement_forms.js' %}" defer></script>
+  <script src="{% static 'js/search.js' %}" defer></script>
 </head>
 <body>
 <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -66,6 +69,9 @@
       <header class="topbar">
         <button class="sidebar-toggle" type="button" data-sidebar-toggle aria-controls="app-sidebar" aria-expanded="false"><span class="sr-only">Toggle navigation</span><svg aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#menu"></use></svg></button>
         <div class="topbar__context">{% current_section %}</div>
+        <form method="get" action="{% url 'core:search' %}" data-suggest-url="{% url 'core:search_suggest' %}" class="topbar__search" role="search">
+          <input type="search" name="q" value="{{ request.GET.q }}" placeholder="Search products, serials, transactions…" aria-label="Search" title="Press / to search" autocomplete="off">
+        </form>
         <details class="user-menu">
           <summary><span class="user-avatar">{{ user.get_username|slice:":1"|upper }}</span><span class="user-menu__identity"><strong>{{ user.get_username }}</strong>{% if user_role_groups %}<small>{{ user_role_groups|join:", " }}</small>{% endif %}</span><svg aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#chevron"></use></svg></summary>
           <div class="user-menu__panel">

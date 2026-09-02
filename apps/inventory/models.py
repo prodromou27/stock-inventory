@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.contrib.postgres.indexes import GinIndex
 from django.db import models
 from django.urls import reverse
 
@@ -96,6 +97,24 @@ class UnitAsset(UUIDPrimaryKeyModel, UserStampedModel):
             models.Index(fields=["final_customer"], name="unitasset_final_customer_idx"),
             models.Index(fields=["arrival_date"], name="unitasset_arrival_date_idx"),
             models.Index(fields=["last_removal_date"], name="unitasset_removal_date_idx"),
+            # Trigram indexes backing apps.core.views.GlobalSearchView's
+            # TrigramSimilarity ranking — see apps.catalog.models.Brand's index
+            # for why icontains alone can't use these.
+            GinIndex(
+                fields=["normalized_serial"],
+                name="unitasset_serial_trgm_idx",
+                opclasses=["gin_trgm_ops"],
+            ),
+            GinIndex(
+                fields=["project_reference"],
+                name="unitasset_project_trgm_idx",
+                opclasses=["gin_trgm_ops"],
+            ),
+            GinIndex(
+                fields=["final_customer"],
+                name="unitasset_customer_trgm_idx",
+                opclasses=["gin_trgm_ops"],
+            ),
         ]
         constraints = [
             models.CheckConstraint(

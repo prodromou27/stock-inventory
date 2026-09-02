@@ -13,6 +13,18 @@
   document.querySelector("[data-sidebar-close]")?.addEventListener("click", closeSidebar);
   window.addEventListener("keydown", (event) => event.key === "Escape" && closeSidebar());
 
+  const searchInput = document.querySelector(".topbar__search input");
+  window.addEventListener("keydown", (event) => {
+    if (event.key !== "/" || !searchInput) return;
+    const active = document.activeElement;
+    const isTyping =
+      active && (["INPUT", "TEXTAREA", "SELECT"].includes(active.tagName) || active.isContentEditable);
+    if (isTyping) return;
+    event.preventDefault();
+    searchInput.focus();
+    searchInput.select();
+  });
+
   document.querySelectorAll("[data-alert-close]").forEach((button) => {
     button.addEventListener("click", () => button.closest(".messages__item")?.remove());
   });

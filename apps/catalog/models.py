@@ -1,3 +1,4 @@
+from django.contrib.postgres.indexes import GinIndex
 from django.db import models
 from django.urls import reverse
 
@@ -11,6 +12,13 @@ class Brand(UUIDPrimaryKeyModel, TimestampedModel):
 
     class Meta:
         ordering = ["name"]
+        indexes = [
+            # Trigram index (apps.core's pg_trgm extension) backing typo-tolerant
+            # ranking in apps.core.views.GlobalSearchView — icontains alone can't
+            # use this index (Django #32803), so the view also annotates with
+            # TrigramSimilarity, which can.
+            GinIndex(fields=["name"], name="brand_name_trgm_idx", opclasses=["gin_trgm_ops"]),
+        ]
 
     def __str__(self):
         return self.name
@@ -104,6 +112,10 @@ class Product(UUIDPrimaryKeyModel, UserStampedModel):
             models.Index(fields=["brand"], name="product_brand_idx"),
             models.Index(fields=["product_type"], name="product_type_idx"),
             models.Index(fields=["is_active"], name="product_active_idx"),
+            # Trigram indexes backing GlobalSearchView's TrigramSimilarity ranking —
+            # see Brand.Meta's index for why icontains alone can't use these.
+            GinIndex(fields=["model"], name="product_model_trgm_idx", opclasses=["gin_trgm_ops"]),
+            GinIndex(fields=["sku"], name="product_sku_trgm_idx", opclasses=["gin_trgm_ops"]),
         ]
         constraints = [
             models.CheckConstraint(
