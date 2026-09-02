@@ -38,12 +38,7 @@
     {% csrf_token %}
     {% for field in form %}
       {% if field.name|slice:":13" != "custom_field_" %}
-        <p>
-          {{ field.errors }}
-          {{ field.label_tag }}
-          {{ field }}
-          {% if field.help_text %}<span class="helptext">{{ field.help_text }}</span>{% endif %}
-        </p>
+        {% include "_form_field.html" with field=field %}
       {% endif %}
     {% endfor %}
 
@@ -51,11 +46,7 @@
       <h2>Custom fields</h2>
       {% for field in form %}
         {% if field.name|slice:":13" == "custom_field_" %}
-          <p>
-            {{ field.errors }}
-            {{ field.label_tag }}
-            {{ field }}
-          </p>
+          {% include "_form_field.html" with field=field %}
         {% endif %}
       {% endfor %}
     {% endif %}

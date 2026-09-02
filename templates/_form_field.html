@@ -1,0 +1,6 @@
+<p{% if field.errors %} class="has-error"{% endif %}{% if field.field.widget.attrs.data_tracking_method %} data-tracking-field="{{ field.field.widget.attrs.data_tracking_method }}"{% endif %}>
+  {{ field.errors }}
+  <label for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="required-mark">*</span>{% endif %}</label>
+  {{ field }}
+  {% if field.help_text %}<span class="helptext">{{ field.help_text }}</span>{% endif %}
+</p>

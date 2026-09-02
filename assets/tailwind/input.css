@@ -846,6 +846,14 @@
 
   /* ---------- forms (component classes) ---------- */
 
+  .required-mark {
+    color: var(--color-danger);
+  }
+
+  form p.has-error > label {
+    color: var(--color-danger);
+  }
+
   .errorlist {
     list-style: none;
     padding: 0;
@@ -1339,3 +1347,4 @@
     *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
   }
 }
+

@@ -37,7 +37,8 @@
               {% endif %}
             </td>
             <td>
-              <form method="post" action="{% url 'catalog:custom_field_toggle_active' definition.pk %}" class="inline-form">
+              <form method="post" action="{% url 'catalog:custom_field_toggle_active' definition.pk %}" class="inline-form"
+                    {% if definition.is_active %}data-confirm="Deactivate '{{ definition.name }}'? It will disappear from the product form; existing saved values are kept."{% endif %}>
                 {% csrf_token %}
                 <button type="submit" class="btn btn--sm">
                   {% if definition.is_active %}Deactivate{% else %}Activate{% endif %}

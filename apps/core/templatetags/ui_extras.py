@@ -77,6 +77,20 @@ def sort_th(context, sort_value, label):
     }
 
 
+@register.inclusion_tag("_pagination.html", takes_context=True)
+def render_pagination(context):
+    """The `is_paginated`/`page_obj` Previous/Next `<nav>` block every
+    ListView-backed list template hand-copied identically (21 sites) —
+    `{% render_pagination %}` replaces the whole block, reading directly
+    from context so no arguments are needed at call sites.
+    """
+    return {
+        "is_paginated": context.get("is_paginated"),
+        "page_obj": context.get("page_obj"),
+        "request": context.get("request"),
+    }
+
+
 @register.simple_tag(takes_context=True)
 def nav_active_app(context, *app_names):
     """ "is-active" when the current view's URLconf app_name is one of

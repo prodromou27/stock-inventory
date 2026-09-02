@@ -60,7 +60,7 @@
 
     {% if template_obj %}
       <form method="post" action="{% url 'documents:template_reset' document_type %}"
-            onsubmit="return confirm('Reset to the packaged default? Your customizations will be lost.');">
+            data-confirm="Reset to the packaged default? Your customizations will be lost.">
         {% csrf_token %}
         <button type="submit" class="btn btn--danger btn--sm">Reset to packaged default</button>
       </form>

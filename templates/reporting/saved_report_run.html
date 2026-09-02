@@ -10,7 +10,7 @@
       <a class="btn" href="?format=csv">Export CSV</a>
       {% if can_delete %}
         <form method="post" action="{% url 'reporting:saved_report_delete' report.pk %}" class="inline-form"
-              onsubmit="return confirm('Delete this report?');">
+              data-confirm="Delete this report?">
           {% csrf_token %}
           <button type="submit" class="btn btn--danger">Delete</button>
         </form>
