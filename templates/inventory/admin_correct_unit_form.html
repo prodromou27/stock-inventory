@@ -3,14 +3,29 @@
 {% block title %}Correct Asset — Stock Inventory{% endblock %}
 
 {% block content %}
-  <h1>Administrator correction — {{ asset.product }} ({{ asset.vendor_serial|default:"no serial" }})</h1>
-  <p>Current status: {{ asset.get_status_display }}, location: {{ asset.current_location|default:"—" }}</p>
+  <p><a href="{{ asset.get_absolute_url }}">&larr; {{ asset.product }}</a></p>
+  <div class="page-header">
+    <div>
+      <h1>Administrator correction</h1>
+      <div class="page-header__subtitle">
+        {{ asset.product }} ({{ asset.vendor_serial|default:"no serial" }}) — current status:
+        {{ asset.get_status_display }}, location: {{ asset.current_location|default:"—" }}
+      </div>
+    </div>
+  </div>
+
   {% if form.non_field_errors %}
     <p class="messages__item messages__item--error">{{ form.non_field_errors|join:" " }}</p>
   {% endif %}
-  <form method="post">
+
+  <form method="post" class="card"
+        data-confirm="Apply this correction directly? Prefer the normal workflow screens whenever they cover the situation.">
     {% csrf_token %}
-    {{ form.as_p }}
-    <button type="submit">Apply correction</button>
+    {% for field in form %}
+      {% include "_form_field.html" with field=field %}
+    {% endfor %}
+    <div class="form-actions">
+      <button type="submit" class="btn btn--primary">Apply correction</button>
+    </div>
   </form>
 {% endblock %}

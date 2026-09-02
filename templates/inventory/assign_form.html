@@ -3,15 +3,25 @@
 {% block title %}Assign to Employee — Stock Inventory{% endblock %}
 
 {% block content %}
-  <h1>Assign to employee</h1>
+  <p><a href="{% url 'inventory:movements_hub' %}">&larr; Movements</a></p>
+  <div class="page-header">
+    <h1>Assign to employee</h1>
+  </div>
+
   {% if form.non_field_errors %}
     <p class="messages__item messages__item--error">{{ form.non_field_errors|join:" " }}</p>
   {% endif %}
 
   <form method="post">
     {% csrf_token %}
-    {{ form.as_p }}
+    <div class="card">
+      {% for field in form %}
+        {% include "_form_field.html" with field=field %}
+      {% endfor %}
+    </div>
     {% include "inventory/_asset_picker.html" %}
-    <button type="submit">Assign</button>
+    <div class="form-actions">
+      <button type="submit" class="btn btn--primary">Assign</button>
+    </div>
   </form>
 {% endblock %}

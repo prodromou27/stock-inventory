@@ -19,7 +19,9 @@
 
   <form method="post" class="card">
     {% csrf_token %}
-    {{ form.as_p }}
+    {% for field in form %}
+      {% include "_form_field.html" with field=field %}
+    {% endfor %}
     <div class="form-actions">
       <button type="submit" class="btn btn--primary">Receive all</button>
       <a class="btn" href="{% url 'inventory:receive_stock' %}">Switch to single-item form</a>

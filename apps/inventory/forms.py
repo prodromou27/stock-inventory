@@ -7,14 +7,75 @@ from apps.locations.scoping import accessible_locations
 from .models import Condition, UnitStatus
 
 
+def _scoped_location_queryset(user):
+    """Active locations `user` can access, ordered for a predictable
+    <select> — the queryset every movement form's location-shaped field
+    needs; was hand-copied in every form's __init__ before being factored
+    out here.
+    """
+    return accessible_locations(user).filter(is_active=True).order_by("level", "name")
+
+
+def _apply_scoped_location(field, user):
+    """Sets a location ModelChoiceField's queryset to what `user` can
+    access, and marks its widget filterable — static/js/movement_forms.js
+    adds a type-to-filter box above any <select data-filterable> with
+    enough options to be worth filtering. The <select> itself is
+    unchanged; this is additive markup only.
+    """
+    field.queryset = _scoped_location_queryset(user)
+    field.widget.attrs["data-filterable"] = "true"
+
+
+class TrackingMethodSelect(forms.Select):
+    """A plain <select> whose <option>s additionally carry
+    data-tracking-method="unit"/"quantity" — read by
+    static/js/movement_forms.js to show/hide fields that only apply to one
+    tracking method (e.g. ReceiveStockForm's vendor_serial vs quantity).
+    The <select>'s own submitted value is completely unaffected; this is
+    additive markup only, computed once per render (a single pk->tracking_
+    method dict from the field's own queryset), not a query per option.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._tracking_by_pk = None
+
+    def create_option(self, name, value, label, selected, index, subindex=None, attrs=None):
+        option = super().create_option(name, value, label, selected, index, subindex, attrs)
+        if value in (None, ""):
+            return option
+        if self._tracking_by_pk is None:
+            self._tracking_by_pk = dict(self.choices.queryset.values_list("pk", "tracking_method"))
+        pk = getattr(value, "value", value)
+        tracking_method = self._tracking_by_pk.get(pk)
+        if tracking_method:
+            option["attrs"]["data-tracking-method"] = tracking_method
+        return option
+
+
 class ReceiveStockForm(forms.Form):
     product = forms.ModelChoiceField(
-        queryset=Product.objects.filter(is_active=True).select_related("brand")
+        queryset=Product.objects.filter(is_active=True).select_related("brand"),
+        widget=TrackingMethodSelect(attrs={"data-filterable": "true"}),
     )
     location = forms.ModelChoiceField(queryset=Location.objects.none())
     occurred_at = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
-    vendor_serial = forms.CharField(max_length=120, required=False, label="Vendor serial")
-    quantity = forms.IntegerField(required=False, min_value=1)
+    # data-tracking-method: static/js/movement_forms.js shows/hides these two
+    # based on the selected product (unit-tracked needs a serial, quantity-
+    # tracked needs a quantity) — purely a UX layer; clean() below remains
+    # the actual, unchanged source of truth.
+    vendor_serial = forms.CharField(
+        max_length=120,
+        required=False,
+        label="Vendor serial",
+        widget=forms.TextInput(attrs={"data_tracking_method": "unit"}),
+    )
+    quantity = forms.IntegerField(
+        required=False,
+        min_value=1,
+        widget=forms.NumberInput(attrs={"data_tracking_method": "quantity"}),
+    )
     project_reference = forms.CharField(max_length=120, required=False, label="Project reference")
     final_customer = forms.CharField(max_length=120, required=False, label="Final customer")
     supplier = forms.CharField(max_length=120, required=False)
@@ -25,9 +86,7 @@ class ReceiveStockForm(forms.Form):
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["location"].queryset = (
-            accessible_locations(user).filter(is_active=True).order_by("level", "name")
-        )
+        _apply_scoped_location(self.fields["location"], user)
 
     def clean(self):
         cleaned = super().clean()
@@ -51,6 +110,7 @@ class QuickReceiveForm(forms.Form):
             is_active=True, tracking_method=TrackingMethod.UNIT
         ).select_related("brand"),
         label="Product",
+        widget=forms.Select(attrs={"data-filterable": "true"}),
     )
     location = forms.ModelChoiceField(queryset=Location.objects.none())
     occurred_at = forms.DateField(
@@ -77,9 +137,7 @@ class QuickReceiveForm(forms.Form):
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["location"].queryset = (
-            accessible_locations(user).filter(is_active=True).order_by("level", "name")
-        )
+        _apply_scoped_location(self.fields["location"], user)
 
     def clean_vendor_serials(self):
         lines = self.cleaned_data["vendor_serials"].splitlines()
@@ -94,6 +152,11 @@ class _BaseMovementForm(forms.Form):
     selection is handled outside this form (a checkbox list rendered from
     the view's eligible-assets queryset — see views.py), since it can't be
     expressed as a static form field.
+
+    Accepts (and, on its own, ignores) `user=` so that both direct
+    subclasses (which don't need it) and subclasses combined with
+    _QuantityLocationMixin (which does) can uniformly pass it through
+    super().__init__(..., user=user) without a TypeError either way.
     """
 
     occurred_at = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
@@ -101,14 +164,49 @@ class _BaseMovementForm(forms.Form):
         queryset=Product.objects.filter(is_active=True, tracking_method=TrackingMethod.QUANTITY),
         required=False,
         label="Quantity product (optional)",
+        widget=forms.Select(attrs={"data-filterable": "true"}),
     )
     quantity_amount = forms.IntegerField(required=False, min_value=1, label="Quantity")
     notes = forms.CharField(required=False, widget=forms.Textarea)
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
 
     def clean(self):
         cleaned = super().clean()
         if cleaned.get("quantity_product") and not cleaned.get("quantity_amount"):
             self.add_error("quantity_amount", "Enter a quantity for the selected product.")
+        return cleaned
+
+
+class _QuantityLocationMixin(forms.Form):
+    """Adds an optional `quantity_location` field — plus its scoped
+    queryset and its "quantity_product needs quantity_location" check — to
+    a _BaseMovementForm subclass. Reserve/Assign/Deliver/Disposition all
+    needed this identically; Transfer doesn't (it has its own, differently-
+    scoped quantity_source_location instead), so this isn't on the shared
+    base itself. Must come before _BaseMovementForm in the MRO (i.e.
+    `class X(_QuantityLocationMixin, _BaseMovementForm)`), so its
+    super().__init__()/clean() calls chain into the base correctly.
+
+    Subclasses forms.Form (not a plain mixin) because Django's form
+    metaclass only collects a class's declared fields into base_fields
+    when that class is itself part of the forms.Form metaclass chain — a
+    plain-object mixin's field attributes are silently never registered.
+    """
+
+    quantity_location = forms.ModelChoiceField(
+        queryset=Location.objects.none(), required=False, label="Quantity location"
+    )
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, user=user, **kwargs)
+        _apply_scoped_location(self.fields["quantity_location"], user)
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("quantity_product") and not cleaned.get("quantity_location"):
+            self.add_error("quantity_location", "Select a location for the quantity line.")
         return cleaned
 
 
@@ -119,10 +217,9 @@ class TransferForm(_BaseMovementForm):
     )
 
     def __init__(self, *args, user=None, **kwargs):
-        super().__init__(*args, **kwargs)
-        locs = accessible_locations(user).filter(is_active=True).order_by("level", "name")
-        self.fields["destination_location"].queryset = locs
-        self.fields["quantity_source_location"].queryset = locs
+        super().__init__(*args, user=user, **kwargs)
+        _apply_scoped_location(self.fields["destination_location"], user)
+        _apply_scoped_location(self.fields["quantity_source_location"], user)
 
     def clean(self):
         cleaned = super().clean()
@@ -133,27 +230,12 @@ class TransferForm(_BaseMovementForm):
         return cleaned
 
 
-class ReserveForm(_BaseMovementForm):
+class ReserveForm(_QuantityLocationMixin, _BaseMovementForm):
     project_reference = forms.CharField(max_length=120)
     final_customer = forms.CharField(max_length=120, required=False)
-    quantity_location = forms.ModelChoiceField(
-        queryset=Location.objects.none(), required=False, label="Quantity location"
-    )
-
-    def __init__(self, *args, user=None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields["quantity_location"].queryset = (
-            accessible_locations(user).filter(is_active=True).order_by("level", "name")
-        )
-
-    def clean(self):
-        cleaned = super().clean()
-        if cleaned.get("quantity_product") and not cleaned.get("quantity_location"):
-            self.add_error("quantity_location", "Select a location for the quantity line.")
-        return cleaned
 
 
-class AssignForm(_BaseMovementForm):
+class AssignForm(_QuantityLocationMixin, _BaseMovementForm):
     employee_name = forms.CharField(max_length=120, label="Employee name")
     project_reference = forms.CharField(max_length=120, required=False)
     is_temporary_assignment = forms.BooleanField(required=False, label="Temporary assignment")
@@ -162,43 +244,13 @@ class AssignForm(_BaseMovementForm):
     )
     condition = forms.ChoiceField(choices=Condition.choices, required=False, initial=Condition.GOOD)
     accessories = forms.CharField(required=False, widget=forms.Textarea)
-    quantity_location = forms.ModelChoiceField(
-        queryset=Location.objects.none(), required=False, label="Quantity location"
-    )
-
-    def __init__(self, *args, user=None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields["quantity_location"].queryset = (
-            accessible_locations(user).filter(is_active=True).order_by("level", "name")
-        )
-
-    def clean(self):
-        cleaned = super().clean()
-        if cleaned.get("quantity_product") and not cleaned.get("quantity_location"):
-            self.add_error("quantity_location", "Select a location for the quantity line.")
-        return cleaned
 
 
-class DeliverForm(_BaseMovementForm):
+class DeliverForm(_QuantityLocationMixin, _BaseMovementForm):
     final_customer = forms.CharField(max_length=120, label="Final customer")
     project_reference = forms.CharField(max_length=120, required=False)
     condition = forms.ChoiceField(choices=Condition.choices, required=False, initial=Condition.GOOD)
     accessories = forms.CharField(required=False, widget=forms.Textarea)
-    quantity_location = forms.ModelChoiceField(
-        queryset=Location.objects.none(), required=False, label="Quantity location"
-    )
-
-    def __init__(self, *args, user=None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields["quantity_location"].queryset = (
-            accessible_locations(user).filter(is_active=True).order_by("level", "name")
-        )
-
-    def clean(self):
-        cleaned = super().clean()
-        if cleaned.get("quantity_product") and not cleaned.get("quantity_location"):
-            self.add_error("quantity_location", "Select a location for the quantity line.")
-        return cleaned
 
 
 class ReturnForm(forms.Form):
@@ -209,16 +261,17 @@ class ReturnForm(forms.Form):
     )
     accessories = forms.CharField(required=False, widget=forms.Textarea)
     quantity_product = forms.ModelChoiceField(
-        queryset=Product.objects.none(), required=False, label="Quantity product being returned"
+        queryset=Product.objects.none(),
+        required=False,
+        label="Quantity product being returned",
+        widget=forms.Select(attrs={"data-filterable": "true"}),
     )
     quantity_amount = forms.IntegerField(required=False, min_value=1, label="Quantity returned")
     notes = forms.CharField(required=False, widget=forms.Textarea)
 
     def __init__(self, *args, user=None, quantity_product_choices=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["location"].queryset = (
-            accessible_locations(user).filter(is_active=True).order_by("level", "name")
-        )
+        _apply_scoped_location(self.fields["location"], user)
         self.fields["quantity_product"].queryset = (
             quantity_product_choices or Product.objects.none()
         )
@@ -244,28 +297,15 @@ class ReturnAssessmentForm(forms.Form):
     notes = forms.CharField(required=False, widget=forms.Textarea)
 
 
-class DispositionForm(_BaseMovementForm):
+class DispositionForm(_QuantityLocationMixin, _BaseMovementForm):
     """Shared shape for mark-damaged/mark-lost/dispose — notes doubles as the
     required reason (spec §9: "record the reason, notes, date...").
     """
 
-    quantity_location = forms.ModelChoiceField(
-        queryset=Location.objects.none(), required=False, label="Quantity location"
-    )
-
     def __init__(self, *args, user=None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields["quantity_location"].queryset = (
-            accessible_locations(user).filter(is_active=True).order_by("level", "name")
-        )
+        super().__init__(*args, user=user, **kwargs)
         self.fields["notes"].required = True
         self.fields["notes"].label = "Reason"
-
-    def clean(self):
-        cleaned = super().clean()
-        if cleaned.get("quantity_product") and not cleaned.get("quantity_location"):
-            self.add_error("quantity_location", "Select a location for the quantity line.")
-        return cleaned
 
 
 class RepairDamagedForm(forms.Form):
@@ -275,9 +315,7 @@ class RepairDamagedForm(forms.Form):
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["location"].queryset = (
-            accessible_locations(user).filter(is_active=True).order_by("level", "name")
-        )
+        _apply_scoped_location(self.fields["location"], user)
 
 
 class AdminCorrectUnitForm(forms.Form):

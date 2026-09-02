@@ -854,6 +854,14 @@
     color: var(--color-danger);
   }
 
+  /* static/js/movement_forms.js: a type-to-filter box injected right
+     before a long Product/Location <select> — the select itself is
+     unchanged (still submits a real value), this only hides its
+     non-matching <option>s as the box is typed into. */
+  .select-filter {
+    margin-bottom: 0.35rem;
+  }
+
   .errorlist {
     list-style: none;
     padding: 0;

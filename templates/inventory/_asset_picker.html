@@ -1,28 +1,34 @@
 {% load ui_extras %}
-<h2>Select assets</h2>
-{% if assets %}
-  <table>
-    <thead>
-      <tr>
-        <th></th>
-        <th>Product</th>
-        <th>Serial</th>
-        <th>Status</th>
-        <th>Location</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for asset in assets %}
-        <tr>
-          <td><input type="checkbox" name="unit_asset_ids" value="{{ asset.pk }}"></td>
-          <td>{{ asset.product }}</td>
-          <td>{{ asset.vendor_serial|default:"—" }}</td>
-          <td><span class="badge {{ asset.status|badge_class }}">{{ asset.get_status_display }}</span></td>
-          <td>{{ asset.current_location|default:"—" }}</td>
-        </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-{% else %}
-  <p class="empty-state">No eligible assets found in your authorized scope.</p>
-{% endif %}
+<div class="card">
+  <h2>Select assets</h2>
+  {% if assets %}
+    <input type="search" class="select-filter" data-table-filter-for="asset-picker-table"
+           placeholder="Filter by product, serial, location…" aria-label="Filter assets">
+    <div class="table-scroll">
+      <table id="asset-picker-table" class="dense-table">
+        <thead>
+          <tr>
+            <th></th>
+            <th>Product</th>
+            <th>Serial</th>
+            <th>Status</th>
+            <th>Location</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for asset in assets %}
+            <tr>
+              <td><input type="checkbox" name="unit_asset_ids" value="{{ asset.pk }}"></td>
+              <td>{{ asset.product }}</td>
+              <td>{{ asset.vendor_serial|default:"—" }}</td>
+              <td><span class="badge {{ asset.status|badge_class }}">{{ asset.get_status_display }}</span></td>
+              <td>{{ asset.current_location|default:"—" }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="empty-state">No eligible assets found in your authorized scope.</p>
+  {% endif %}
+</div>
