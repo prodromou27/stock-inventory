@@ -101,6 +101,15 @@ class ProductDetailView(LoginRequiredMixin, DetailView):
     def get_queryset(self):
         return Product.objects.select_related("brand", "product_type")
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["custom_field_rows"] = [
+            (definition, context["product"].custom_field_values[str(definition.pk)])
+            for definition in ProductCustomFieldDefinition.objects.filter(is_active=True)
+            if str(definition.pk) in context["product"].custom_field_values
+        ]
+        return context
+
 
 class ProductCreateView(LoginRequiredMixin, RoleRequiredMixin, View):
     allowed_roles = (ADMINISTRATOR, STOCK_MANAGER)

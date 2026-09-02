@@ -25,7 +25,7 @@
       <div class="stat-card__value">{{ stats.quantity_on_hand }}</div>
       <div class="stat-card__label">Quantity on hand</div>
     </a>
-    <a class="stat-card" href="{% url 'reporting:low_stock' %}">
+    <a class="stat-card{% if stats.low_stock_count %} stat-card--alert{% endif %}" href="{% url 'reporting:low_stock' %}">
       <div class="stat-card__value">{{ stats.low_stock_count }}</div>
       <div class="stat-card__label">Low stock alerts</div>
     </a>
@@ -33,11 +33,11 @@
       <div class="stat-card__value">{{ stats.active_reservations }}</div>
       <div class="stat-card__label">Active reservations</div>
     </a>
-    <a class="stat-card" href="{% url 'reporting:damaged_assets' %}">
+    <a class="stat-card{% if stats.damaged_count %} stat-card--alert{% endif %}" href="{% url 'reporting:damaged_assets' %}">
       <div class="stat-card__value">{{ stats.damaged_count }}</div>
       <div class="stat-card__label">Damaged</div>
     </a>
-    <a class="stat-card" href="{% url 'reporting:lost_assets' %}">
+    <a class="stat-card{% if stats.lost_count %} stat-card--alert{% endif %}" href="{% url 'reporting:lost_assets' %}">
       <div class="stat-card__value">{{ stats.lost_count }}</div>
       <div class="stat-card__label">Lost</div>
     </a>
@@ -47,45 +47,26 @@
     </a>
   </div>
 
-  <h2>Catalog &amp; inventory</h2>
-  <div class="card-grid">
-    <a class="action-card" href="{% url 'catalog:product_list' %}">
-      <span class="action-card__title">Products</span>
-      <span class="action-card__desc">Browse and manage the product catalog.</span>
-    </a>
-    <a class="action-card" href="{% url 'inventory:asset_list' %}">
-      <span class="action-card__title">Assets</span>
-      <span class="action-card__desc">Serialized units — status, location, history.</span>
-    </a>
-    <a class="action-card" href="{% url 'inventory:balance_list' %}">
-      <span class="action-card__title">Stock balances</span>
-      <span class="action-card__desc">Quantity-tracked stock on hand and available.</span>
-    </a>
-    <a class="action-card" href="{% url 'inventory:transaction_list' %}">
-      <span class="action-card__title">Transactions</span>
-      <span class="action-card__desc">The full inventory movement ledger.</span>
-    </a>
-  </div>
-
-  {% if user_is_administrator or "StockManager" in user_role_groups %}
-    <h2>Movements</h2>
-    <div class="card-grid">
-      <a class="action-card" href="{% url 'inventory:movements_hub' %}">
-        <span class="action-card__title">Movements hub</span>
-        <span class="action-card__desc">Receive, transfer, reserve, assign, deliver, dispose…</span>
-      </a>
+  <h2>Recent activity</h2>
+  {% if recent_activity %}
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>Number</th><th>Type</th><th>Date</th><th>Performed by</th></tr>
+        </thead>
+        <tbody>
+          {% for txn in recent_activity %}
+            <tr>
+              <td><a href="{{ txn.get_absolute_url }}">{{ txn.transaction_number }}</a></td>
+              <td>{{ txn.get_movement_type_display }}</td>
+              <td>{{ txn.occurred_at }}</td>
+              <td>{{ txn.performed_by.get_username }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
+  {% else %}
+    <p class="empty-state">No transactions in your authorized scope yet.</p>
   {% endif %}
-
-  <h2>Reports &amp; locations</h2>
-  <div class="card-grid">
-    <a class="action-card" href="{% url 'reporting:hub' %}">
-      <span class="action-card__title">Reports</span>
-      <span class="action-card__desc">Current stock, low stock, deliveries, and more.</span>
-    </a>
-    <a class="action-card" href="{% url 'locations:list' %}">
-      <span class="action-card__title">Locations</span>
-      <span class="action-card__desc">The site / floor / room / rack / shelf tree.</span>
-    </a>
-  </div>
 {% endblock %}

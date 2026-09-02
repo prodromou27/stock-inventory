@@ -101,6 +101,16 @@ def reserved_stock(user):
     return units, reservations
 
 
+def recent_transactions(user, limit=8):
+    """apps.core.views.HomeView's "Recent activity" list — the most recent
+    transactions the user can see, across every movement type, scoped the
+    same way the full Transactions list already is.
+    """
+    return scope_transaction_queryset(
+        user, InventoryTransaction.objects.select_related("performed_by")
+    ).order_by("-occurred_at", "-created_at")[:limit]
+
+
 def employee_assignments(user):
     return scope_transaction_queryset(
         user,

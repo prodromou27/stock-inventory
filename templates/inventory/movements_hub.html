@@ -7,6 +7,7 @@
     <h1>Movements</h1>
   </div>
 
+  <h2>Bringing stock in</h2>
   <div class="card-grid">
     <a class="action-card" href="{% url 'inventory:receive_stock' %}">
       <span class="action-card__title">Receive stock</span>
@@ -16,6 +17,10 @@
       <span class="action-card__title">Quick receive</span>
       <span class="action-card__desc">One product/location, many serials at once.</span>
     </a>
+  </div>
+
+  <h2>Moving &amp; holding</h2>
+  <div class="card-grid">
     <a class="action-card" href="{% url 'inventory:transfer' %}">
       <span class="action-card__title">Bulk location transfer</span>
       <span class="action-card__desc">Move stock between locations.</span>
@@ -28,6 +33,10 @@
       <span class="action-card__title">Reservations</span>
       <span class="action-card__desc">View and release active reservations.</span>
     </a>
+  </div>
+
+  <h2>Giving stock out</h2>
+  <div class="card-grid">
     <a class="action-card" href="{% url 'inventory:assign' %}">
       <span class="action-card__title">Assign to employee</span>
       <span class="action-card__desc">Hand out stock to a named employee.</span>
@@ -36,6 +45,10 @@
       <span class="action-card__title">Deliver to customer</span>
       <span class="action-card__desc">Remove stock for an external delivery.</span>
     </a>
+  </div>
+
+  <h2>Returns &amp; problems</h2>
+  <div class="card-grid">
     <a class="action-card" href="{% url 'inventory:assess_return' %}">
       <span class="action-card__title">Assess returned assets</span>
       <span class="action-card__desc">Triage assets that have come back.</span>

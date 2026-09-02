@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load inventory_extras %}
 
 {% block title %}{{ product }} — Stock Inventory{% endblock %}
 
@@ -15,6 +16,8 @@
 
   <div class="card">
     <dl class="definition-list">
+      <dt>Brand</dt><dd>{{ product.brand.name }}</dd>
+      <dt>SKU</dt><dd>{{ product.sku|default:"—" }}</dd>
       <dt>Type</dt><dd>{{ product.product_type.name }}</dd>
       <dt>Tracking method</dt><dd>{{ product.get_tracking_method_display }}</dd>
       {% if product.description %}<dt>Description</dt><dd>{{ product.description }}</dd>{% endif %}
@@ -28,12 +31,17 @@
           <span class="badge badge--neutral">Inactive</span>
         {% endif %}
       </dd>
+      {% for definition, value in custom_field_rows %}
+        <dt>{{ definition.name }}</dt><dd>{{ value }}</dd>
+      {% endfor %}
     </dl>
   </div>
 
+  {% product_inventory_summary product %}
+
   {% if product.tracking_method == "unit" %}
-    <p><a href="{% url 'inventory:asset_list' %}?product={{ product.pk }}">View units of this product &rarr;</a></p>
+    <p><a href="{% url 'inventory:asset_list' %}?product={{ product.pk }}">View all units of this product &rarr;</a></p>
   {% else %}
-    <p><a href="{% url 'inventory:balance_list' %}?product={{ product.pk }}">View stock balances of this product &rarr;</a></p>
+    <p><a href="{% url 'inventory:balance_list' %}?product={{ product.pk }}">View all stock balances of this product &rarr;</a></p>
   {% endif %}
 {% endblock %}

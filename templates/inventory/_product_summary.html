@@ -1,0 +1,61 @@
+<div class="card">
+  <h2>Stock by location</h2>
+  {% if stock_by_location %}
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Location</th>
+            {% if is_unit_tracked %}
+              <th>Units in stock</th>
+            {% else %}
+              <th>On hand</th>
+              <th>Reserved</th>
+            {% endif %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in stock_by_location %}
+            <tr>
+              {% if is_unit_tracked %}
+                <td>{{ row.current_location__name|default:"—" }}</td>
+                <td>{{ row.count }}</td>
+              {% else %}
+                <td><a href="{{ row.get_absolute_url }}">{{ row.location.name }}</a></td>
+                <td>{{ row.on_hand_quantity }}</td>
+                <td>{{ row.reserved_quantity }}</td>
+              {% endif %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="empty-state">No stock on hand anywhere in your authorized scope.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Recent activity</h2>
+  {% if recent_activity %}
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>Date</th><th>Transaction</th><th>Type</th><th>Serial / Qty</th></tr>
+        </thead>
+        <tbody>
+          {% for line in recent_activity %}
+            <tr>
+              <td>{{ line.transaction.occurred_at }}</td>
+              <td><a href="{{ line.transaction.get_absolute_url }}">{{ line.transaction.transaction_number }}</a></td>
+              <td>{{ line.transaction.get_movement_type_display }}</td>
+              <td>{% if line.unit_asset_id %}{{ line.serial_snapshot|default:"—" }}{% else %}{{ line.quantity_delta }}{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="empty-state">No recorded movements yet.</p>
+  {% endif %}
+</div>

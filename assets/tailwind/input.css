@@ -1139,6 +1139,18 @@
     margin-top: 0.2rem;
   }
 
+  /* A stat card whose count is a problem worth noticing (low stock,
+     damaged, lost) rather than routine — only applied when the count is
+     nonzero (templates/core/home.html), so a healthy dashboard stays
+     visually calm. */
+  .stat-card--alert {
+    border-color: var(--color-danger);
+  }
+
+  .stat-card--alert .stat-card__value {
+    color: var(--color-danger);
+  }
+
   /* ---------- misc ---------- */
 
   .breadcrumbs {
@@ -1281,8 +1293,22 @@
 
   .dense-table input,
   .dense-table select {
-    min-width: 8rem;
+    min-width: 10rem;
+    width: 100%;
     margin: 0;
+  }
+
+  /* Brand/model/type names and the tracking-method choices ("Unit
+     (serialized)") run noticeably longer than a generic 10rem field —
+     screenshotted as visibly clipped/overlapping text on the product grid
+     (templates/catalog/product_grid.html). */
+  .dense-table td:nth-child(1) input,
+  .dense-table td:nth-child(2) input {
+    min-width: 12rem;
+  }
+
+  .dense-table td:has(select[name$="tracking_method"]) select {
+    min-width: 13rem;
   }
 
   /* ---------- document template editor ---------- */
