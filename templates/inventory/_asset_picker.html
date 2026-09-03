@@ -1,33 +1,107 @@
-{% load ui_extras %}
+{% load static ui_extras %}
 <div class="card">
   <h2>Select assets</h2>
   {% if assets %}
-    <input type="search" class="select-filter" data-table-filter-for="asset-picker-table"
-           placeholder="Filter by product, serial, location…" aria-label="Filter assets">
-    <div class="table-scroll">
-      <table id="asset-picker-table" class="dense-table">
-        <thead>
-          <tr>
-            <th></th>
-            <th>Product</th>
-            <th>Serial</th>
-            <th>Status</th>
-            <th>Location</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for asset in assets %}
-            <tr>
-              <td><input type="checkbox" name="unit_asset_ids" value="{{ asset.pk }}" {% if asset.pk|stringformat:"s" in preselected_ids %}checked{% endif %}></td>
-              <td>{{ asset.product }}</td>
-              <td>{{ asset.vendor_serial|default:"—" }}</td>
-              <td><span class="badge {{ asset.status|badge_class }}">{{ asset.get_status_display }}</span></td>
-              <td>{{ asset.current_location|default:"—" }}</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+    <div class="inventory-grid is-hidden">
+      <div class="grid-toolbar">
+        <input type="search" class="grid-toolbar__search" id="asset-picker-search" placeholder="Search product, serial, location…" aria-label="Search assets">
+        <span id="asset-picker-selection-count" class="grid-selection-count" hidden></span>
+      </div>
+      <div id="asset-picker-grid" aria-label="Select assets"></div>
+      <div id="asset-picker-hidden-inputs"></div>
     </div>
+
+    <div id="asset-picker-fallback">
+      <input type="search" class="select-filter" data-table-filter-for="asset-picker-table"
+             placeholder="Filter by product, serial, location…" aria-label="Filter assets">
+      <div class="table-scroll">
+        <table id="asset-picker-table" class="dense-table">
+          <thead>
+            <tr>
+              <th></th>
+              <th>Product</th>
+              <th>Serial</th>
+              <th>Status</th>
+              <th>Location</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for asset in assets %}
+              <tr>
+                <td><input type="checkbox" name="unit_asset_ids" value="{{ asset.pk }}" {% if asset.pk|stringformat:"s" in preselected_ids %}checked{% endif %}></td>
+                <td>{{ asset.product }}</td>
+                <td>{{ asset.vendor_serial|default:"—" }}</td>
+                <td><span class="badge {{ asset.status|badge_class }}">{{ asset.get_status_display }}</span></td>
+                <td>{{ asset.current_location|default:"—" }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <script src="{% static 'js/inventory_grid.js' %}" defer></script>
+    <script defer>
+      document.addEventListener("DOMContentLoaded", () => {
+        if (!window.InventoryGrid) return;
+        const G = window.InventoryGrid;
+        const hiddenInputs = document.getElementById("asset-picker-hidden-inputs");
+        const selectionCount = document.getElementById("asset-picker-selection-count");
+
+        const table = G.init({
+          containerSelector: "#asset-picker-grid",
+          fallbackSelector: "#asset-picker-fallback",
+          dataUrl: "{% url 'inventory:asset_picker_data' %}",
+          searchInputSelector: "#asset-picker-search",
+          storageKey: "asset-picker",
+          pageSize: 100,
+          rowSelectable: true,
+          extraFilters: () => ({
+            statuses: "{{ eligible_statuses }}",
+            product: new URLSearchParams(window.location.search).get("product") || "",
+            preselected: new URLSearchParams(window.location.search).getAll("unit_asset_ids").join(","),
+          }),
+          columns: [
+            { formatter: "rowSelection", titleFormatter: "rowSelection", hozAlign: "center", headerSort: false, width: 40, frozen: true },
+            { title: "Product", field: "product", headerFilter: "input", minWidth: 200 },
+            { title: "Serial", field: "serial", headerFilter: "input", width: 150 },
+            { title: "Status", field: "status", width: 120, displayField: "status_display", formatter: G.badgeFormatter },
+            { title: "Location", field: "location", headerFilter: "input", width: 170 },
+          ],
+          onSelectionChange: (rows) => {
+            hiddenInputs.innerHTML = "";
+            rows.forEach((row) => {
+              const input = document.createElement("input");
+              input.type = "hidden";
+              input.name = "unit_asset_ids";
+              input.value = row.id;
+              hiddenInputs.appendChild(input);
+            });
+            selectionCount.hidden = rows.length === 0;
+            selectionCount.textContent = rows.length === 1 ? "1 selected" : `${rows.length} selected`;
+          },
+        });
+
+        if (!table) return;
+
+        // Auto-select any row carried over from a bulk action / quick action
+        // (?unit_asset_ids= on this page's own URL — see
+        // apps.inventory.views._preselected_ids()) once it's loaded. The
+        // server already sorts preselected rows first (AssetPickerDataView)
+        // so they land on page 1 without the operator needing to search.
+        // The 0ms setTimeout is deliberate, not a hack for hacking's sake:
+        // Tabulator fires "dataLoaded" *before* it hands the new rows to its
+        // internal row manager (confirmed by reading tabulator.js — the
+        // event dispatch happens the line before rowManager.setData()), so
+        // calling selectRow() synchronously in this handler silently
+        // no-ops on rows that don't exist yet. Deferring one tick runs
+        // after that synchronous setData() call completes.
+        table.on("dataLoaded", (data) => {
+          const preselectedIds = data.filter((row) => row.preselected).map((row) => row.id);
+          if (preselectedIds.length) window.setTimeout(() => table.selectRow(preselectedIds), 0);
+        });
+      });
+    </script>
   {% else %}
     <p class="empty-state">No eligible assets found in your authorized scope.</p>
   {% endif %}

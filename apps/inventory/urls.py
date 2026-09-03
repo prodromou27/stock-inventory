@@ -17,6 +17,7 @@ urlpatterns = [
     ),
     path("assets/<uuid:pk>/", views.UnitAssetDetailView.as_view(), name="asset_detail"),
     path("assets/<uuid:pk>/correct/", views.AdminCorrectUnitView.as_view(), name="asset_correct"),
+    path("assets/picker-data/", views.AssetPickerDataView.as_view(), name="asset_picker_data"),
     path(
         "grid-views/<str:grid_key>/",
         views.SavedGridViewListCreateView.as_view(),

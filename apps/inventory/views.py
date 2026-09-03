@@ -4,7 +4,7 @@ from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
-from django.db.models import F, Max, Q
+from django.db.models import Case, F, IntegerField, Max, Q, When
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -880,6 +880,118 @@ def _eligible_assets(request, statuses):
     return queryset.order_by("product__brand__name", "product__model")
 
 
+def _status_param(statuses):
+    """Renders an eligible_statuses list as the comma-separated string
+    templates/inventory/_asset_picker.html's grid passes straight through to
+    AssetPickerDataView's `statuses` param — one place that knows how to
+    serialize a UnitStatus list, used by every movement view that renders
+    the picker so the grid always requests exactly the same eligibility
+    _eligible_assets() already computed for that view's classic fallback.
+    """
+    return ",".join(str(status) for status in statuses)
+
+
+# Explicit allow-list for the asset picker's grid sort (apps.core.sorting.
+# apply_multi_sort) — deliberately small: this is a "find and select" tool
+# embedded in a movement form, not a full browsing grid.
+ASSET_PICKER_SORT_FIELDS = {
+    "brand": "product__brand__name",
+    "model": "product__model",
+    "serial": "vendor_serial",
+    "status": "status",
+    "location": "current_location__name",
+}
+
+
+class AssetPickerDataView(LoginRequiredMixin, View):
+    """JSON data source for the mass-selectable grid embedded in every
+    movement-workflow form via templates/inventory/_asset_picker.html
+    (Transfer/Reserve/Assign/Deliver/AssessReturn/MarkDamaged/MarkLost/
+    Dispose/RepairDamaged). Reuses the exact scoping _eligible_assets()
+    already applies (scope_queryset() + a status filter) plus
+    filter_unit_assets() for search — this view has no authorization logic
+    of its own, only search/sort/pagination on top so "select many" stays
+    usable when the eligible set is large (an operator delivering a batch
+    of 50+ units to a customer, say).
+
+    `statuses` (required, comma-separated UnitStatus values) always comes
+    from the same _status_param() call the rendering view already used for
+    its own eligible_statuses — an unrecognized/missing value just yields
+    an empty result (scope_queryset() is still applied to everything else),
+    never a wider one.
+    """
+
+    MAX_PAGE_SIZE = 200
+
+    def get(self, request, *args, **kwargs):
+        statuses = [s for s in request.GET.get("statuses", "").split(",") if s in UnitStatus.values]
+        queryset = scope_queryset(
+            request.user,
+            UnitAsset.objects.select_related(
+                "product", "product__brand", "product__product_type", "current_location"
+            ),
+            location_field="current_location",
+        )
+        queryset = queryset.filter(status__in=statuses) if statuses else queryset.none()
+        product_id = request.GET.get("product")
+        if product_id:
+            queryset = queryset.filter(product_id=product_id)
+        queryset = filter_unit_assets(queryset, request.GET)
+
+        # Preselected assets (a bulk action carried over from the Assets
+        # grid, or a per-row quick action — see _preselected_ids()) sort
+        # first, so they land on page 1 and the picker's JS can select them
+        # on load without needing every preselected id to already be
+        # visible — a pure UX nicety, unrelated to eligibility itself.
+        # Comma-joined under its own `preselected` param (not repeated
+        # unit_asset_ids= like the page's own querystring uses) because the
+        # picker's JS resends it on every ajax request via a plain object of
+        # extraFilters, not a URLSearchParams multi-value append.
+        preselected = {v for v in request.GET.get("preselected", "").split(",") if v}
+        default_ordering = ("product__brand__name", "product__model")
+        if preselected:
+            queryset = queryset.annotate(
+                _preselected_rank=Case(
+                    When(pk__in=preselected, then=0), default=1, output_field=IntegerField()
+                )
+            )
+            default_ordering = ("_preselected_rank", *default_ordering)
+        queryset = apply_multi_sort(
+            queryset,
+            ASSET_PICKER_SORT_FIELDS,
+            parse_multi_sort(request.GET),
+            default_ordering=default_ordering,
+        )
+
+        page_number = _positive_int(request.GET.get("page"), default=1)
+        page_size = min(_positive_int(request.GET.get("size"), default=100), self.MAX_PAGE_SIZE)
+        paginator = Paginator(queryset, page_size)
+        page = paginator.get_page(page_number)
+
+        breadcrumbs = location_breadcrumb_map()
+        rows = [self._serialize(asset, breadcrumbs, preselected) for asset in page.object_list]
+        return JsonResponse(
+            {"data": rows, "last_page": paginator.num_pages, "total_count": paginator.count}
+        )
+
+    @staticmethod
+    def _serialize(asset, breadcrumbs, preselected):
+        breadcrumb = breadcrumbs.get(asset.current_location_id, {})
+        return {
+            "id": str(asset.pk),
+            "brand": asset.product.brand.name,
+            "model": asset.product.model,
+            "product": str(asset.product),
+            "serial": asset.vendor_serial,
+            "status": asset.status,
+            "status_display": asset.get_status_display(),
+            "location": str(asset.current_location) if asset.current_location else "",
+            "country": breadcrumb.get("country", ""),
+            "storage_room": breadcrumb.get("storage_room", ""),
+            "preselected": str(asset.pk) in preselected,
+        }
+
+
 def _quantity_lines_from_form(data, *, location_field="quantity_location"):
     if not data.get("quantity_product"):
         return []
@@ -898,11 +1010,17 @@ class TransferView(LoginRequiredMixin, RoleRequiredMixin, View):
 
     def get(self, request):
         form = TransferForm(user=request.user)
-        assets = _eligible_assets(request, [UnitStatus.IN_STOCK, UnitStatus.RESERVED])
+        eligible_statuses = [UnitStatus.IN_STOCK, UnitStatus.RESERVED]
+        assets = _eligible_assets(request, eligible_statuses)
         return render(
             request,
             self.template_name,
-            {"form": form, "assets": assets, "preselected_ids": _preselected_ids(request)},
+            {
+                "form": form,
+                "assets": assets,
+                "preselected_ids": _preselected_ids(request),
+                "eligible_statuses": _status_param(eligible_statuses),
+            },
         )
 
     def post(self, request):
@@ -946,11 +1064,17 @@ class ReserveView(LoginRequiredMixin, RoleRequiredMixin, View):
 
     def get(self, request):
         form = ReserveForm(user=request.user)
-        assets = _eligible_assets(request, [UnitStatus.IN_STOCK])
+        eligible_statuses = [UnitStatus.IN_STOCK]
+        assets = _eligible_assets(request, eligible_statuses)
         return render(
             request,
             self.template_name,
-            {"form": form, "assets": assets, "preselected_ids": _preselected_ids(request)},
+            {
+                "form": form,
+                "assets": assets,
+                "preselected_ids": _preselected_ids(request),
+                "eligible_statuses": _status_param(eligible_statuses),
+            },
         )
 
     def post(self, request):
@@ -1034,11 +1158,17 @@ class AssignView(LoginRequiredMixin, RoleRequiredMixin, View):
 
     def get(self, request):
         form = AssignForm(user=request.user)
-        assets = _eligible_assets(request, [UnitStatus.IN_STOCK, UnitStatus.RESERVED])
+        eligible_statuses = [UnitStatus.IN_STOCK, UnitStatus.RESERVED]
+        assets = _eligible_assets(request, eligible_statuses)
         return render(
             request,
             self.template_name,
-            {"form": form, "assets": assets, "preselected_ids": _preselected_ids(request)},
+            {
+                "form": form,
+                "assets": assets,
+                "preselected_ids": _preselected_ids(request),
+                "eligible_statuses": _status_param(eligible_statuses),
+            },
         )
 
     def post(self, request):
@@ -1077,11 +1207,17 @@ class DeliverView(LoginRequiredMixin, RoleRequiredMixin, View):
 
     def get(self, request):
         form = DeliverForm(user=request.user)
-        assets = _eligible_assets(request, [UnitStatus.IN_STOCK, UnitStatus.RESERVED])
+        eligible_statuses = [UnitStatus.IN_STOCK, UnitStatus.RESERVED]
+        assets = _eligible_assets(request, eligible_statuses)
         return render(
             request,
             self.template_name,
-            {"form": form, "assets": assets, "preselected_ids": _preselected_ids(request)},
+            {
+                "form": form,
+                "assets": assets,
+                "preselected_ids": _preselected_ids(request),
+                "eligible_statuses": _status_param(eligible_statuses),
+            },
         )
 
     def post(self, request):
@@ -1219,8 +1355,18 @@ class AssessReturnView(LoginRequiredMixin, RoleRequiredMixin, View):
 
     def get(self, request):
         form = ReturnAssessmentForm()
-        assets = _eligible_assets(request, [UnitStatus.RETURNED])
-        return render(request, self.template_name, {"form": form, "assets": assets})
+        eligible_statuses = [UnitStatus.RETURNED]
+        assets = _eligible_assets(request, eligible_statuses)
+        return render(
+            request,
+            self.template_name,
+            {
+                "form": form,
+                "assets": assets,
+                "preselected_ids": _preselected_ids(request),
+                "eligible_statuses": _status_param(eligible_statuses),
+            },
+        )
 
     def post(self, request):
         form = ReturnAssessmentForm(request.POST)
@@ -1272,6 +1418,7 @@ class _DispositionView(LoginRequiredMixin, RoleRequiredMixin, View):
                 "assets": assets,
                 "page_title": self.page_title,
                 "preselected_ids": _preselected_ids(request),
+                "eligible_statuses": _status_param(self.eligible_statuses),
             },
         )
 
@@ -1346,6 +1493,7 @@ class RepairDamagedView(LoginRequiredMixin, RoleRequiredMixin, View):
                 "assets": _eligible_assets(request, [UnitStatus.DAMAGED]),
                 "page_title": "Return repaired assets to stock",
                 "preselected_ids": _preselected_ids(request),
+                "eligible_statuses": _status_param([UnitStatus.DAMAGED]),
             },
         )
 

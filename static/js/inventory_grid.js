@@ -167,6 +167,16 @@
       const fallback = document.querySelector(options.fallbackSelector);
       if (fallback) fallback.hidden = true;
       container.closest(".inventory-grid")?.classList.remove("is-hidden");
+      // Tabulator's virtual-DOM row renderer sizes itself against the
+      // container as of *this* moment, synchronously, during tableBuilt —
+      // but the container was still display:none (via .is-hidden) a line
+      // above, and un-hiding it doesn't retroactively trigger a resize. Left
+      // alone, the table reports the correct row *data* (getData() is
+      // right) while rendering zero row elements, permanently, until
+      // something else forces a redraw. One explicit redraw(true) right
+      // after un-hiding fixes it — confirmed via getData().length being
+      // correct but .tabulator-row count being 0 until this call.
+      table.redraw(true);
       makeSortableHeadersKeyboardOperable(container);
 
       // Column show/hide (the "Columns" panel) re-renders the header row —

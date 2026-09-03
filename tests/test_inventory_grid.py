@@ -469,3 +469,121 @@ class TestStockBalanceGridDataView:
         available_values = [row["available"] for row in response.json()["data"]]
         assert available_values == sorted(available_values, reverse=True)
         assert available_values[0] == 30
+
+
+@pytest.mark.django_db
+class TestAssetPickerDataView:
+    """apps.inventory.views.AssetPickerDataView — the mass-select grid
+    embedded in templates/inventory/_asset_picker.html, used by Transfer/
+    Reserve/Assign/Deliver/AssessReturn/MarkDamaged/MarkLost/Dispose/
+    RepairDamaged."""
+
+    def test_requires_login(self, client):
+        response = client.get(reverse("inventory:asset_picker_data"))
+        assert response.status_code == 302
+
+    def test_missing_statuses_returns_no_rows(self, client, administrator):
+        client.force_login(administrator)
+        response = client.get(reverse("inventory:asset_picker_data"))
+        assert response.status_code == 200
+        assert response.json()["data"] == []
+
+    def test_filters_by_requested_statuses(
+        self, client, administrator, unit_product, location_tree
+    ):
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-PICKER-INSTOCK",
+        )
+        client.force_login(administrator)
+        response = client.get(reverse("inventory:asset_picker_data"), {"statuses": "damaged"})
+        serials = [row["serial"] for row in response.json()["data"]]
+        assert "SN-PICKER-INSTOCK" not in serials
+
+        response = client.get(
+            reverse("inventory:asset_picker_data"), {"statuses": "in_stock,reserved"}
+        )
+        serials = [row["serial"] for row in response.json()["data"]]
+        assert "SN-PICKER-INSTOCK" in serials
+
+    def test_scoped_to_accessible_locations(
+        self,
+        client,
+        administrator,
+        stock_manager_with_room_access,
+        unit_product,
+        other_location_tree,
+    ):
+        from apps.locations.models import Location
+        from apps.locations.services import create_location
+
+        other_floor = create_location(
+            level=Location.Level.FLOOR,
+            name="Picker Floor",
+            parent=other_location_tree["site"],
+            user=administrator,
+        )
+        other_room = create_location(
+            level=Location.Level.STORAGE_ROOM,
+            name="Picker Room",
+            parent=other_floor,
+            user=administrator,
+        )
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=other_room,
+            occurred_at=date.today(),
+            vendor_serial="SN-PICKER-OUT-OF-SCOPE",
+        )
+        client.force_login(stock_manager_with_room_access)
+        response = client.get(reverse("inventory:asset_picker_data"), {"statuses": "in_stock"})
+        serials = [row["serial"] for row in response.json()["data"]]
+        assert "SN-PICKER-OUT-OF-SCOPE" not in serials
+
+    def test_search_narrows_results(self, client, administrator, unit_product, location_tree):
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-PICKER-SEARCH-1",
+        )
+        client.force_login(administrator)
+        response = client.get(
+            reverse("inventory:asset_picker_data"),
+            {"statuses": "in_stock", "serial": "SN-PICKER-SEARCH-1"},
+        )
+        serials = [row["serial"] for row in response.json()["data"]]
+        assert serials == ["SN-PICKER-SEARCH-1"]
+
+    def test_preselected_rows_sort_first_and_are_flagged(
+        self, client, administrator, unit_product, location_tree
+    ):
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-PICKER-PRESELECT-A",
+        )
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-PICKER-PRESELECT-B",
+        )
+        target = UnitAsset.objects.get(vendor_serial="SN-PICKER-PRESELECT-B")
+        client.force_login(administrator)
+        response = client.get(
+            reverse("inventory:asset_picker_data"),
+            {"statuses": "in_stock", "preselected": str(target.pk)},
+        )
+        data = response.json()["data"]
+        assert data[0]["id"] == str(target.pk)
+        assert data[0]["preselected"] is True
+        assert all(row["preselected"] is False for row in data[1:])
