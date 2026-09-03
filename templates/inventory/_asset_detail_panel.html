@@ -1,0 +1,20 @@
+{% load ui_extras %}
+<div class="grid-panel__header">
+  <div>
+    <h2>{{ asset.product }}</h2>
+    <span class="badge {{ asset.status|badge_class }}">{{ asset.get_status_display }}</span>
+  </div>
+  <button type="button" class="btn btn--ghost" data-panel-close aria-label="Close details">Close</button>
+</div>
+
+{% if quick_actions %}
+  <div class="grid-panel__actions">
+    {% for action in quick_actions %}
+      <a class="btn btn--sm" href="{{ action.url }}">{{ action.label }}</a>
+    {% endfor %}
+  </div>
+{% endif %}
+
+<a class="grid-panel__full-link" href="{{ asset.get_absolute_url }}">Open full page →</a>
+
+{% include "inventory/_asset_detail_content.html" %}

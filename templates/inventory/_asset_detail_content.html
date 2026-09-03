@@ -1,0 +1,57 @@
+{% load ui_extras %}
+<div class="card">
+  <dl class="definition-list">
+    <dt>Serial</dt><dd>{{ asset.vendor_serial|default:"—" }}</dd>
+    <dt>Status</dt><dd><span class="badge {{ asset.status|badge_class }}">{{ asset.get_status_display }}</span></dd>
+    <dt>Location</dt><dd>{{ asset.current_location|default:"—" }}</dd>
+    <dt>Condition</dt><dd><span class="badge {{ asset.condition|badge_class }}">{{ asset.get_condition_display }}</span></dd>
+    {% if asset.accessories %}<dt>Accessories</dt><dd>{{ asset.accessories }}</dd>{% endif %}
+    {% if asset.project_reference %}<dt>Project reference</dt><dd>{{ asset.project_reference }}</dd>{% endif %}
+    {% if asset.final_customer %}<dt>Final customer</dt><dd>{{ asset.final_customer }}</dd>{% endif %}
+    {% if asset.supplier %}<dt>Supplier</dt><dd>{{ asset.supplier }}</dd>{% endif %}
+    {% if asset.invoice_number %}<dt>Invoice number</dt><dd>{{ asset.invoice_number }}</dd>{% endif %}
+    <dt>Arrival date</dt><dd>{{ asset.arrival_date }}</dd>
+    {% if asset.last_removal_date %}<dt>Last removal date</dt><dd>{{ asset.last_removal_date }}</dd>{% endif %}
+    {% if asset.notes %}<dt>Notes</dt><dd>{{ asset.notes }}</dd>{% endif %}
+  </dl>
+</div>
+
+<h2>History</h2>
+{% if history %}
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>Transaction</th>
+          <th>From status</th>
+          <th>To status</th>
+          <th>From location</th>
+          <th>To location</th>
+          <th>By</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for event in history %}
+          <tr>
+            <td>{{ event.occurred_at }}</td>
+            <td><a href="{{ event.transaction.get_absolute_url }}">{{ event.transaction.transaction_number }}</a></td>
+            <td>
+              {% if event.from_status %}
+                <span class="badge {{ event.from_status|badge_class }}">{{ event.get_from_status_display }}</span>
+              {% else %}
+                —
+              {% endif %}
+            </td>
+            <td><span class="badge {{ event.to_status|badge_class }}">{{ event.get_to_status_display }}</span></td>
+            <td>{{ event.from_location|default:"—" }}</td>
+            <td>{{ event.to_location|default:"—" }}</td>
+            <td>{{ event.recorded_by }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <p class="empty-state">No history.</p>
+{% endif %}

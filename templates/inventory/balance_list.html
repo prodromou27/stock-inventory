@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load ui_extras %}
+{% load static ui_extras %}
 
 {% block title %}Stock Balances — Stock Inventory{% endblock %}
 
@@ -11,61 +11,181 @@
     </div>
   </div>
 
-  <form method="get" class="toolbar">
-    <label>Search<input type="text" name="q" value="{{ filters.q }}" placeholder="Brand, model, SKU, type"></label>
-    <label>Location
-      <select name="location">
-        <option value="">All locations</option>
-        {% for location in locations %}
-          <option value="{{ location.pk }}" {% if filters.location == location.pk|stringformat:"s" %}selected{% endif %}>
-            {{ location.name }} ({{ location.get_level_display }})
-          </option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>Brand<input type="text" name="brand" value="{{ filters.brand }}"></label>
-    <label>Model<input type="text" name="model" value="{{ filters.model }}"></label>
-    <label>SKU<input type="text" name="sku" value="{{ filters.sku }}"></label>
-    <label>Type<input type="text" name="type" value="{{ filters.type }}"></label>
-    <button type="submit" class="btn btn--primary">Filter</button>
-  </form>
+  <div class="inventory-grid is-hidden">
+    <div class="grid-toolbar">
+      <input type="search" class="grid-toolbar__search" id="balance-grid-search" placeholder="Search brand, model, SKU, type…" aria-label="Search stock balances">
+      <div class="grid-density-toggle" id="balance-grid-density" role="group" aria-label="Row density">
+        <button type="button" data-density="comfortable" class="is-active">Comfortable</button>
+        <button type="button" data-density="compact">Compact</button>
+      </div>
+      <div style="position: relative;">
+        <button type="button" class="btn" id="balance-grid-columns-toggle" aria-expanded="false">Columns</button>
+        <div class="grid-columns-panel" id="balance-grid-columns-panel" hidden></div>
+      </div>
+      <a class="btn" id="balance-grid-export-filtered" href="?format=csv">Export filtered CSV</a>
+      <span class="grid-views">
+        <label class="sr-only" for="balance-grid-saved-views">Saved views</label>
+        <select id="balance-grid-saved-views"><option value="">— Saved views —</option></select>
+        <button type="button" class="btn" id="balance-grid-save-view">Save view</button>
+        <button type="button" class="btn btn--ghost" id="balance-grid-delete-view" hidden aria-label="Delete selected saved view">Delete</button>
+      </span>
+    </div>
 
-  {% if balances %}
-    <table>
-      <thead>
-        <tr>
-          {% sort_th "product" "Product" %}
-          {% sort_th "location" "Location" %}
-          {% sort_th "on_hand" "On hand" %}
-          {% sort_th "reserved" "Reserved" %}
-          <th>Available</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for balance in balances %}
+    <div id="balance-grid-table" aria-label="Stock balance results"></div>
+  </div>
+
+  <div id="balance-grid-fallback">
+    <form method="get" class="toolbar">
+      <label>Search<input type="text" name="q" value="{{ filters.q }}" placeholder="Brand, model, SKU, type"></label>
+      <label>Location
+        <select name="location">
+          <option value="">All locations</option>
+          {% for location in locations %}
+            <option value="{{ location.pk }}" {% if filters.location == location.pk|stringformat:"s" %}selected{% endif %}>
+              {{ location.name }} ({{ location.get_level_display }})
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Brand<input type="text" name="brand" value="{{ filters.brand }}"></label>
+      <label>Model<input type="text" name="model" value="{{ filters.model }}"></label>
+      <label>SKU<input type="text" name="sku" value="{{ filters.sku }}"></label>
+      <label>Type<input type="text" name="type" value="{{ filters.type }}"></label>
+      <button type="submit" class="btn btn--primary">Filter</button>
+    </form>
+
+    {% if balances %}
+      <table>
+        <thead>
           <tr>
-            <td><a href="{{ balance.get_absolute_url }}">{{ balance.product }}</a></td>
-            <td>{{ balance.location }}</td>
-            <td>{{ balance.on_hand_quantity }}</td>
-            <td>{{ balance.reserved_quantity }}</td>
-            <td>{{ balance.available_quantity }}</td>
+            {% sort_th "product" "Product" %}
+            {% sort_th "location" "Location" %}
+            {% sort_th "on_hand" "On hand" %}
+            {% sort_th "reserved" "Reserved" %}
+            <th>Available</th>
           </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {% for balance in balances %}
+            <tr>
+              <td><a href="{{ balance.get_absolute_url }}">{{ balance.product }}</a></td>
+              <td>{{ balance.location }}</td>
+              <td>{{ balance.on_hand_quantity }}</td>
+              <td>{{ balance.reserved_quantity }}</td>
+              <td>{{ balance.available_quantity }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
 
-    {% if is_paginated %}
-      <nav class="pagination">
-        {% if page_obj.has_previous %}
-          <a href="{% querystring page=page_obj.previous_page_number %}">Previous</a>
-        {% endif %}
-        <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
-        {% if page_obj.has_next %}
-          <a href="{% querystring page=page_obj.next_page_number %}">Next</a>
-        {% endif %}
-      </nav>
+      {% if is_paginated %}
+        <nav class="pagination">
+          {% if page_obj.has_previous %}
+            <a href="{% querystring page=page_obj.previous_page_number %}">Previous</a>
+          {% endif %}
+          <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+          {% if page_obj.has_next %}
+            <a href="{% querystring page=page_obj.next_page_number %}">Next</a>
+          {% endif %}
+        </nav>
+      {% endif %}
+    {% else %}
+      <p class="empty-state">No stock balances found in your authorized scope.</p>
     {% endif %}
-  {% else %}
-    <p class="empty-state">No stock balances found in your authorized scope.</p>
-  {% endif %}
+  </div>
+{% endblock %}
+
+{% block extra_scripts %}
+  <script src="{% static 'js/inventory_grid.js' %}" defer></script>
+  <script defer>
+    document.addEventListener("DOMContentLoaded", () => {
+      if (!window.InventoryGrid) return;
+      const G = window.InventoryGrid;
+
+      const table = G.init({
+        containerSelector: "#balance-grid-table",
+        fallbackSelector: "#balance-grid-fallback",
+        dataUrl: "{% url 'inventory:balance_grid_data' %}",
+        searchInputSelector: "#balance-grid-search",
+        densityToggleSelector: "#balance-grid-density",
+        storageKey: "balance-grid",
+        pageSize: 50,
+        initialSort: [{ field: "brand", dir: "asc" }],
+        rowSelectable: false,
+        columns: [
+          { title: "Type", field: "product_type", headerFilter: "input", width: 130 },
+          { title: "Brand", field: "brand", headerFilter: "input", width: 140 },
+          { title: "Model", field: "model", headerFilter: "input", formatter: G.linkFormatter, minWidth: 160 },
+          { title: "SKU", field: "sku", headerFilter: "input", width: 120, visible: false },
+          { title: "Location", field: "location", headerFilter: "input", width: 170 },
+          { title: "Country", field: "country", headerFilter: "input", width: 130, visible: false },
+          { title: "Storage Room", field: "storage_room", headerFilter: "input", width: 150, visible: false },
+          { title: "Shelf", field: "shelf", headerFilter: "input", width: 110, visible: false },
+          { title: "On Hand", field: "on_hand", hozAlign: "right", width: 110 },
+          { title: "Reserved", field: "reserved", hozAlign: "right", width: 110 },
+          { title: "Available", field: "available", hozAlign: "right", width: 110 },
+        ],
+      });
+
+      if (!table) return;
+
+      const exportLink = document.getElementById("balance-grid-export-filtered");
+      function refreshExportLink() {
+        const params = new URLSearchParams({ format: "csv" });
+        const search = document.getElementById("balance-grid-search").value.trim();
+        if (search) params.set("q", search);
+        table.getHeaderFilters().forEach((f) => f.value !== "" && params.set(f.field, f.value));
+        exportLink.href = `?${params.toString()}`;
+      }
+      table.on("dataLoaded", refreshExportLink);
+
+      const columnsPanel = document.getElementById("balance-grid-columns-panel");
+      const columnsToggle = document.getElementById("balance-grid-columns-toggle");
+      table.on("tableBuilt", () => {
+        table.getColumns().forEach((column) => {
+          const field = column.getField();
+          if (!field) return;
+          const label = document.createElement("label");
+          const checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.checked = column.isVisible();
+          checkbox.addEventListener("change", () => (checkbox.checked ? column.show() : column.hide()));
+          label.appendChild(checkbox);
+          label.append(column.getDefinition().title);
+          columnsPanel.appendChild(label);
+        });
+      });
+      columnsToggle.addEventListener("click", () => {
+        const expanded = columnsToggle.getAttribute("aria-expanded") === "true";
+        columnsToggle.setAttribute("aria-expanded", String(!expanded));
+        columnsPanel.hidden = expanded;
+      });
+      document.addEventListener("click", (event) => {
+        if (!columnsPanel.hidden && !columnsPanel.contains(event.target) && event.target !== columnsToggle) {
+          columnsPanel.hidden = true;
+          columnsToggle.setAttribute("aria-expanded", "false");
+        }
+      });
+
+      G.initSavedViews({
+        selectSelector: "#balance-grid-saved-views",
+        saveButtonSelector: "#balance-grid-save-view",
+        deleteButtonSelector: "#balance-grid-delete-view",
+        listUrl: "{% url 'inventory:saved_grid_view_list_create' grid_key='balances' %}",
+        deleteUrlTemplate: "{% url 'inventory:saved_grid_view_delete' pk='00000000-0000-0000-0000-000000000000' %}".replace("00000000-0000-0000-0000-000000000000", "__ID__"),
+        canShare: {% if user_is_administrator %}true{% else %}false{% endif %},
+        onCapture: () =>
+          G.captureGridState(table, document.getElementById("balance-grid-table"), document.getElementById("balance-grid-search")),
+        onApply: (state) => {
+          G.applyGridState(
+            table,
+            document.getElementById("balance-grid-table"),
+            document.getElementById("balance-grid-search"),
+            state,
+            () => table.setPage(1).then(() => table.replaceData())
+          );
+        },
+      });
+    });
+  </script>
 {% endblock %}

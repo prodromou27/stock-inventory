@@ -7,8 +7,10 @@
   <meta name="theme-color" content="#172554">
   <link rel="icon" href="{% static 'icons/favicon.svg' %}" type="image/svg+xml">
   <link rel="stylesheet" href="{% static 'css/vendor/tom-select.min.css' %}">
+  <link rel="stylesheet" href="{% static 'css/vendor/tabulator.min.css' %}">
   <link rel="stylesheet" href="{% static 'css/app.css' %}">
   <script src="{% static 'js/vendor/tom-select.base.min.js' %}" defer></script>
+  <script src="{% static 'js/vendor/tabulator.min.js' %}" defer></script>
   <script src="{% static 'js/app.js' %}" defer></script>
   <script src="{% static 'js/movement_forms.js' %}" defer></script>
   <script src="{% static 'js/search.js' %}" defer></script>
@@ -119,5 +121,6 @@
     </div>
   </div>
 {% endif %}
+{% block extra_scripts %}{% endblock %}
 </body>
 </html>

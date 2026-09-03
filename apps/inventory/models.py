@@ -427,3 +427,33 @@ class InventoryTransactionLine(UUIDPrimaryKeyModel, AppendOnlyModel):
 
     def __str__(self):
         return f"{self.transaction.transaction_number} line {self.line_number}"
+
+
+class SavedGridView(UUIDPrimaryKeyModel, UserStampedModel):
+    """A user's saved column/filter/sort/density configuration for one of the
+    Excel-like grids (apps.inventory.views.UnitAssetGridDataView /
+    StockBalanceGridDataView) — pure UI presentation state, never itself an
+    authorization boundary: reapplying a saved view only repopulates the
+    grid's controls, which re-run through the exact same scope_queryset()-
+    backed data endpoint every other request does, scoped fresh each time.
+
+    Same ownership/sharing model as apps.reporting.models.SavedReport: any
+    authenticated user may save their own (unshared) views; only an
+    Administrator's may be shared with everyone, enforced in the service
+    layer (apps.inventory.services.grid_views), not just the form.
+    """
+
+    GRID_ASSETS = "assets"
+    GRID_BALANCES = "balances"
+    GRID_CHOICES = [(GRID_ASSETS, "Assets"), (GRID_BALANCES, "Stock Balances")]
+
+    name = models.CharField(max_length=120)
+    grid_key = models.CharField(max_length=20, choices=GRID_CHOICES)
+    state = models.JSONField(default=dict, blank=True)
+    is_shared = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name

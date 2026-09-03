@@ -1,16 +1,34 @@
+import json
+
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.core.exceptions import ValidationError
-from django.db.models import Q
+from django.core.exceptions import PermissionDenied, ValidationError
+from django.core.paginator import Paginator
+from django.db.models import F, Max, Q
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.views import View
 from django.views.generic import DetailView, ListView
 
+from apps.audit.models import AuditEvent
+from apps.audit.services import record_event
 from apps.catalog.models import Product
-from apps.core.authorization import ADMINISTRATOR, STOCK_MANAGER, RoleRequiredMixin
+from apps.core.authorization import (
+    ADMINISTRATOR,
+    STOCK_MANAGER,
+    RoleRequiredMixin,
+    has_role,
+    require_role,
+)
 from apps.core.csv_export import CSVExportMixin
-from apps.core.sorting import SortableListMixin
-from apps.locations.scoping import accessible_locations, require_location_access, scope_queryset
+from apps.core.sorting import SortableListMixin, apply_multi_sort, parse_multi_sort
+from apps.locations.scoping import (
+    accessible_locations,
+    location_breadcrumb_map,
+    require_location_access,
+    scope_queryset,
+)
 
 from .access import require_transaction_access, scope_transaction_queryset
 from .filters import filter_stock_balances, filter_unit_assets
@@ -34,6 +52,7 @@ from .models import (
     InventoryTransactionLine,
     MovementType,
     ReservationStatus,
+    SavedGridView,
     StockBalance,
     StockReservation,
     UnitAsset,
@@ -42,6 +61,11 @@ from .models import (
 from .services.assignments import assign_to_employee, deliver_to_customer
 from .services.corrections import correct_balance, correct_unit_status, reverse_transaction
 from .services.disposition import dispose, mark_damaged, mark_lost, return_repaired_to_stock
+from .services.grid_views import (
+    create_saved_grid_view,
+    delete_saved_grid_view,
+    list_saved_grid_views,
+)
 from .services.receipts import DuplicateSerialError, receive_stock, receive_stock_batch
 from .services.reservations import release_reservation, reserve_stock
 from .services.returns import assess_return, return_stock
@@ -253,6 +277,310 @@ class UnitAssetListView(LoginRequiredMixin, CSVExportMixin, SortableListMixin, L
         return context
 
 
+def _positive_int(value, default):
+    """Shared by every grid JSON endpoint's page/size params — never lets a
+    malformed or non-positive value through instead of just falling back."""
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
+# Explicit allow-list for the grid's multi-column sort (apps.core.sorting.
+# apply_multi_sort) — a superset of UnitAssetListView.sort_fields, since the
+# grid exposes more columns than the classic table's 5 clickable headers.
+# "country"/"storage_room"/"shelf" aren't here: they're derived in Python
+# per-row (location_breadcrumb_map(), not a DB column), so they can't be
+# ORDER BY'd — the grid simply doesn't offer a sorter on those 3 columns.
+ASSET_GRID_SORT_FIELDS = {
+    "brand": "product__brand__name",
+    "model": "product__model",
+    "sku": "product__sku",
+    "product_type": "product__product_type__name",
+    "serial": "vendor_serial",
+    "status": "status",
+    "condition": "condition",
+    "location": "current_location__name",
+    "project_reference": "project_reference",
+    "final_customer": "final_customer",
+    "supplier": "supplier",
+    "invoice_number": "invoice_number",
+    "arrival_date": "arrival_date",
+    "removal_date": "last_removal_date",
+    "last_movement": "last_movement_at",
+}
+
+
+class UnitAssetGridDataView(LoginRequiredMixin, View):
+    """JSON data source for the Excel-like grid (static/js/inventory_grid.js)
+    on templates/inventory/asset_list.html. Reuses UnitAssetListView's exact
+    scoping/filtering — scope_queryset() + filter_unit_assets() — so this
+    view has no authorization logic of its own to get wrong; it only adds
+    multi-column sort (apply_multi_sort(), single-sort's multi-column
+    sibling), a derived location breadcrumb, and JSON pagination on top.
+
+    Request contract (GET): `page` (1-based), `size` (page size, capped),
+    repeated `sort=field:dir` (apps.core.sorting.parse_multi_sort — the
+    grid's client-side ajaxRequestFunc builds these from Tabulator's sorter
+    state), plus every filter param apps.inventory.filters.filter_unit_assets
+    already supports (q, brand, model, sku, type, status, location,
+    project_reference, final_customer, supplier, invoice_number, serial,
+    duplicate_serial, arrival_after/before, removal_after/before) — the grid
+    UI's column field names are deliberately the same names, so no
+    client-side translation layer is needed for filtering either.
+    """
+
+    MAX_PAGE_SIZE = 200
+
+    def get(self, request, *args, **kwargs):
+        queryset = scope_queryset(
+            request.user,
+            UnitAsset.objects.select_related(
+                "product", "product__brand", "product__product_type", "current_location"
+            ),
+            location_field="current_location",
+        )
+        product_id = request.GET.get("product")
+        if product_id:
+            queryset = queryset.filter(product_id=product_id)
+        queryset = filter_unit_assets(queryset, request.GET)
+        queryset = queryset.annotate(
+            last_movement_at=Max("transaction_lines__transaction__created_at")
+        )
+        queryset = apply_multi_sort(
+            queryset,
+            ASSET_GRID_SORT_FIELDS,
+            parse_multi_sort(request.GET),
+            default_ordering=("-created_at",),
+        )
+
+        page_number = _positive_int(request.GET.get("page"), default=1)
+        page_size = min(_positive_int(request.GET.get("size"), default=50), self.MAX_PAGE_SIZE)
+        paginator = Paginator(queryset, page_size)
+        page = paginator.get_page(page_number)
+
+        breadcrumbs = location_breadcrumb_map()
+        can_act = has_role(request.user, ADMINISTRATOR, STOCK_MANAGER)
+        rows = [self._serialize(asset, breadcrumbs, can_act) for asset in page.object_list]
+
+        return JsonResponse(
+            {"data": rows, "last_page": paginator.num_pages, "total_count": paginator.count}
+        )
+
+    @staticmethod
+    def _serialize(asset, breadcrumbs, can_act):
+        breadcrumb = breadcrumbs.get(asset.current_location_id, {})
+        return {
+            "id": str(asset.pk),
+            "brand": asset.product.brand.name,
+            "model": asset.product.model,
+            "sku": asset.product.sku,
+            "product_type": asset.product.product_type.name,
+            "serial": asset.vendor_serial,
+            "status": asset.status,
+            "status_display": asset.get_status_display(),
+            "condition": asset.condition,
+            "condition_display": asset.get_condition_display(),
+            "location": str(asset.current_location) if asset.current_location else "",
+            "country": breadcrumb.get("country", ""),
+            "storage_room": breadcrumb.get("storage_room", ""),
+            "shelf": breadcrumb.get("shelf", ""),
+            "project_reference": asset.project_reference,
+            "final_customer": asset.final_customer,
+            "supplier": asset.supplier,
+            "invoice_number": asset.invoice_number,
+            "arrival_date": asset.arrival_date.isoformat() if asset.arrival_date else None,
+            "removal_date": (
+                asset.last_removal_date.isoformat() if asset.last_removal_date else None
+            ),
+            "notes": asset.notes,
+            "last_movement": asset.last_movement_at.isoformat() if asset.last_movement_at else None,
+            "detail_url": asset.get_absolute_url(),
+            "quick_actions": _quick_actions_for(asset) if can_act else [],
+        }
+
+
+class SavedGridViewListCreateView(LoginRequiredMixin, View):
+    """GET lists this grid's own+shared saved views (apps.inventory.services.
+    grid_views.list_saved_grid_views); POST creates one. Backs the grid's
+    "Views" dropdown and "Save current view as…" action
+    (static/js/inventory_grid.js). `grid_key` ("assets"/"balances") comes
+    from the URL, not the request body — one endpoint per grid, no risk of
+    a view saved for one grid_key leaking into another's dropdown.
+    """
+
+    def get(self, request, grid_key):
+        views = list_saved_grid_views(user=request.user, grid_key=grid_key)
+        return JsonResponse(
+            {
+                "views": [
+                    {
+                        "id": str(view.pk),
+                        "name": view.name,
+                        "state": view.state,
+                        "is_shared": view.is_shared,
+                        "is_mine": view.created_by_id == request.user.id,
+                    }
+                    for view in views
+                ]
+            }
+        )
+
+    def post(self, request, grid_key):
+        try:
+            payload = json.loads(request.body)
+        except (TypeError, ValueError):
+            return JsonResponse({"error": "Invalid request body."}, status=400)
+
+        try:
+            view = create_saved_grid_view(
+                user=request.user,
+                name=payload.get("name", ""),
+                grid_key=grid_key,
+                state=payload.get("state") or {},
+                is_shared=bool(payload.get("is_shared")),
+            )
+        except ValidationError as exc:
+            return JsonResponse({"error": "; ".join(exc.messages)}, status=400)
+
+        return JsonResponse(
+            {
+                "id": str(view.pk),
+                "name": view.name,
+                "state": view.state,
+                "is_shared": view.is_shared,
+            }
+        )
+
+
+class SavedGridViewDeleteView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        view = get_object_or_404(SavedGridView, pk=pk)
+        try:
+            delete_saved_grid_view(view=view, user=request.user)
+        except PermissionDenied:
+            return JsonResponse({"error": "You can only delete your own saved views."}, status=403)
+        return JsonResponse({"deleted": True})
+
+
+# status -> the movement actions that status is eligible for, mirroring the
+# eligible_statuses each view below filters _eligible_assets() by — used to
+# decide which quick-action links templates/inventory/_asset_detail_panel.html
+# and the grid's per-row menu (static/js/inventory_grid.js) actually show.
+# Purely a UI convenience: the destination view re-filters by its own
+# eligible_statuses regardless, so an out-of-date entry here could show a
+# link that turns out to have nothing preselected, never a bypass.
+ASSET_QUICK_ACTIONS_BY_STATUS = {
+    UnitStatus.IN_STOCK: [
+        "transfer",
+        "reserve",
+        "assign",
+        "deliver",
+        "mark_damaged",
+        "mark_lost",
+        "dispose",
+    ],
+    UnitStatus.RESERVED: ["transfer", "assign", "deliver", "mark_damaged", "mark_lost", "dispose"],
+    UnitStatus.ASSIGNED: ["mark_damaged", "mark_lost", "dispose"],
+    UnitStatus.DELIVERED: ["mark_damaged"],
+    UnitStatus.DAMAGED: ["repair_damaged", "dispose"],
+    UnitStatus.RETURNED: ["dispose"],
+    UnitStatus.LOST: [],
+    UnitStatus.DISPOSED: [],
+}
+ASSET_QUICK_ACTION_LABELS = {
+    "transfer": "Transfer",
+    "reserve": "Reserve",
+    "assign": "Assign to employee",
+    "deliver": "Deliver to customer",
+    "mark_damaged": "Mark damaged",
+    "mark_lost": "Mark lost",
+    "dispose": "Dispose",
+    "repair_damaged": "Return to stock",
+}
+
+
+def _quick_actions_for(asset):
+    """[{url, label}] for the movement actions `asset`'s current status is
+    eligible for, each URL pre-filled with this one asset via the same
+    ?unit_asset_ids= mechanism the grid's bulk actions use (_preselected_ids())
+    — one asset is just a bulk action with a selection of one, not a
+    separate code path.
+    """
+    return [
+        {
+            "url": f"{reverse(f'inventory:{name}')}?unit_asset_ids={asset.pk}",
+            "label": ASSET_QUICK_ACTION_LABELS[name],
+        }
+        for name in ASSET_QUICK_ACTIONS_BY_STATUS.get(asset.status, [])
+    ]
+
+
+# Hard allow-list, not a blocklist: only these plain descriptive text fields
+# are reachable through AssetGridFieldUpdateView. quantity/status/location/
+# assignment/delivery/loss/disposal are structurally impossible to reach
+# through this endpoint — those changes go through the movement-workflow
+# services (apps.inventory.services.*), which validate and write the
+# append-only ledger; this endpoint touches only the UnitAsset row itself.
+ASSET_INLINE_EDITABLE_FIELDS = {
+    "notes",
+    "project_reference",
+    "final_customer",
+    "supplier",
+    "invoice_number",
+}
+
+
+class AssetGridFieldUpdateView(LoginRequiredMixin, View):
+    """POST /inventory/assets/<pk>/grid-field/ — the grid's inline-editing
+    save endpoint (static/js/inventory_grid.js's cell edited handler).
+    Requires Administrator or Stock Manager (same as every other mutating
+    inventory action) and location access to this specific asset. Mirrors
+    apps.catalog.services.update_product's old_values/new_values audit
+    pattern via apps.audit.services.record_event — a quiet field edit still
+    gets a durable record of who changed what, even though (unlike a
+    movement) it never touches InventoryTransaction/AssetStatusHistory.
+    """
+
+    def post(self, request, pk):
+        require_role(request.user, ADMINISTRATOR, STOCK_MANAGER)
+        asset = get_object_or_404(UnitAsset, pk=pk)
+        require_location_access(request.user, asset.current_location)
+
+        try:
+            payload = json.loads(request.body)
+        except (TypeError, ValueError):
+            return JsonResponse({"error": "Invalid request body."}, status=400)
+
+        field = payload.get("field")
+        if field not in ASSET_INLINE_EDITABLE_FIELDS:
+            return JsonResponse({"error": "That field can't be edited here."}, status=400)
+
+        value = str(payload.get("value") or "").strip()
+        old_value = getattr(asset, field)
+        if value == old_value:
+            return JsonResponse({"field": field, "value": value})
+
+        setattr(asset, field, value)
+        asset.updated_by = request.user
+        try:
+            asset.full_clean(exclude=["normalized_serial"])
+        except ValidationError as exc:
+            return JsonResponse({"error": "; ".join(exc.messages)}, status=400)
+        asset.save(update_fields=[field, "updated_by", "updated_at"])
+
+        record_event(
+            actor=request.user,
+            event_type=AuditEvent.EventType.RECORD_UPDATED,
+            obj=asset,
+            summary=f"Updated {field} on asset {asset}",
+            old_values={field: old_value},
+            new_values={field: value},
+        )
+        return JsonResponse({"field": field, "value": value})
+
+
 class UnitAssetDetailView(LoginRequiredMixin, DetailView):
     model = UnitAsset
     template_name = "inventory/asset_detail.html"
@@ -266,11 +594,17 @@ class UnitAssetDetailView(LoginRequiredMixin, DetailView):
         require_location_access(self.request.user, obj.current_location)
         return obj
 
+    def get_template_names(self):
+        if self.request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return ["inventory/_asset_detail_panel.html"]
+        return [self.template_name]
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["history"] = self.object.status_history.select_related(
             "transaction", "from_location", "to_location", "recorded_by"
         )
+        context["quick_actions"] = _quick_actions_for(self.object)
         return context
 
 
@@ -325,6 +659,92 @@ class StockBalanceListView(LoginRequiredMixin, CSVExportMixin, SortableListMixin
         context["locations"] = accessible_locations(self.request.user).order_by("level", "name")
         context["filters"] = self.request.GET
         return context
+
+
+# Same allow-list pattern as ASSET_GRID_SORT_FIELDS — "available" is
+# annotated below (StockBalance.available_quantity is a computed @property,
+# not a DB column) so it can be sorted the same as any real field.
+BALANCE_GRID_SORT_FIELDS = {
+    "brand": "product__brand__name",
+    "model": "product__model",
+    "sku": "product__sku",
+    "product_type": "product__product_type__name",
+    "location": "location__name",
+    "on_hand": "on_hand_quantity",
+    "reserved": "reserved_quantity",
+    "available": "available_quantity_annotated",
+}
+
+
+class StockBalanceGridDataView(LoginRequiredMixin, View):
+    """JSON data source for the Excel-like grid on
+    templates/inventory/balance_list.html — the Stock Balances counterpart
+    to UnitAssetGridDataView, reusing the exact same scope_queryset()/
+    filter_stock_balances() this app's list view already uses. A lighter
+    pass than the Assets grid: StockBalance has no plain descriptive text
+    fields, so there's no inline editing, and no per-row/bulk actions here
+    (a balance isn't a set of individually-selectable rows the way
+    UnitAssets are — reserving/transferring a *quantity* is a different,
+    already-existing form (apps.inventory.views.ReserveView/TransferView),
+    not a "select these specific rows" action) — just search/filter/sort/
+    column layout/density/pagination/export/saved views, same as any other
+    grid built on static/js/inventory_grid.js.
+    """
+
+    MAX_PAGE_SIZE = 200
+
+    def get(self, request, *args, **kwargs):
+        queryset = scope_queryset(
+            request.user,
+            StockBalance.objects.select_related(
+                "product", "product__brand", "product__product_type", "location"
+            ),
+            location_field="location",
+        )
+        product_id = request.GET.get("product")
+        if product_id:
+            queryset = queryset.filter(product_id=product_id)
+        queryset = filter_stock_balances(queryset, request.GET)
+        queryset = queryset.annotate(
+            available_quantity_annotated=F("on_hand_quantity") - F("reserved_quantity")
+        )
+        queryset = apply_multi_sort(
+            queryset,
+            BALANCE_GRID_SORT_FIELDS,
+            parse_multi_sort(request.GET),
+            default_ordering=("product__brand__name", "product__model", "location__name"),
+        )
+
+        page_number = _positive_int(request.GET.get("page"), default=1)
+        page_size = min(_positive_int(request.GET.get("size"), default=50), self.MAX_PAGE_SIZE)
+        paginator = Paginator(queryset, page_size)
+        page = paginator.get_page(page_number)
+
+        breadcrumbs = location_breadcrumb_map()
+        rows = [self._serialize(balance, breadcrumbs) for balance in page.object_list]
+
+        return JsonResponse(
+            {"data": rows, "last_page": paginator.num_pages, "total_count": paginator.count}
+        )
+
+    @staticmethod
+    def _serialize(balance, breadcrumbs):
+        breadcrumb = breadcrumbs.get(balance.location_id, {})
+        return {
+            "id": str(balance.pk),
+            "brand": balance.product.brand.name,
+            "model": balance.product.model,
+            "sku": balance.product.sku,
+            "product_type": balance.product.product_type.name,
+            "location": str(balance.location) if balance.location else "",
+            "country": breadcrumb.get("country", ""),
+            "storage_room": breadcrumb.get("storage_room", ""),
+            "shelf": breadcrumb.get("shelf", ""),
+            "on_hand": balance.on_hand_quantity,
+            "reserved": balance.reserved_quantity,
+            "available": balance.available_quantity_annotated,
+            "detail_url": balance.get_absolute_url(),
+        }
 
 
 class StockBalanceDetailView(LoginRequiredMixin, DetailView):
@@ -433,6 +853,20 @@ class TransactionDetailView(LoginRequiredMixin, DetailView):
         return context
 
 
+def _preselected_ids(request):
+    """UUIDs (as strings) carried on the querystring by a "Transfer selected"
+    /-style bulk action from the grid (static/js/inventory_grid.js) or a
+    per-row quick-action link — a plain GET, not a mutation, so it's safe to
+    build a link to. templates/inventory/_asset_picker.html pre-checks the
+    matching checkboxes; the operator still reviews the real, unchanged
+    picker/form and must submit it themselves — this is the "review and
+    confirmation step" a bulk action needs, using the exact validated
+    workflow every other asset action already goes through, not a shortcut
+    around it.
+    """
+    return set(request.GET.getlist("unit_asset_ids"))
+
+
 def _eligible_assets(request, statuses):
     queryset = scope_queryset(
         request.user,
@@ -465,7 +899,11 @@ class TransferView(LoginRequiredMixin, RoleRequiredMixin, View):
     def get(self, request):
         form = TransferForm(user=request.user)
         assets = _eligible_assets(request, [UnitStatus.IN_STOCK, UnitStatus.RESERVED])
-        return render(request, self.template_name, {"form": form, "assets": assets})
+        return render(
+            request,
+            self.template_name,
+            {"form": form, "assets": assets, "preselected_ids": _preselected_ids(request)},
+        )
 
     def post(self, request):
         form = TransferForm(request.POST, user=request.user)
@@ -509,7 +947,11 @@ class ReserveView(LoginRequiredMixin, RoleRequiredMixin, View):
     def get(self, request):
         form = ReserveForm(user=request.user)
         assets = _eligible_assets(request, [UnitStatus.IN_STOCK])
-        return render(request, self.template_name, {"form": form, "assets": assets})
+        return render(
+            request,
+            self.template_name,
+            {"form": form, "assets": assets, "preselected_ids": _preselected_ids(request)},
+        )
 
     def post(self, request):
         form = ReserveForm(request.POST, user=request.user)
@@ -593,7 +1035,11 @@ class AssignView(LoginRequiredMixin, RoleRequiredMixin, View):
     def get(self, request):
         form = AssignForm(user=request.user)
         assets = _eligible_assets(request, [UnitStatus.IN_STOCK, UnitStatus.RESERVED])
-        return render(request, self.template_name, {"form": form, "assets": assets})
+        return render(
+            request,
+            self.template_name,
+            {"form": form, "assets": assets, "preselected_ids": _preselected_ids(request)},
+        )
 
     def post(self, request):
         form = AssignForm(request.POST, user=request.user)
@@ -632,7 +1078,11 @@ class DeliverView(LoginRequiredMixin, RoleRequiredMixin, View):
     def get(self, request):
         form = DeliverForm(user=request.user)
         assets = _eligible_assets(request, [UnitStatus.IN_STOCK, UnitStatus.RESERVED])
-        return render(request, self.template_name, {"form": form, "assets": assets})
+        return render(
+            request,
+            self.template_name,
+            {"form": form, "assets": assets, "preselected_ids": _preselected_ids(request)},
+        )
 
     def post(self, request):
         form = DeliverForm(request.POST, user=request.user)
@@ -817,7 +1267,12 @@ class _DispositionView(LoginRequiredMixin, RoleRequiredMixin, View):
         return render(
             request,
             self.template_name,
-            {"form": form, "assets": assets, "page_title": self.page_title},
+            {
+                "form": form,
+                "assets": assets,
+                "page_title": self.page_title,
+                "preselected_ids": _preselected_ids(request),
+            },
         )
 
     def post(self, request):
@@ -890,6 +1345,7 @@ class RepairDamagedView(LoginRequiredMixin, RoleRequiredMixin, View):
                 "form": RepairDamagedForm(user=request.user),
                 "assets": _eligible_assets(request, [UnitStatus.DAMAGED]),
                 "page_title": "Return repaired assets to stock",
+                "preselected_ids": _preselected_ids(request),
             },
         )
 

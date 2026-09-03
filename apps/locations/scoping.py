@@ -77,3 +77,42 @@ def _location_queryset():
     from .models import Location
 
     return Location.objects.all()
+
+
+def location_breadcrumb_map():
+    """{location_id: {"country": name, "storage_room": name, "shelf": name}}
+    for every Location — used by apps.inventory's grid JSON endpoints to show
+    country/storage-room/shelf columns without an N+1 walk of
+    Location.ancestors() per row (that method is a per-object parent-chain
+    walk, fine for a single detail page, wrong inside a loop over a paginated
+    grid of rows).
+
+    Deliberately built from the *whole* Location table, not
+    accessible_locations(user): a Stock Manager's grant can start below the
+    Country level (e.g. a single Storage Room), so the Country/Site rows
+    above that grant point fall outside their accessible set even though the
+    name is legitimate read-only context for an asset they ARE authorized to
+    see (it says where the room is, not access to any other room in that
+    country). The Location table is small — an organizational tree, not
+    asset-count-sized — so one unfiltered query here is cheap regardless of
+    how many rows a grid page renders.
+    """
+    from .models import Location, LocationLevel
+
+    nodes = list(Location.objects.only("id", "parent_id", "level", "name"))
+    node_by_id = {node.id: node for node in nodes}
+
+    breadcrumbs = {}
+    for node in nodes:
+        breadcrumb = {"country": "", "storage_room": "", "shelf": ""}
+        current = node
+        while current is not None:
+            if current.level == LocationLevel.COUNTRY:
+                breadcrumb["country"] = current.name
+            elif current.level == LocationLevel.STORAGE_ROOM:
+                breadcrumb["storage_room"] = current.name
+            elif current.level == LocationLevel.SHELF_BIN:
+                breadcrumb["shelf"] = current.name
+            current = node_by_id.get(current.parent_id)
+        breadcrumbs[node.id] = breadcrumb
+    return breadcrumbs

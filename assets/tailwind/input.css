@@ -1397,6 +1397,18 @@
   }
 }
 
+/* The HTML `hidden` attribute is only display:none by default via the
+   browser's UA stylesheet — any author rule that sets `display` on the same
+   element (e.g. .btn's display:inline-flex, .toolbar's display:flex) wins
+   over it in the normal cascade and silently un-hides the element. Hit
+   twice while building the inventory grid (a hidden "Delete" button next to
+   a saved-views picker, and a "More filters" panel that showed by default)
+   before adding this one global, permanent fix — every future
+   `<div hidden>`/`<button hidden>` in this app is protected by it too. */
+[hidden] {
+  display: none !important;
+}
+
 /* Tom Select (static/css/vendor/tom-select.min.css, static/js/vendor/,
    static/js/movement_forms.js) — the vendor stylesheet ships light-theme
    colors hardcoded; these overrides remap it onto this app's existing
@@ -1510,5 +1522,332 @@
   padding: 0.6rem 0.9rem;
   font-size: 0.85rem;
   color: var(--color-text-muted);
+}
+
+/* Tabulator (static/css/vendor/tabulator.min.css, static/js/vendor/,
+   static/js/inventory_grid.js) — the vendor stylesheet ships its own
+   hardcoded light theme; these overrides remap it onto this app's design
+   tokens the same way the Tom Select block above does, and for the same
+   reason everything in this file below @layer exists: any class Tabulator
+   or inventory_grid.js adds at runtime (.tabulator-row, .is-loading,
+   [data-density], …) never appears literally in a template, so Tailwind's
+   content-based purge would silently drop it from inside @layer components.
+   Color/background/border-color declarations here use !important: cssnano's
+   minifier (`npm run build:css`'s --minify) was observed collapsing some of
+   these ancestor-qualified selectors (e.g. ".tabulator .tabulator-col") down
+   to a lower-specificity form in the compiled static/css/app.css, which then
+   lost to Tabulator's own same-or-higher-specificity rules — confirmed by
+   inspecting getComputedStyle() in the browser, not just reading source.
+   !important sidesteps that minifier-dependent specificity fight instead of
+   relying on it. */
+.tabulator {
+  background: var(--color-surface) !important;
+  border: 1px solid var(--color-border) !important;
+  border-radius: var(--radius-md);
+  color: var(--color-text) !important;
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+.tabulator .tabulator-header {
+  background: var(--color-surface) !important;
+  border-bottom: 1px solid var(--color-border-strong, var(--color-border)) !important;
+  color: var(--color-text) !important;
+}
+.tabulator .tabulator-col {
+  background: var(--color-surface) !important;
+  border-right: 1px solid var(--color-border) !important;
+}
+.tabulator .tabulator-col-title {
+  color: var(--color-text) !important;
+  font-weight: 600;
+}
+.tabulator .tabulator-header-filter input,
+.tabulator .tabulator-header-filter select {
+  border: 1px solid var(--color-border) !important;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface) !important;
+  color: var(--color-text) !important;
+  font-size: 0.8rem;
+  height: auto;
+  padding: 0.25rem 0.4rem;
+}
+.tabulator-row {
+  background: var(--color-surface) !important;
+  color: var(--color-text) !important;
+  border-bottom: 1px solid var(--color-border) !important;
+}
+.tabulator-row.tabulator-row-even {
+  background: color-mix(in srgb, var(--color-text) 3%, var(--color-surface)) !important;
+}
+.tabulator-row.tabulator-selected {
+  background: color-mix(in srgb, var(--color-primary) 14%, var(--color-surface)) !important;
+}
+.tabulator-row:hover {
+  background: color-mix(in srgb, var(--color-primary) 6%, var(--color-surface)) !important;
+}
+.tabulator .tabulator-cell {
+  border-right: 1px solid var(--color-border) !important;
+  padding: 0.5rem 0.6rem;
+}
+.tabulator-density-compact .tabulator-cell,
+.tabulator-density-compact .tabulator-col-title {
+  padding-top: 0.2rem;
+  padding-bottom: 0.2rem;
+  font-size: 0.78rem;
+}
+.tabulator .tabulator-footer {
+  background: var(--color-surface) !important;
+  border-top: 1px solid var(--color-border) !important;
+  color: var(--color-text-muted) !important;
+}
+.tabulator .tabulator-page {
+  background: var(--color-surface) !important;
+  color: var(--color-text) !important;
+  border: 1px solid var(--color-border) !important;
+  border-radius: var(--radius-sm);
+}
+.tabulator .tabulator-page.active {
+  background: var(--color-primary) !important;
+  color: var(--color-primary-contrast, #fff) !important;
+  border-color: var(--color-primary) !important;
+}
+.tabulator .tabulator-page-size {
+  background: var(--color-surface) !important;
+  color: var(--color-text) !important;
+  border: 1px solid var(--color-border) !important;
+  border-radius: var(--radius-sm);
+}
+.tabulator .tabulator-placeholder {
+  color: var(--color-text-muted) !important;
+}
+.tabulator-loader {
+  background: color-mix(in srgb, var(--color-surface) 85%, transparent) !important;
+}
+.tabulator-loader .tabulator-loader-msg {
+  background: var(--color-surface) !important;
+  color: var(--color-text) !important;
+  border: 1px solid var(--color-border) !important;
+  border-radius: var(--radius-sm);
+}
+
+.inventory-grid {
+  position: relative;
+}
+.inventory-grid.is-hidden {
+  display: none;
+}
+.inventory-grid .tabulator.is-loading::after {
+  content: "Loading…";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--color-surface) 80%, transparent);
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  z-index: 5;
+}
+.grid-error-banner {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.85rem;
+}
+.grid-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.75rem;
+}
+.grid-toolbar__search {
+  flex: 1 1 16rem;
+  min-width: 12rem;
+  padding: 0.4rem 0.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+.grid-selection-count {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  border-radius: var(--radius-full, 999px);
+  padding: 0.3rem 0.7rem;
+}
+.grid-density-toggle {
+  display: inline-flex;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.grid-density-toggle button {
+  padding: 0.35rem 0.7rem;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  border: none;
+  border-right: 1px solid var(--color-border);
+}
+.grid-density-toggle button:last-child {
+  border-right: none;
+}
+.grid-density-toggle button.is-active {
+  background: var(--color-primary);
+  color: var(--color-primary-contrast, #fff);
+}
+.grid-columns-panel {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: 0.35rem;
+  z-index: 20;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  padding: 0.5rem 0.75rem;
+  min-width: 12rem;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.grid-columns-panel label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0;
+  font-size: 0.85rem;
+  font-weight: 400;
+}
+
+.grid-bulk-actions {
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.6rem;
+  margin-top: 0.6rem;
+  margin-bottom: 0;
+}
+
+.grid-side-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+.grid-side-panel__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.52);
+}
+.grid-side-panel__content {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(32rem, 92vw);
+  background: var(--color-surface);
+  border-left: 1px solid var(--color-border);
+  box-shadow: var(--shadow-lg, var(--shadow-md));
+  overflow-y: auto;
+  padding: 1.25rem 1.4rem;
+}
+.grid-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+.grid-panel__header h2 {
+  margin: 0 0 0.35rem;
+}
+.grid-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.9rem;
+}
+.grid-panel__full-link {
+  display: inline-block;
+  margin-bottom: 0.9rem;
+  font-size: 0.85rem;
+}
+
+.grid-row-menu {
+  position: relative;
+  display: inline-block;
+}
+.grid-row-menu summary {
+  cursor: pointer;
+  list-style: none;
+  width: 1.6rem;
+  height: 1.6rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+}
+.grid-row-menu summary::-webkit-details-marker {
+  display: none;
+}
+.grid-row-menu summary:hover,
+.grid-row-menu[open] summary {
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  color: var(--color-text);
+}
+.grid-row-menu > div {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 15;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  min-width: 10rem;
+  padding: 0.3rem 0;
+}
+.grid-row-menu > div a {
+  display: block;
+  padding: 0.35rem 0.75rem;
+  color: var(--color-text);
+  text-decoration: none;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+.grid-row-menu > div a:hover {
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+}
+
+/* Marks the 5 plain-text columns static/js/inventory_grid.js's
+   wireInlineEditing() actually saves (project reference, final customer,
+   supplier, invoice #, notes) — a subtle dotted underline, not a full
+   input-box outline, so the grid doesn't look like every cell is editable
+   (quantity/status/location/etc. deliberately never get this class). */
+.grid-cell-editable {
+  box-shadow: inset 0 -1px 0 0 var(--color-border-strong, var(--color-border));
+}
+.grid-cell-editable:hover {
+  background: color-mix(in srgb, var(--color-primary) 6%, transparent) !important;
+  cursor: text;
+}
+
+.grid-views {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.grid-views select {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 0.4rem 0.6rem;
+  font-size: 0.85rem;
 }
 

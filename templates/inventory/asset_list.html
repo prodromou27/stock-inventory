@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load ui_extras %}
+{% load static ui_extras %}
 
 {% block title %}Assets — Stock Inventory{% endblock %}
 
@@ -7,97 +7,384 @@
   <div class="page-header">
     <h1>Assets</h1>
     <div class="page-header__actions">
-      <a class="btn" href="?{{ request.GET.urlencode }}&format=csv">Export CSV</a>
+      <a class="btn" id="asset-grid-export" href="?{{ request.GET.urlencode }}&format=csv">Export CSV</a>
       {% if user_is_administrator or "StockManager" in user_role_groups %}
         <a class="btn btn--primary" href="{% url 'inventory:quick_receive' %}">+ Quick receive</a>
       {% endif %}
     </div>
   </div>
 
-  <form method="get" class="toolbar toolbar--filters">
-    <label>Search
-      <input type="text" name="q" value="{{ query }}" placeholder="Brand, model, SKU, type, serial, project, customer">
-    </label>
-    <label>Status
-      <select name="status">
-        <option value="">All statuses</option>
-        {% for value, label in statuses %}
-          <option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>Location
-      <select name="location">
-        <option value="">All locations</option>
-        {% for location in locations %}
-          <option value="{{ location.pk }}" {% if filters.location == location.pk|stringformat:"s" %}selected{% endif %}>
-            {{ location.name }} ({{ location.get_level_display }})
-          </option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>Brand<input type="text" name="brand" value="{{ filters.brand }}"></label>
-    <label>Model<input type="text" name="model" value="{{ filters.model }}"></label>
-    <label>SKU<input type="text" name="sku" value="{{ filters.sku }}"></label>
-    <label>Type<input type="text" name="type" value="{{ filters.type }}"></label>
-    <label>Project reference<input type="text" name="project_reference" value="{{ filters.project_reference }}"></label>
-    <label>Final customer<input type="text" name="final_customer" value="{{ filters.final_customer }}"></label>
-    <label>Supplier<input type="text" name="supplier" value="{{ filters.supplier }}"></label>
-    <label>Invoice number<input type="text" name="invoice_number" value="{{ filters.invoice_number }}"></label>
-    <label>
-      <input type="checkbox" name="duplicate_serial" value="1" {% if filters.duplicate_serial == "1" %}checked{% endif %}>
-      Duplicate serials only
-    </label>
-    <label>Arrival from <input type="date" name="arrival_after" value="{{ filters.arrival_after }}"></label>
-    <label>to <input type="date" name="arrival_before" value="{{ filters.arrival_before }}"></label>
-    <label>Removal from <input type="date" name="removal_after" value="{{ filters.removal_after }}"></label>
-    <label>to <input type="date" name="removal_before" value="{{ filters.removal_before }}"></label>
-    <div class="form-actions">
-      <button type="submit" class="btn btn--primary">Apply filters</button>
-      <a class="btn btn--ghost" href="{% url 'inventory:asset_list' %}">Clear</a>
+  {{ statuses|json_script:"asset-status-choices" }}
+
+  <div class="inventory-grid is-hidden">
+    <div class="grid-toolbar">
+      <input type="search" class="grid-toolbar__search" id="asset-grid-search" placeholder="Search brand, model, SKU, type, serial, project, customer…" aria-label="Search assets">
+      <div class="grid-density-toggle" id="asset-grid-density" role="group" aria-label="Row density">
+        <button type="button" data-density="comfortable" class="is-active">Comfortable</button>
+        <button type="button" data-density="compact">Compact</button>
+      </div>
+      <div style="position: relative;">
+        <button type="button" class="btn" id="asset-grid-columns-toggle" aria-expanded="false">Columns</button>
+        <div class="grid-columns-panel" id="asset-grid-columns-panel" hidden></div>
+      </div>
+      <button type="button" class="btn" id="asset-grid-more-filters-toggle" aria-expanded="false">More filters</button>
+      <a class="btn" id="asset-grid-export-filtered" href="?format=csv">Export filtered CSV</a>
+      <span class="grid-views">
+        <label class="sr-only" for="asset-grid-saved-views">Saved views</label>
+        <select id="asset-grid-saved-views"><option value="">— Saved views —</option></select>
+        <button type="button" class="btn" id="asset-grid-save-view">Save view</button>
+        <button type="button" class="btn btn--ghost" id="asset-grid-delete-view" hidden aria-label="Delete selected saved view">Delete</button>
+      </span>
+      <span id="asset-grid-selection-count" class="grid-selection-count" hidden></span>
     </div>
-  </form>
 
-  {% if query or selected_status or filters.location or filters.brand or filters.model or filters.sku or filters.type or filters.project_reference or filters.final_customer or filters.supplier or filters.invoice_number or filters.duplicate_serial or filters.arrival_after or filters.arrival_before or filters.removal_after or filters.removal_before %}
-    <div class="active-filters" aria-label="Active filters"><strong>Active filters</strong><span class="filter-chip">Filtered results</span><a href="{% url 'inventory:asset_list' %}">Clear all</a></div>
-  {% endif %}
+    <form class="toolbar" id="asset-grid-more-filters" hidden onsubmit="return false;">
+      <label>Arrival from <input type="date" data-filter="arrival_after"></label>
+      <label>to <input type="date" data-filter="arrival_before"></label>
+      <label>Removal from <input type="date" data-filter="removal_after"></label>
+      <label>to <input type="date" data-filter="removal_before"></label>
+      <label><input type="checkbox" data-filter="duplicate_serial" value="1"> Duplicate serials only</label>
+    </form>
 
-  {% if assets %}
-    <div class="table-scroll" tabindex="0" aria-label="Asset results"><table>
-      <thead>
-        <tr>
-          {% sort_th "product" "Product" %}
-          {% sort_th "serial" "Serial" %}
-          {% sort_th "status" "Status" %}
-          {% sort_th "location" "Location" %}
-          {% sort_th "arrival_date" "Arrival date" %}
-        </tr>
-      </thead>
-      <tbody>
-        {% for asset in assets %}
-          <tr>
-            <td><a href="{{ asset.get_absolute_url }}">{{ asset.product }}</a></td>
-            <td>{{ asset.vendor_serial|default:"—" }}</td>
-            <td><span class="badge {{ asset.status|badge_class }}">{{ asset.get_status_display }}</span></td>
-            <td>{{ asset.current_location|default:"—" }}</td>
-            <td>{{ asset.arrival_date }}</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table></div>
+    <div id="asset-grid-table" aria-label="Asset results"></div>
 
-    {% if is_paginated %}
-      <nav class="pagination">
-        {% if page_obj.has_previous %}
-          <a href="{% querystring page=page_obj.previous_page_number %}">Previous</a>
-        {% endif %}
-        <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
-        {% if page_obj.has_next %}
-          <a href="{% querystring page=page_obj.next_page_number %}">Next</a>
-        {% endif %}
-      </nav>
+    <div class="grid-toolbar grid-bulk-actions" id="asset-grid-bulk-actions" hidden></div>
+  </div>
+
+  <div class="grid-side-panel" id="asset-grid-panel" hidden>
+    <div class="grid-side-panel__backdrop" data-panel-close></div>
+    <div class="grid-side-panel__content" id="asset-grid-panel-content" role="dialog" aria-modal="true" aria-label="Asset details"></div>
+  </div>
+
+  <div id="asset-grid-fallback">
+    <form method="get" class="toolbar toolbar--filters">
+      <label>Search
+        <input type="text" name="q" value="{{ query }}" placeholder="Brand, model, SKU, type, serial, project, customer">
+      </label>
+      <label>Status
+        <select name="status">
+          <option value="">All statuses</option>
+          {% for value, label in statuses %}
+            <option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Location
+        <select name="location">
+          <option value="">All locations</option>
+          {% for location in locations %}
+            <option value="{{ location.pk }}" {% if filters.location == location.pk|stringformat:"s" %}selected{% endif %}>
+              {{ location.name }} ({{ location.get_level_display }})
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Brand<input type="text" name="brand" value="{{ filters.brand }}"></label>
+      <label>Model<input type="text" name="model" value="{{ filters.model }}"></label>
+      <label>SKU<input type="text" name="sku" value="{{ filters.sku }}"></label>
+      <label>Type<input type="text" name="type" value="{{ filters.type }}"></label>
+      <label>Project reference<input type="text" name="project_reference" value="{{ filters.project_reference }}"></label>
+      <label>Final customer<input type="text" name="final_customer" value="{{ filters.final_customer }}"></label>
+      <label>Supplier<input type="text" name="supplier" value="{{ filters.supplier }}"></label>
+      <label>Invoice number<input type="text" name="invoice_number" value="{{ filters.invoice_number }}"></label>
+      <label>
+        <input type="checkbox" name="duplicate_serial" value="1" {% if filters.duplicate_serial == "1" %}checked{% endif %}>
+        Duplicate serials only
+      </label>
+      <label>Arrival from <input type="date" name="arrival_after" value="{{ filters.arrival_after }}"></label>
+      <label>to <input type="date" name="arrival_before" value="{{ filters.arrival_before }}"></label>
+      <label>Removal from <input type="date" name="removal_after" value="{{ filters.removal_after }}"></label>
+      <label>to <input type="date" name="removal_before" value="{{ filters.removal_before }}"></label>
+      <div class="form-actions">
+        <button type="submit" class="btn btn--primary">Apply filters</button>
+        <a class="btn btn--ghost" href="{% url 'inventory:asset_list' %}">Clear</a>
+      </div>
+    </form>
+
+    {% if query or selected_status or filters.location or filters.brand or filters.model or filters.sku or filters.type or filters.project_reference or filters.final_customer or filters.supplier or filters.invoice_number or filters.duplicate_serial or filters.arrival_after or filters.arrival_before or filters.removal_after or filters.removal_before %}
+      <div class="active-filters" aria-label="Active filters"><strong>Active filters</strong><span class="filter-chip">Filtered results</span><a href="{% url 'inventory:asset_list' %}">Clear all</a></div>
     {% endif %}
-  {% else %}
-    <p class="empty-state">No assets found in your authorized scope.</p>
-  {% endif %}
+
+    {% if assets %}
+      <div class="table-scroll" tabindex="0" aria-label="Asset results"><table>
+        <thead>
+          <tr>
+            {% sort_th "product" "Product" %}
+            {% sort_th "serial" "Serial" %}
+            {% sort_th "status" "Status" %}
+            {% sort_th "location" "Location" %}
+            {% sort_th "arrival_date" "Arrival date" %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for asset in assets %}
+            <tr>
+              <td><a href="{{ asset.get_absolute_url }}">{{ asset.product }}</a></td>
+              <td>{{ asset.vendor_serial|default:"—" }}</td>
+              <td><span class="badge {{ asset.status|badge_class }}">{{ asset.get_status_display }}</span></td>
+              <td>{{ asset.current_location|default:"—" }}</td>
+              <td>{{ asset.arrival_date }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+
+      {% if is_paginated %}
+        <nav class="pagination">
+          {% if page_obj.has_previous %}
+            <a href="{% querystring page=page_obj.previous_page_number %}">Previous</a>
+          {% endif %}
+          <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+          {% if page_obj.has_next %}
+            <a href="{% querystring page=page_obj.next_page_number %}">Next</a>
+          {% endif %}
+        </nav>
+      {% endif %}
+    {% else %}
+      <p class="empty-state">No assets found in your authorized scope.</p>
+    {% endif %}
+  </div>
+{% endblock %}
+
+{% block extra_scripts %}
+  <script src="{% static 'js/inventory_grid.js' %}" defer></script>
+  <script defer>
+    document.addEventListener("DOMContentLoaded", () => {
+      if (!window.InventoryGrid) return;
+      const G = window.InventoryGrid;
+      const statusChoices = JSON.parse(document.getElementById("asset-status-choices").textContent);
+      // Server-enforced too (apps.inventory.views.AssetGridFieldUpdateView /
+      // require_role) — this only decides whether the grid *offers* an
+      // editor on a cell; a Read-Only user posting directly to the save
+      // endpoint would still be rejected there.
+      const canEditGrid = {% if user_is_administrator or "StockManager" in user_role_groups %}true{% else %}false{% endif %};
+      const EDITABLE_FIELDS = ["project_reference", "final_customer", "supplier", "invoice_number", "notes"];
+
+      const moreFiltersForm = document.getElementById("asset-grid-more-filters");
+      const moreFiltersToggle = document.getElementById("asset-grid-more-filters-toggle");
+      moreFiltersToggle.addEventListener("click", () => {
+        const expanded = moreFiltersToggle.getAttribute("aria-expanded") === "true";
+        moreFiltersToggle.setAttribute("aria-expanded", String(!expanded));
+        moreFiltersForm.hidden = expanded;
+      });
+
+      const table = G.init({
+        containerSelector: "#asset-grid-table",
+        fallbackSelector: "#asset-grid-fallback",
+        dataUrl: "{% url 'inventory:asset_grid_data' %}",
+        searchInputSelector: "#asset-grid-search",
+        densityToggleSelector: "#asset-grid-density",
+        storageKey: "asset-grid",
+        pageSize: 50,
+        initialSort: [{ field: "arrival_date", dir: "desc" }],
+        editableFields: canEditGrid ? EDITABLE_FIELDS : [],
+        editUrlTemplate: "{% url 'inventory:asset_grid_field_update' pk='00000000-0000-0000-0000-000000000000' %}".replace("00000000-0000-0000-0000-000000000000", "__ID__"),
+        extraFilters: () => {
+          const values = {};
+          moreFiltersForm.querySelectorAll("[data-filter]").forEach((input) => {
+            const key = input.dataset.filter;
+            values[key] = input.type === "checkbox" ? (input.checked ? "1" : "") : input.value;
+          });
+          return values;
+        },
+        columns: [
+          { formatter: "rowSelection", titleFormatter: "rowSelection", hozAlign: "center", headerSort: false, width: 40, frozen: true, cssClass: "tabulator-select-col" },
+          { title: "Type", field: "product_type", headerFilter: "input", width: 120 },
+          { title: "Brand", field: "brand", headerFilter: "input", width: 130 },
+          { title: "Model", field: "model", headerFilter: "input", formatter: G.linkFormatter, minWidth: 150 },
+          { title: "SKU", field: "sku", headerFilter: "input", width: 110, visible: false },
+          { title: "Serial", field: "serial", headerFilter: "input", width: 150 },
+          {
+            title: "Status", field: "status", width: 130, displayField: "status_display",
+            headerFilter: "list",
+            headerFilterParams: { values: Object.fromEntries([["", "All statuses"], ...statusChoices]) },
+            formatter: G.badgeFormatter,
+          },
+          { title: "Condition", field: "condition", width: 110, visible: false, displayField: "condition_display",
+            headerFilter: "list",
+            headerFilterParams: { values: { "": "Any condition", new: "New", good: "Good", fair: "Fair", damaged: "Damaged", unknown: "Unknown" } },
+            formatter: G.badgeFormatter },
+          { title: "Country", field: "country", headerFilter: "input", width: 130 },
+          { title: "Storage Room", field: "storage_room", headerFilter: "input", width: 150 },
+          { title: "Shelf", field: "shelf", headerFilter: "input", width: 110, visible: false },
+          { title: "Project Reference", field: "project_reference", headerFilter: "input", width: 160, editor: canEditGrid ? "input" : false, cssClass: canEditGrid ? "grid-cell-editable" : "" },
+          { title: "Final Customer", field: "final_customer", headerFilter: "input", width: 160, editor: canEditGrid ? "input" : false, cssClass: canEditGrid ? "grid-cell-editable" : "" },
+          { title: "Supplier", field: "supplier", headerFilter: "input", width: 140, visible: false, editor: canEditGrid ? "input" : false, cssClass: canEditGrid ? "grid-cell-editable" : "" },
+          { title: "Invoice #", field: "invoice_number", headerFilter: "input", width: 120, visible: false, editor: canEditGrid ? "input" : false, cssClass: canEditGrid ? "grid-cell-editable" : "" },
+          { title: "Arrival Date", field: "arrival_date", formatter: G.dateFormatter, width: 130 },
+          { title: "Removal Date", field: "removal_date", formatter: G.dateFormatter, width: 130, visible: false },
+          { title: "Last Movement", field: "last_movement", formatter: G.datetimeFormatter, width: 170, headerSort: true },
+          { title: "Notes", field: "notes", visible: false, minWidth: 180, editor: canEditGrid ? "textarea" : false, cssClass: canEditGrid ? "grid-cell-editable" : "" },
+          { title: "", field: "_actions", formatter: G.actionsFormatter, headerSort: false, width: 50, hozAlign: "center", frozen: true },
+        ],
+        rowSelectable: true,
+        onSelectionChange: (rows) => {
+          const badge = document.getElementById("asset-grid-selection-count");
+          badge.hidden = rows.length === 0;
+          badge.textContent = rows.length === 1 ? "1 selected" : `${rows.length} selected`;
+          renderBulkActions(rows);
+        },
+      });
+
+      if (!table) return;
+
+      G.initDetailPanel({ panelSelector: "#asset-grid-panel", contentSelector: "#asset-grid-panel-content", table });
+
+      // Mirrors apps.inventory.views.ASSET_QUICK_ACTIONS_BY_STATUS exactly —
+      // which bulk-action buttons make sense for the CURRENT selection (the
+      // union of what any selected row is eligible for; the destination
+      // form/service always re-filters by its own eligible_statuses, so an
+      // action offered here that turns out to fit none of the selection just
+      // lands the operator on a form with nothing preselected, never a
+      // bypass of the real eligibility check).
+      const ACTIONS_BY_STATUS = {
+        in_stock: ["transfer", "reserve", "assign", "deliver", "mark_damaged", "mark_lost", "dispose"],
+        reserved: ["transfer", "assign", "deliver", "mark_damaged", "mark_lost", "dispose"],
+        assigned: ["mark_damaged", "mark_lost", "dispose"],
+        delivered: ["mark_damaged"],
+        damaged: ["repair_damaged", "dispose"],
+        returned: ["dispose"],
+        lost: [],
+        disposed: [],
+      };
+      const ACTION_URLS = {
+        transfer: "{% url 'inventory:transfer' %}",
+        reserve: "{% url 'inventory:reserve' %}",
+        assign: "{% url 'inventory:assign' %}",
+        deliver: "{% url 'inventory:deliver' %}",
+        mark_damaged: "{% url 'inventory:mark_damaged' %}",
+        mark_lost: "{% url 'inventory:mark_lost' %}",
+        dispose: "{% url 'inventory:dispose' %}",
+        repair_damaged: "{% url 'inventory:repair_damaged' %}",
+      };
+      const ACTION_LABELS = {
+        transfer: "Transfer selected",
+        reserve: "Reserve selected",
+        assign: "Assign selected",
+        deliver: "Deliver selected",
+        mark_damaged: "Mark damaged",
+        mark_lost: "Mark lost",
+        dispose: "Dispose",
+        repair_damaged: "Return to stock",
+      };
+      const bulkActionsBar = document.getElementById("asset-grid-bulk-actions");
+      function renderBulkActions(rows) {
+        bulkActionsBar.innerHTML = "";
+        if (!canEditGrid || rows.length === 0) {
+          bulkActionsBar.hidden = true;
+          return;
+        }
+        const availableActions = new Set();
+        rows.forEach((row) => (ACTIONS_BY_STATUS[row.status] || []).forEach((a) => availableActions.add(a)));
+        if (availableActions.size === 0) {
+          bulkActionsBar.hidden = true;
+          return;
+        }
+        const ids = rows.map((row) => row.id);
+        availableActions.forEach((action) => {
+          const link = document.createElement("a");
+          link.className = "btn btn--sm";
+          const params = new URLSearchParams();
+          ids.forEach((id) => params.append("unit_asset_ids", id));
+          link.href = `${ACTION_URLS[action]}?${params.toString()}`;
+          link.textContent = ACTION_LABELS[action];
+          bulkActionsBar.appendChild(link);
+        });
+        bulkActionsBar.hidden = false;
+      }
+
+      moreFiltersForm.querySelectorAll("[data-filter]").forEach((input) => {
+        input.addEventListener("change", () => table.setPage(1).then(() => table.replaceData()));
+      });
+
+      // "Export filtered CSV" mirrors whatever's currently applied in the
+      // grid (global search + header filters + date-range panel) onto the
+      // classic ?format=csv link — apps.core.csv_export.CSVExportMixin reads
+      // the exact same param names, so this stays a plain server-rendered
+      // download, no client-side CSV assembly.
+      const exportLink = document.getElementById("asset-grid-export-filtered");
+      function refreshExportLink() {
+        const params = new URLSearchParams({ format: "csv" });
+        const search = document.getElementById("asset-grid-search").value.trim();
+        if (search) params.set("q", search);
+        table.getHeaderFilters().forEach((f) => f.value !== "" && params.set(f.field, f.value));
+        moreFiltersForm.querySelectorAll("[data-filter]").forEach((input) => {
+          const key = input.dataset.filter;
+          const value = input.type === "checkbox" ? (input.checked ? "1" : "") : input.value;
+          if (value) params.set(key, value);
+        });
+        exportLink.href = `?${params.toString()}`;
+      }
+      table.on("dataLoaded", refreshExportLink);
+
+      // Column visibility panel — built from the live column list so it
+      // always matches exactly what's configured above, no separate list to
+      // keep in sync.
+      const columnsPanel = document.getElementById("asset-grid-columns-panel");
+      const columnsToggle = document.getElementById("asset-grid-columns-toggle");
+      table.on("tableBuilt", () => {
+        table.getColumns().forEach((column) => {
+          const field = column.getField();
+          if (!field) return;
+          const label = document.createElement("label");
+          const checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.checked = column.isVisible();
+          checkbox.addEventListener("change", () => (checkbox.checked ? column.show() : column.hide()));
+          label.appendChild(checkbox);
+          label.append(column.getDefinition().title);
+          columnsPanel.appendChild(label);
+        });
+      });
+      columnsToggle.addEventListener("click", () => {
+        const expanded = columnsToggle.getAttribute("aria-expanded") === "true";
+        columnsToggle.setAttribute("aria-expanded", String(!expanded));
+        columnsPanel.hidden = expanded;
+      });
+      document.addEventListener("click", (event) => {
+        if (!columnsPanel.hidden && !columnsPanel.contains(event.target) && event.target !== columnsToggle) {
+          columnsPanel.hidden = true;
+          columnsToggle.setAttribute("aria-expanded", "false");
+        }
+      });
+
+      // Saved personal views — apps.inventory.services.grid_views. The
+      // "More filters" date-range panel isn't part of Tabulator's own state,
+      // so it rides along as captureGridState()'s `extra` blob.
+      function captureExtraFilters() {
+        const extra = {};
+        moreFiltersForm.querySelectorAll("[data-filter]").forEach((input) => {
+          extra[input.dataset.filter] = input.type === "checkbox" ? input.checked : input.value;
+        });
+        return extra;
+      }
+      G.initSavedViews({
+        selectSelector: "#asset-grid-saved-views",
+        saveButtonSelector: "#asset-grid-save-view",
+        deleteButtonSelector: "#asset-grid-delete-view",
+        listUrl: "{% url 'inventory:saved_grid_view_list_create' grid_key='assets' %}",
+        deleteUrlTemplate: "{% url 'inventory:saved_grid_view_delete' pk='00000000-0000-0000-0000-000000000000' %}".replace("00000000-0000-0000-0000-000000000000", "__ID__"),
+        canShare: {% if user_is_administrator %}true{% else %}false{% endif %},
+        onCapture: () =>
+          G.captureGridState(table, document.getElementById("asset-grid-table"), document.getElementById("asset-grid-search"), captureExtraFilters),
+        onApply: (state) => {
+          G.applyGridState(
+            table,
+            document.getElementById("asset-grid-table"),
+            document.getElementById("asset-grid-search"),
+            state,
+            (extra) => {
+              moreFiltersForm.querySelectorAll("[data-filter]").forEach((input) => {
+                const value = extra[input.dataset.filter];
+                if (value === undefined) return;
+                if (input.type === "checkbox") input.checked = Boolean(value);
+                else input.value = value;
+              });
+              table.setPage(1).then(() => table.replaceData());
+            }
+          );
+        },
+      });
+    });
+  </script>
 {% endblock %}

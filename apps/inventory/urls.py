@@ -9,9 +9,26 @@ urlpatterns = [
     path("receive/", views.ReceiveStockView.as_view(), name="receive_stock"),
     path("receive/quick/", views.QuickReceiveView.as_view(), name="quick_receive"),
     path("assets/", views.UnitAssetListView.as_view(), name="asset_list"),
+    path("assets/grid-data/", views.UnitAssetGridDataView.as_view(), name="asset_grid_data"),
+    path(
+        "assets/<uuid:pk>/grid-field/",
+        views.AssetGridFieldUpdateView.as_view(),
+        name="asset_grid_field_update",
+    ),
     path("assets/<uuid:pk>/", views.UnitAssetDetailView.as_view(), name="asset_detail"),
     path("assets/<uuid:pk>/correct/", views.AdminCorrectUnitView.as_view(), name="asset_correct"),
+    path(
+        "grid-views/<str:grid_key>/",
+        views.SavedGridViewListCreateView.as_view(),
+        name="saved_grid_view_list_create",
+    ),
+    path(
+        "grid-views/<uuid:pk>/delete/",
+        views.SavedGridViewDeleteView.as_view(),
+        name="saved_grid_view_delete",
+    ),
     path("balances/", views.StockBalanceListView.as_view(), name="balance_list"),
+    path("balances/grid-data/", views.StockBalanceGridDataView.as_view(), name="balance_grid_data"),
     path("balances/<uuid:pk>/", views.StockBalanceDetailView.as_view(), name="balance_detail"),
     path(
         "balances/<uuid:pk>/correct/",

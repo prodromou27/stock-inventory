@@ -31,3 +31,38 @@ class SortableListMixin:
         context["sort_key"] = self.request.GET.get("sort", "")
         context["sort_dir"] = self.request.GET.get("dir", "asc")
         return context
+
+
+def parse_multi_sort(params):
+    """Parses repeated `?sort=field:dir` params (the data-grid JS's multi-
+    column-sort request format — apps.inventory.views' *GridDataView, static/
+    js/inventory_grid.js) into a plain `[(key, dir), ...]` list. Malformed
+    entries are skipped rather than raising — a stray/hand-edited querystring
+    should degrade to "unsorted on that entry", not 500.
+    """
+    sorters = []
+    for raw in params.getlist("sort"):
+        key, _, direction = raw.partition(":")
+        if not key:
+            continue
+        sorters.append((key, "desc" if direction == "desc" else "asc"))
+    return sorters
+
+
+def apply_multi_sort(queryset, sort_fields, sorters, default_ordering=()):
+    """The multi-column equivalent of SortableListMixin.apply_sort() — same
+    explicit allow-list contract (`sort_fields`, `{"key": "orm__path"}`),
+    but accepts several (key, dir) pairs (see parse_multi_sort()) instead of
+    one, applied in the order given via a single order_by() call so ties on
+    the first sorter break on the second, and so on. Unrecognized keys are
+    silently dropped (same fail-safe as the single-sort version) rather than
+    reaching into an arbitrary ORM path from user input.
+    """
+    fields = [
+        f"-{sort_fields[key]}" if direction == "desc" else sort_fields[key]
+        for key, direction in sorters
+        if key in sort_fields
+    ]
+    if not fields:
+        return queryset.order_by(*default_ordering)
+    return queryset.order_by(*fields, *default_ordering)

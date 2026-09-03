@@ -18,7 +18,7 @@
         <tbody>
           {% for asset in assets %}
             <tr>
-              <td><input type="checkbox" name="unit_asset_ids" value="{{ asset.pk }}"></td>
+              <td><input type="checkbox" name="unit_asset_ids" value="{{ asset.pk }}" {% if asset.pk|stringformat:"s" in preselected_ids %}checked{% endif %}></td>
               <td>{{ asset.product }}</td>
               <td>{{ asset.vendor_serial|default:"—" }}</td>
               <td><span class="badge {{ asset.status|badge_class }}">{{ asset.get_status_display }}</span></td>
