@@ -8,6 +8,11 @@ urlpatterns = [
     path("", views.ImportBatchListView.as_view(), name="batch_list"),
     path("upload/", views.ImportUploadView.as_view(), name="upload"),
     path("template.csv", views.ImportTemplateDownloadView.as_view(), name="template_download"),
+    path(
+        "template.xlsx",
+        views.ImportTemplateXlsxDownloadView.as_view(),
+        name="template_xlsx_download",
+    ),
     path("<uuid:pk>/", views.ImportBatchDetailView.as_view(), name="batch_detail"),
     path("<uuid:pk>/execute/", views.ImportExecuteView.as_view(), name="execute"),
     path(

@@ -13,6 +13,7 @@ from apps.catalog.models import Brand, Product, TrackingMethod
 from apps.catalog.services import check_duplicate_products, create_product
 from apps.core.authorization import ADMINISTRATOR, require_role
 from apps.core.text import normalize_whitespace
+from apps.inventory.models import StockPurpose
 from apps.inventory.services.receipts import receive_stock
 
 from . import parsing
@@ -32,11 +33,17 @@ EXECUTE_BATCH_SIZE = 500
 
 
 @transaction.atomic
-def create_batch_from_upload(*, uploaded_file, user):
+def create_batch_from_upload(
+    *, uploaded_file, user, default_location=None, default_stock_purpose=StockPurpose.INTERNAL
+):
     """Parses the file, creates the ImportBatch, and stages every row
     (doc 07 steps 1-4 collapsed into one pass — each row is independent and
     validation is cheap, so there's no benefit to a separate DB round trip
     per stage for a first version of this pipeline).
+
+    `default_location`/`default_stock_purpose` are the batch-wide fallbacks
+    a row uses only when its own LOCATION/Stock Purpose columns don't
+    resolve — per-row values always win when present (_stage_row()).
     """
     require_role(user, ADMINISTRATOR)
 
@@ -53,6 +60,8 @@ def create_batch_from_upload(*, uploaded_file, user):
         file_checksum=checksum,
         uploaded_by=user,
         status=ImportBatchStatus.PREVIEWED,
+        default_location=default_location,
+        default_stock_purpose=default_stock_purpose,
     )
     batch.file.save(uploaded_file.name, ContentFile(file_bytes), save=False)
     batch.full_clean(exclude=["file"])
@@ -62,7 +71,9 @@ def create_batch_from_upload(*, uploaded_file, user):
     failed_count = 0
     import_rows = []
     for row_number, raw in rows:
-        normalized, outcome, detail = _stage_row(raw)
+        normalized, outcome, detail = _stage_row(
+            raw, default_location=default_location, default_stock_purpose=default_stock_purpose
+        )
         if outcome == ImportRowOutcome.WARNING:
             warning_count += 1
         elif outcome == ImportRowOutcome.FAILED:
@@ -103,7 +114,7 @@ def _json_safe(raw):
     }
 
 
-def _stage_row(raw):
+def _stage_row(raw, *, default_location=None, default_stock_purpose=StockPurpose.INTERNAL):
     issues = []
     warnings = []
 
@@ -133,8 +144,24 @@ def _stage_row(raw):
     location_text = normalize_text(raw.get("LOCATION"))
     sub_location_text = normalize_text(raw.get("2nd floor Location"))
     resolved_location, location_detail = resolve_location(location_text, sub_location_text)
-    if resolved_location is None:
+    used_batch_default_location = False
+    if resolved_location is None and default_location is not None:
+        resolved_location = default_location
+        used_batch_default_location = True
+    elif resolved_location is None:
         warnings.append(location_detail or f"Unknown location '{location_text}'.")
+
+    stock_purpose_text = normalize_text(raw.get("Stock Purpose")).lower()
+    if stock_purpose_text in StockPurpose.values:
+        stock_purpose = stock_purpose_text
+    elif stock_purpose_text:
+        warnings.append(
+            f"Stock Purpose '{raw.get('Stock Purpose')}' is not recognized; "
+            f"using the batch default ({StockPurpose(default_stock_purpose).label})."
+        )
+        stock_purpose = default_stock_purpose
+    else:
+        stock_purpose = default_stock_purpose
 
     arrival_date, arrival_valid = parse_legacy_date(raw.get("Arrival Date"))
     if not arrival_valid:
@@ -187,7 +214,9 @@ def _stage_row(raw):
         "location_text": location_text,
         "sub_location_text": sub_location_text,
         "resolved_location_id": str(resolved_location.pk) if resolved_location else None,
+        "used_batch_default_location": used_batch_default_location,
         "location_override_id": None,
+        "stock_purpose": stock_purpose,
         "project_reference": normalize_text(raw.get("Project Ref. #")),
         "final_customer": normalize_text(raw.get("FINAL CUSTOMER")),
         "arrival_date": arrival_date.isoformat() if arrival_date else None,
@@ -454,6 +483,7 @@ def _execute_row(row, *, user):
             vendor_serial=data["vendor_serial"],
             quantity=data["quantity"]
             or (1 if data["tracking_method"] == TrackingMethod.UNIT else None),
+            stock_purpose=data.get("stock_purpose", StockPurpose.INTERNAL),
             project_reference=data["project_reference"],
             final_customer=data["final_customer"],
             notes=data["notes"],
@@ -512,57 +542,80 @@ def _get_or_create_import_product(*, user, brand_name, model, product_type_name,
 # --- Downloads --------------------------------------------------------
 
 
+_TEMPLATE_SAMPLE_ROWS = [
+    [
+        "Cisco",
+        "C881",
+        "Router",
+        "SFCZ2413C362",
+        "1",
+        "Basement 1",
+        "7",
+        "Q8832",
+        "ZORBAS",
+        "",
+        "",
+        "2026-01-15",
+        "",
+        "",
+        "",
+        "",
+        "Internal",
+    ],
+    [
+        "Generic",
+        "Patch Cable 1m",
+        "Cable",
+        "",
+        "50",
+        "Basement 1",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "2026-01-15",
+        "",
+        "",
+        "",
+        "",
+        "Customer",
+    ],
+]
+
+
 def build_template_csv():
     buffer = io.StringIO()
     writer = csv.writer(buffer)
     writer.writerow(parsing.COLUMNS)
-    writer.writerow(
-        [
-            "Cisco",
-            "C881",
-            "Router",
-            "SFCZ2413C362",
-            "1",
-            "Basement 1",
-            "7",
-            "Q8832",
-            "ZORBAS",
-            "",
-            "",
-            "2026-01-15",
-            "",
-            "",
-            "",
-            "",
-        ]
-    )
-    writer.writerow(
-        [
-            "Generic",
-            "Patch Cable 1m",
-            "Cable",
-            "",
-            "50",
-            "Basement 1",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "2026-01-15",
-            "",
-            "",
-            "",
-            "",
-        ]
-    )
+    for row in _TEMPLATE_SAMPLE_ROWS:
+        writer.writerow(row)
+    return buffer.getvalue()
+
+
+def build_template_xlsx():
+    """The .xlsx counterpart to build_template_csv() — same columns/sample
+    rows, for operators who'd rather round-trip through Excel than CSV
+    (both upload formats are already supported by apps.imports.parsing).
+    """
+    import openpyxl
+
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.title = "Import Template"
+    sheet.append(parsing.COLUMNS)
+    for row in _TEMPLATE_SAMPLE_ROWS:
+        sheet.append(row)
+
+    buffer = io.BytesIO()
+    workbook.save(buffer)
     return buffer.getvalue()
 
 
 def build_results_csv(batch):
     buffer = io.StringIO()
     writer = csv.writer(buffer)
-    writer.writerow(["Row", "Outcome", "Detail", "Brand", "Model", "Serial"])
+    writer.writerow(["Row", "Outcome", "Detail", "Brand", "Model", "Serial", "Stock Purpose"])
     for row in batch.rows.all():
         writer.writerow(
             [
@@ -572,6 +625,7 @@ def build_results_csv(batch):
                 row.normalized_data.get("brand_name", ""),
                 row.normalized_data.get("model", ""),
                 row.normalized_data.get("vendor_serial", ""),
+                row.normalized_data.get("stock_purpose", ""),
             ]
         )
     return buffer.getvalue()

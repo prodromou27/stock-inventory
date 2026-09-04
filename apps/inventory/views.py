@@ -55,13 +55,17 @@ from .forms import (
     DeliverForm,
     DisposeForm,
     DispositionForm,
+    QuantityPurposeReclassifyForm,
     QuickReceiveForm,
+    ReceiveBulkBatchForm,
+    ReceiveBulkFormSet,
     ReceiveStockForm,
     RepairDamagedForm,
     ReserveForm,
     ReturnAssessmentForm,
     ReturnForm,
     TransferForm,
+    UnitPurposeReclassifyForm,
 )
 from .models import (
     InventoryTransaction,
@@ -70,6 +74,7 @@ from .models import (
     ReservationStatus,
     SavedGridView,
     StockBalance,
+    StockPurpose,
     StockReservation,
     UnitAsset,
     UnitStatus,
@@ -82,7 +87,13 @@ from .services.grid_views import (
     delete_saved_grid_view,
     list_saved_grid_views,
 )
-from .services.receipts import DuplicateSerialError, receive_stock, receive_stock_batch
+from .services.purpose import reclassify_quantity_purpose, reclassify_unit_purpose
+from .services.receipts import (
+    DuplicateSerialError,
+    receive_stock,
+    receive_stock_batch,
+    receive_stock_bulk,
+)
 from .services.reservations import release_reservation, reserve_stock
 from .services.returns import assess_return, return_stock
 from .services.transfers import bulk_transfer
@@ -206,6 +217,7 @@ class ReceiveStockView(LoginRequiredMixin, RoleRequiredMixin, View):
                 occurred_at=data["occurred_at"],
                 vendor_serial=data["vendor_serial"],
                 quantity=data["quantity"],
+                stock_purpose=data["stock_purpose"],
                 project_reference=data["project_reference"],
                 final_customer=data["final_customer"],
                 supplier=data["supplier"],
@@ -266,6 +278,7 @@ class QuickReceiveView(LoginRequiredMixin, RoleRequiredMixin, View):
                 location=data["location"],
                 occurred_at=data["occurred_at"],
                 vendor_serials=data["vendor_serials"],
+                stock_purpose=data["stock_purpose"],
                 project_reference=data["project_reference"],
                 final_customer=data["final_customer"],
                 supplier=data["supplier"],
@@ -294,11 +307,111 @@ class QuickReceiveView(LoginRequiredMixin, RoleRequiredMixin, View):
                         "product": data["product"].pk,
                         "location": data["location"].pk,
                         "occurred_at": data["occurred_at"],
+                        "stock_purpose": data["stock_purpose"],
                     },
                 ),
                 "results": results,
             },
         )
+
+
+class ReceiveBulkView(LoginRequiredMixin, RoleRequiredMixin, View):
+    """A single atomic multi-line goods receipt — several products, mixed
+    serialized/quantity, one shared default location/purpose with a per-row
+    override, committed as one InventoryTransaction via receive_stock_bulk()
+    (unlike QuickReceiveView's receive_stock_batch(), which is explicitly
+    not atomic across rows). GET renders the batch form + line formset. A
+    POST that fails validation re-renders with errors; a valid POST calls
+    the service directly — the rendered formset (still showing every
+    entered value, plus a summary block the template renders above the
+    submit button) doubles as the review step, per the existing pattern
+    every other movement form in this app already uses for surfacing
+    validation problems before commit.
+    """
+
+    allowed_roles = (ADMINISTRATOR, STOCK_MANAGER)
+    template_name = "inventory/receive_bulk_form.html"
+
+    def get(self, request):
+        batch_form = ReceiveBulkBatchForm(user=request.user)
+        formset = ReceiveBulkFormSet(form_kwargs={"user": request.user})
+        return render(request, self.template_name, {"batch_form": batch_form, "formset": formset})
+
+    def post(self, request):
+        batch_form = ReceiveBulkBatchForm(request.POST, user=request.user)
+        formset = ReceiveBulkFormSet(request.POST, form_kwargs={"user": request.user})
+        batch_valid = batch_form.is_valid()
+        formset_valid = formset.is_valid()
+        if not (batch_valid and formset_valid):
+            return render(
+                request, self.template_name, {"batch_form": batch_form, "formset": formset}
+            )
+
+        line_rows = []
+        for row in formset.cleaned_data:
+            if not row or not row.get("product"):
+                continue
+            product = row["product"]
+            entry = {
+                "product": product,
+                "location": row.get("location") or None,
+                "stock_purpose": row.get("stock_purpose") or None,
+                "notes": row.get("notes", ""),
+            }
+            if product.tracking_method == TrackingMethod.UNIT:
+                entry["vendor_serials"] = row.get("parsed_serials", [])
+                entry["condition"] = row.get("condition")
+                entry["accessories"] = row.get("accessories", "")
+            else:
+                entry["quantity"] = row.get("quantity")
+            line_rows.append(entry)
+
+        if not line_rows:
+            batch_form.add_error(None, "Add at least one line to the receipt.")
+            return render(
+                request, self.template_name, {"batch_form": batch_form, "formset": formset}
+            )
+
+        data = batch_form.cleaned_data
+        try:
+            txn = receive_stock_bulk(
+                user=request.user,
+                occurred_at=data["occurred_at"],
+                default_location=data["default_location"],
+                default_stock_purpose=data["default_stock_purpose"],
+                lines=line_rows,
+                supplier=data["supplier"],
+                invoice_number=data["invoice_number"],
+                project_reference=data["project_reference"],
+                final_customer=data["final_customer"],
+                notes=data["notes"],
+                duplicate_serial_acknowledged=request.POST.get("duplicate_serial_acknowledged")
+                == "true",
+            )
+        except DuplicateSerialError as exc:
+            return render(
+                request,
+                self.template_name,
+                {
+                    "batch_form": batch_form,
+                    "formset": formset,
+                    "duplicate_matches": exc.matches,
+                    "duplicate_by_serial": exc.by_serial,
+                    "show_duplicate_warning": True,
+                },
+            )
+        except ValidationError as exc:
+            batch_form.add_error(None, exc)
+            return render(
+                request, self.template_name, {"batch_form": batch_form, "formset": formset}
+            )
+
+        messages.success(
+            request,
+            f"Received {len(line_rows)} line(s) into stock — transaction "
+            f"{txn.transaction_number}.",
+        )
+        return redirect(txn.get_absolute_url())
 
 
 class UnitAssetListView(LoginRequiredMixin, CSVExportMixin, SortableListMixin, ListView):
@@ -314,7 +427,9 @@ class UnitAssetListView(LoginRequiredMixin, CSVExportMixin, SortableListMixin, L
         "Type",
         "Serial",
         "Status",
+        "Stock Purpose",
         "Location",
+        "Assigned To",
         "Project Reference",
         "Final Customer",
         "Arrival Date",
@@ -339,7 +454,11 @@ class UnitAssetListView(LoginRequiredMixin, CSVExportMixin, SortableListMixin, L
         queryset = scope_queryset(
             self.request.user,
             UnitAsset.objects.select_related(
-                "product", "product__brand", "product__product_type", "current_location"
+                "product",
+                "product__brand",
+                "product__product_type",
+                "current_location",
+                "current_custody_transaction",
             ),
             location_field="current_location",
         )
@@ -351,6 +470,7 @@ class UnitAssetListView(LoginRequiredMixin, CSVExportMixin, SortableListMixin, L
 
     def csv_rows(self, queryset):
         for asset in queryset:
+            assigned_to = _assigned_to_block(asset.current_custody_transaction)
             yield [
                 asset.product.brand.name,
                 asset.product.model,
@@ -358,7 +478,9 @@ class UnitAssetListView(LoginRequiredMixin, CSVExportMixin, SortableListMixin, L
                 asset.product.product_type.name,
                 asset.vendor_serial,
                 asset.get_status_display(),
+                asset.get_stock_purpose_display(),
                 str(asset.current_location or ""),
+                assigned_to["name"] if assigned_to else "",
                 asset.project_reference,
                 asset.final_customer,
                 asset.arrival_date.isoformat() if asset.arrival_date else "",
@@ -370,6 +492,7 @@ class UnitAssetListView(LoginRequiredMixin, CSVExportMixin, SortableListMixin, L
         context["query"] = self.request.GET.get("q", "")
         context["selected_status"] = self.request.GET.get("status", "")
         context["statuses"] = UnitStatus.choices
+        context["stock_purposes"] = StockPurpose.choices
         context["locations"] = accessible_locations(self.request.user).order_by("level", "name")
         context["filters"] = self.request.GET
         return context
@@ -430,7 +553,11 @@ class UnitAssetGridDataView(LoginRequiredMixin, View):
         queryset = scope_queryset(
             request.user,
             UnitAsset.objects.select_related(
-                "product", "product__brand", "product__product_type", "current_location"
+                "product",
+                "product__brand",
+                "product__product_type",
+                "current_location",
+                "current_custody_transaction",
             ),
             location_field="current_location",
         )
@@ -473,6 +600,8 @@ class UnitAssetGridDataView(LoginRequiredMixin, View):
             "serial": asset.vendor_serial,
             "status": asset.status,
             "status_display": asset.get_status_display(),
+            "stock_purpose": asset.stock_purpose,
+            "stock_purpose_display": asset.get_stock_purpose_display(),
             "condition": asset.condition,
             "condition_display": asset.get_condition_display(),
             "location": str(asset.current_location) if asset.current_location else "",
@@ -489,6 +618,7 @@ class UnitAssetGridDataView(LoginRequiredMixin, View):
             ),
             "notes": asset.notes,
             "last_movement": asset.last_movement_at.isoformat() if asset.last_movement_at else None,
+            "assigned_to": _assigned_to_block(asset.current_custody_transaction),
             "detail_url": asset.get_absolute_url(),
             "quick_actions": _quick_actions_for(asset) if can_act else [],
         }
@@ -594,6 +724,36 @@ ASSET_QUICK_ACTION_LABELS = {
 }
 
 
+def _assigned_to_block(custody_transaction):
+    """The "Assigned To" display block for a UnitAsset's current custody
+    pointer (models.py's UnitAsset.current_custody_transaction) — every
+    field is read from that one transaction rather than duplicated onto
+    UnitAsset, so this is the single place that shape gets assembled for
+    the grid, the asset detail page, and search results. None when the
+    asset isn't currently assigned/delivered.
+    """
+    if custody_transaction is None:
+        return None
+    is_assignment = custody_transaction.movement_type == MovementType.ASSIGNMENT
+    return {
+        "type": "employee" if is_assignment else "customer",
+        "type_display": "Employee" if is_assignment else "Customer",
+        "name": custody_transaction.employee_name or custody_transaction.final_customer,
+        "reference": custody_transaction.recipient_reference,
+        "project_reference": custody_transaction.project_reference,
+        "transaction_id": str(custody_transaction.pk),
+        "transaction_number": custody_transaction.transaction_number,
+        "transaction_url": custody_transaction.get_absolute_url(),
+        "date": custody_transaction.occurred_at.isoformat(),
+        "expected_return_date": (
+            custody_transaction.expected_return_date.isoformat()
+            if custody_transaction.expected_return_date
+            else None
+        ),
+        "notes": custody_transaction.notes,
+    }
+
+
 def _quick_actions_for(asset):
     """[{url, label}] for the movement actions `asset`'s current status is
     eligible for, each URL pre-filled with this one asset via the same
@@ -681,7 +841,9 @@ class UnitAssetDetailView(LoginRequiredMixin, DetailView):
 
     def get_object(self, queryset=None):
         obj = get_object_or_404(
-            UnitAsset.objects.select_related("product", "product__brand", "current_location"),
+            UnitAsset.objects.select_related(
+                "product", "product__brand", "current_location", "current_custody_transaction"
+            ),
             pk=self.kwargs["pk"],
         )
         require_location_access(self.request.user, obj.current_location)
@@ -706,6 +868,12 @@ class UnitAssetDetailView(LoginRequiredMixin, DetailView):
             "transaction", "from_location", "to_location", "recorded_by"
         )
         context["quick_actions"] = _quick_actions_for(self.object)
+        context["assigned_to"] = _assigned_to_block(self.object.current_custody_transaction)
+        context["other_stock_purpose"] = (
+            StockPurpose.CUSTOMER
+            if self.object.stock_purpose == StockPurpose.INTERNAL
+            else StockPurpose.INTERNAL
+        )
         return context
 
 
@@ -715,7 +883,17 @@ class StockBalanceListView(LoginRequiredMixin, CSVExportMixin, SortableListMixin
     context_object_name = "balances"
     paginate_by = 50
     csv_filename = "stock_balances.csv"
-    csv_headers = ["Brand", "Model", "SKU", "Type", "Location", "On Hand", "Reserved", "Available"]
+    csv_headers = [
+        "Brand",
+        "Model",
+        "SKU",
+        "Type",
+        "Location",
+        "Stock Purpose",
+        "On Hand",
+        "Reserved",
+        "Available",
+    ]
 
     # available_quantity is a computed @property (on_hand - reserved), not a
     # DB column, so it isn't sortable without an .annotate() — on_hand and
@@ -750,6 +928,7 @@ class StockBalanceListView(LoginRequiredMixin, CSVExportMixin, SortableListMixin
                 balance.product.sku,
                 balance.product.product_type.name,
                 str(balance.location),
+                balance.get_stock_purpose_display(),
                 balance.on_hand_quantity,
                 balance.reserved_quantity,
                 balance.available_quantity,
@@ -758,6 +937,7 @@ class StockBalanceListView(LoginRequiredMixin, CSVExportMixin, SortableListMixin
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["locations"] = accessible_locations(self.request.user).order_by("level", "name")
+        context["stock_purposes"] = StockPurpose.choices
         context["filters"] = self.request.GET
         return context
 
@@ -841,6 +1021,8 @@ class StockBalanceGridDataView(LoginRequiredMixin, View):
             "country": breadcrumb.get("country", ""),
             "storage_room": breadcrumb.get("storage_room", ""),
             "shelf": breadcrumb.get("shelf", ""),
+            "stock_purpose": balance.stock_purpose,
+            "stock_purpose_display": balance.get_stock_purpose_display(),
             "on_hand": balance.on_hand_quantity,
             "reserved": balance.reserved_quantity,
             "available": balance.available_quantity_annotated,
@@ -1217,6 +1399,7 @@ def _quantity_lines_from_form(data, *, location_field="quantity_location"):
             "product": data["quantity_product"],
             "location": data[location_field],
             "quantity": data["quantity_amount"],
+            "stock_purpose": data.get("quantity_stock_purpose") or StockPurpose.INTERNAL,
         }
     ]
 
@@ -1255,6 +1438,7 @@ class TransferView(LoginRequiredMixin, RoleRequiredMixin, View):
                     "product": data["quantity_product"],
                     "source_location": data["quantity_source_location"],
                     "quantity": data["quantity_amount"],
+                    "stock_purpose": data.get("quantity_stock_purpose") or StockPurpose.INTERNAL,
                 }
             )
 
@@ -1404,6 +1588,7 @@ class AssignView(LoginRequiredMixin, RoleRequiredMixin, View):
                 unit_asset_ids=unit_asset_ids,
                 quantity_lines=_quantity_lines_from_form(data),
                 project_reference=data["project_reference"],
+                recipient_reference=data["recipient_reference"],
                 is_temporary_assignment=data["is_temporary_assignment"],
                 expected_return_date=data["expected_return_date"],
                 condition=data["condition"] or None,
@@ -1453,6 +1638,7 @@ class DeliverView(LoginRequiredMixin, RoleRequiredMixin, View):
                 unit_asset_ids=unit_asset_ids,
                 quantity_lines=_quantity_lines_from_form(data),
                 project_reference=data["project_reference"],
+                recipient_reference=data["recipient_reference"],
                 condition=data["condition"] or None,
                 accessories=data["accessories"] or None,
                 notes=data["notes"],
@@ -1470,10 +1656,10 @@ class ReturnView(LoginRequiredMixin, RoleRequiredMixin, View):
     transaction (spec §9, acceptance criterion §21.7). The quantity-product
     choices are limited to products that actually appear as a quantity line
     on the original transaction, so the form can't reference an unrelated
-    product — but note the service does not track how much of an original
-    quantity line has already been partially returned, so repeated partial
-    quantity returns against the same transaction are not capped at the
-    originally issued amount. This is a known simplification.
+    product; the service (apps.inventory.services.returns.return_stock())
+    also tracks how much of an original quantity line has already been
+    returned and caps a return at the outstanding amount, so repeated
+    partial returns against the same transaction can't over-return.
     """
 
     allowed_roles = (ADMINISTRATOR, STOCK_MANAGER)
@@ -1541,7 +1727,11 @@ class ReturnView(LoginRequiredMixin, RoleRequiredMixin, View):
         quantity_lines = []
         if data["quantity_product"]:
             quantity_lines.append(
-                {"product": data["quantity_product"], "quantity": data["quantity_amount"]}
+                {
+                    "product": data["quantity_product"],
+                    "quantity": data["quantity_amount"],
+                    "stock_purpose": data.get("quantity_stock_purpose") or StockPurpose.INTERNAL,
+                }
             )
 
         try:
@@ -1812,6 +2002,7 @@ class AdminCorrectBalanceView(LoginRequiredMixin, RoleRequiredMixin, View):
                 new_on_hand_quantity=data["new_on_hand_quantity"],
                 occurred_at=data["occurred_at"],
                 reason=data["reason"],
+                stock_purpose=balance.stock_purpose,
             )
         except ValidationError as exc:
             form.add_error(None, exc)
@@ -1862,3 +2053,96 @@ class AdminReverseTransactionView(LoginRequiredMixin, RoleRequiredMixin, View):
 
         messages.success(request, f"Reversed — transaction {txn.transaction_number}.")
         return redirect(txn.get_absolute_url())
+
+
+class UnitPurposeReclassifyView(LoginRequiredMixin, RoleRequiredMixin, View):
+    """Relabels one serialized asset's Stock Purpose — a label change, not a
+    movement, so unlike every other action on this page there's no eligible-
+    statuses gate: an asset can be reclassified in any status.
+    """
+
+    allowed_roles = (ADMINISTRATOR, STOCK_MANAGER)
+    template_name = "inventory/purpose_reclassify_unit_form.html"
+
+    def get(self, request, pk):
+        asset = get_object_or_404(UnitAsset, pk=pk)
+        require_location_access(request.user, asset.current_location)
+        new_purpose = (
+            StockPurpose.CUSTOMER
+            if asset.stock_purpose == StockPurpose.INTERNAL
+            else StockPurpose.INTERNAL
+        )
+        form = UnitPurposeReclassifyForm(initial={"new_purpose": new_purpose})
+        return render(request, self.template_name, {"form": form, "asset": asset})
+
+    def post(self, request, pk):
+        asset = get_object_or_404(UnitAsset, pk=pk)
+        require_location_access(request.user, asset.current_location)
+        form = UnitPurposeReclassifyForm(request.POST)
+        if not form.is_valid():
+            return render(request, self.template_name, {"form": form, "asset": asset})
+
+        data = form.cleaned_data
+        try:
+            reclassify_unit_purpose(
+                user=request.user,
+                unit_asset=asset,
+                new_purpose=data["new_purpose"],
+                occurred_at=data["occurred_at"],
+                reason=data["reason"],
+            )
+        except ValidationError as exc:
+            form.add_error(None, exc)
+            return render(request, self.template_name, {"form": form, "asset": asset})
+
+        messages.success(request, "Stock purpose updated.")
+        return redirect(asset.get_absolute_url())
+
+
+class QuantityPurposeReclassifyView(LoginRequiredMixin, RoleRequiredMixin, View):
+    """Moves quantity between the Internal and Customer buckets of one
+    StockBalance row at the same location (reclassify_quantity_purpose()) —
+    a real ledger transaction, unlike the unit-asset case.
+    """
+
+    allowed_roles = (ADMINISTRATOR, STOCK_MANAGER)
+    template_name = "inventory/purpose_reclassify_quantity_form.html"
+
+    def get(self, request, pk):
+        balance = get_object_or_404(StockBalance, pk=pk)
+        require_location_access(request.user, balance.location)
+        other_purpose = (
+            StockPurpose.CUSTOMER
+            if balance.stock_purpose == StockPurpose.INTERNAL
+            else StockPurpose.INTERNAL
+        )
+        form = QuantityPurposeReclassifyForm(
+            initial={"from_purpose": balance.stock_purpose, "to_purpose": other_purpose}
+        )
+        return render(request, self.template_name, {"form": form, "balance": balance})
+
+    def post(self, request, pk):
+        balance = get_object_or_404(StockBalance, pk=pk)
+        require_location_access(request.user, balance.location)
+        form = QuantityPurposeReclassifyForm(request.POST)
+        if not form.is_valid():
+            return render(request, self.template_name, {"form": form, "balance": balance})
+
+        data = form.cleaned_data
+        try:
+            reclassify_quantity_purpose(
+                user=request.user,
+                product=balance.product,
+                location=balance.location,
+                from_purpose=data["from_purpose"],
+                to_purpose=data["to_purpose"],
+                quantity=data["quantity"],
+                occurred_at=data["occurred_at"],
+                reason=data["reason"],
+            )
+        except ValidationError as exc:
+            form.add_error(None, exc)
+            return render(request, self.template_name, {"form": form, "balance": balance})
+
+        messages.success(request, "Stock purpose updated.")
+        return redirect(balance.get_absolute_url())

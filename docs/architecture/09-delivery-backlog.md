@@ -950,6 +950,122 @@ Lines/Asset Status History, choosing columns and up to three filters; a saved re
 only) or kept private; running any custom report — including someone else's shared one — never surfaces a single
 row outside the viewer's own accessible locations, proven by test, not just by construction.
 
+### Additional feature — Stock Purpose, custodian tracking, guided receiving, import defaults, low-stock filtering — done
+
+Added directly on user request: "give the Stock Manager practical control over receiving, locating, classifying,
+monitoring, assigning, delivering, and returning stock." Research at the start of this wave found the app already
+covered most of the ask — Assign/Deliver/Return/Reserve/Damaged/Lost/Dispose/Admin-correction/reversal and a
+staged-then-executed Excel/CSV import pipeline all pre-existed as real audited services — so this wave is five
+targeted additions, not a rebuild:
+
+**1. Stock Purpose (Internal/Customer) — genuinely new, not in the spec or any architecture doc.** A
+`StockPurpose` classification (`apps/inventory/models.py`), orthogonal to `UnitStatus` exactly as requested ("an
+item can be Internal + In Stock, Customer + Reserved, Customer + Delivered"). The one real design decision: whether
+`StockBalance` needed to split by purpose for quantity-tracked stock, or whether tagging transactions/reservations
+alone would do. Chose to split — `StockBalance`'s unique key moved from `(product, location)` to
+`(product, location, stock_purpose)` — because "Internal Stock"/"Customer Stock" filtered views need a real
+available-quantity number per bucket for bulk products, not just serialized ones, and a tag-only approach can't
+produce that. Migrated with a plain `AddField(default="internal")`, so every pre-existing balance keeps today's
+exact numbers in a single Internal bucket; a second Customer bucket only appears where a Stock Manager actually
+creates one via receipt or the new reclassify action. `StockReservation` and `InventoryTransactionLine` carry the
+same field so a reservation/line always names which bucket it moved. New `apps/inventory/services/purpose.py`:
+`reclassify_unit_purpose()` (a label change + `AuditEvent.STOCK_PURPOSE_CHANGED`, no ledger transaction — nothing
+physically moved) and `reclassify_quantity_purpose()` (a real two-leg `MovementType.PURPOSE_CHANGE` transaction,
+symmetric to `bulk_transfer()` but changing purpose instead of location, reusing `adjust_balance()`'s existing
+negative/available-stock guard). Every service that touches a `StockBalance`/`StockReservation`
+(`assignments.py`, `returns.py`, `reservations.py`, `disposition.py`, `transfers.py`, `corrections.py`) was
+threaded with a `stock_purpose` kwarg defaulting to Internal, so no existing call site's behavior changed.
+
+**2. A denormalized "current custodian" pointer.** `employee_name`/`final_customer`/`project_reference`/
+`expected_return_date` already existed on `InventoryTransaction` (doc 02), but only reachable by joining through
+transaction lines — there was no fast "who has this right now" for the grid/detail/search the request asked for.
+Added exactly one FK, `UnitAsset.current_custody_transaction`, plus one new free-text field,
+`InventoryTransaction.recipient_reference` ("employee/customer reference if available"). Every other requested
+display field (type, name, reference, project reference, transaction number, date, expected return, notes) is
+derived from that one FK at read time (`apps.inventory.views._assigned_to_block()`), not duplicated onto new
+columns. Deliberately **not** a Customer/Employee/Contact master-data entity — spec §22 explicitly excludes
+"Customer addresses and contacts" and "Customer/project master-data management," and §2.6 states the app "is not
+the master system for customer or project data"; `recipient_reference` stays manual free text, same as
+`employee_name`/`final_customer` already are. The pointer is set/cleared in exactly one place —
+`apps.inventory.services.ledger.write_unit_line()` — rather than scattered across every caller: it's set whenever
+`to_status` is Assigned/Delivered and cleared whenever `from_status` was Assigned/Delivered, which correctly
+covers assignment, delivery, return, a direct damaged/lost/dispose from Assigned, and an Administrator correction
+moving an asset in or out of custody, all through the one shared primitive every unit status change already goes
+through.
+
+**3. A true atomic multi-line goods receipt.** `receive_stock()`/`receive_stock_batch()` (existing) handle one
+product per call, and the batch variant is explicitly not atomic across rows (one `receive_stock()` call per
+serial). New `receive_stock_bulk()` (`apps/inventory/services/receipts.py`) takes several product lines — mixed
+serialized/quantity — under one shared default location/purpose with a per-line override, validates every line
+(product active, tracking-method shape, a batch-wide duplicate-serial pre-check) before writing anything, then
+writes one `InventoryTransaction` with N lines inside a single `@transaction.atomic` block: a bad line anywhere
+rolls back the entire receipt. New `ReceiveBulkView`/`inventory:receive_bulk`, reusing the
+`QuickAddProductFormSet` dynamic-formset pattern (`apps/catalog/forms.py`) for the line rows; the rendered,
+still-filled formset doubles as the review step before commit, matching how every other movement form in this app
+already surfaces validation problems.
+
+**4. Import defaults.** `ImportBatch` gained `default_location`/`default_stock_purpose`, set once at upload
+(`ImportUploadForm`) and applied by `_stage_row()` only when a row's own LOCATION/Stock Purpose columns don't
+resolve — per-row values still win, matching the same "batch default with per-item override" shape the new bulk
+receive screen uses for manual entry. Added an optional `Stock Purpose` column to the import template/parser and a
+parallel `.xlsx` template download (`build_template_xlsx()`, openpyxl — already a dependency) alongside the
+existing CSV one. The pre-existing `file_checksum` repeat-upload check (doc 07) stayed advisory at upload time (a
+`ValidationError` there would lose the user's file selection with no server-side way to resubmit without
+reselecting it) but gained a hard confirmation gate at `ImportExecuteView` — the point where inventory is actually
+about to change — re-checked at execute time (not just upload time) so a batch left staged for a while is still
+caught.
+
+**5. Low-stock discoverability, not a new notification mechanism.** The threshold field, `low_stock_balances()`,
+`dashboard_summary()`'s count, and a dedicated `reporting:low_stock` page all already existed (spec §16 —
+"disabled unless configured," "no notification service required initially"; §22 excludes "Mandatory minimum-stock
+alerts"). "One active warning, no duplicates, resolves automatically" is satisfied for free by a live query — one
+row per below-threshold `(product, location, purpose)` triple, impossible to duplicate because nothing is stored,
+resolved the instant the query re-runs after stock rises — so no new model, scheduled task, or delivery channel
+was added. `LowStockView` gained a country/location filter (any level, via the same `path__descendant_or_self`
+ltree match every other location filter in this app already uses) and a Stock Purpose column; the dashboard
+(`apps/core/views.py`'s `HomeView`, unchanged — `dashboard_summary()`/`data_quality_summary()` already flow
+through automatically) gained Internal/Customer/Reserved/Assigned/Delivered/Disposed stat cards, Receive/Import/
+Transfer/Assign/Deliver quick actions, and a new "Assigned/Delivered assets missing custodian info" data-quality
+line (the same "genuine data-integrity gap, not a normal state" framing as the pre-existing unlocated-assets
+check).
+
+**Grid/report surfacing**: `UnitAssetGridDataView`/`StockBalanceGridDataView` gained `stock_purpose`/
+`stock_purpose_display` and (assets only) an `assigned_to` block, with a Stock Purpose header-filter column on
+both grids and an Assigned To column on the Assets grid — **not** added to `EDITABLE_FIELDS`/any inline-edit path,
+since purpose and custodian changes must go through the audited reclassify/movement views, per this feature
+request's own explicit "no direct grid editing of ... status, location, recipient, assignment" rule.
+`employee_assignments`/`customer_deliveries` reports gained a Reference column.
+
+**Testing**: 41 new tests across `test_inventory_receipts.py` (`receive_stock_bulk` — mixed lines, default+
+override location/purpose, mid-batch rollback, cross-line duplicate-serial detection), `test_inventory_
+assignments_deliveries.py` (custody pointer set on assign/deliver, `recipient_reference`, cleared on return and on
+a direct mark-lost from Assigned), new `test_inventory_purpose.py` (unit reclassify audit trail and no-ledger-
+write guarantee, quantity reclassify atomicity and the existing available-stock guard rejecting an over-large
+move, reserved quantity correctly blocking a reclassify), `test_inventory_grid.py` (new serialized fields, new
+fields absent from every editable-field allow-list check), `test_dashboard.py` (new stat keys, the missing-
+custodian data-quality check), `test_reporting.py` (low-stock location filter including country-level ancestor
+match), and `test_imports_services.py`/`test_imports_views.py` (default location/purpose fallback and per-row
+override, the `.xlsx` template round-tripping through the existing parser, the repeat-upload confirmation gate).
+Full suite (746 tests, up from 705) green; `ruff`/`black`/`makemigrations --check --dry-run` clean. Verified live
+end-to-end against the dev database via Selenium (both themes' shared component classes, no new CSS needed): a
+multi-line bulk receipt (one serialized + one quantity line) submitted correctly to one transaction, the created
+asset's detail page showed the Stock Purpose badge and Reclassify action, the dashboard's new stat cards and
+data-quality line rendered with real counts, and the Low Stock report's location filter narrowed results
+correctly including via a Country-level ancestor.
+
+**Acceptance**: a Stock Manager can receive a mixed multi-product batch as one atomic transaction with a shared
+default location/purpose and per-row overrides; every asset/balance can be classified Internal or Customer
+independently of its operational status, with every change audited; the grid, asset detail page, and reports show
+who currently holds an assigned/delivered asset without a per-row query; an Excel/CSV import can set a batch
+default location/purpose and round-trips through either template format; the Low Stock report can be filtered by
+country or location; none of this touches the append-only ledger tables' write path except through the existing
+`ledger.py` primitives, and no existing URL, permission, or transaction record was preserved with anything other
+than its exact pre-existing behavior on all migrated data. **Deferred, not built**: `apps/imports` remains
+Administrator-only end to end, even though `docs/architecture/04-permission-matrix.md` documents Stock Manager
+import access "within scope" — opening it up safely needs location-scoping added to the whole import pipeline
+first (an `ImportBatch`/`ImportRow` currently has no location field to scope by until a row is staged), which is
+a separable follow-up, not attempted here to avoid a half-built permission change.
+
 ## Sequencing notes
 
 - Prompt 0 (this package) has no code dependency and is complete.

@@ -10,6 +10,8 @@
       <div class="page-header__subtitle">
         Uploaded {{ batch.uploaded_at }} by {{ batch.uploaded_by }}
         {% if batch.executed_at %}&middot; Executed {{ batch.executed_at }} by {{ batch.executed_by }}{% endif %}
+        &middot; Default location: {{ batch.default_location|default:"none (per-row only)" }}
+        &middot; Default stock purpose: {{ batch.get_default_stock_purpose_display }}
       </div>
     </div>
     {% if batch.executed_at %}
@@ -47,12 +49,23 @@
   </div>
 
   {% if can_execute %}
-    <form method="post" action="{% url 'imports:execute' batch.pk %}" class="card">
+    <form method="post" action="{% url 'imports:execute' batch.pk %}" class="card"
+          {% if is_repeat_of_completed %}data-confirm="A completed import with the same file contents already exists. Execute anyway?"{% endif %}>
       {% csrf_token %}
       <p>
         Execution imports every non-skipped row with a resolved location. Duplicate serial warnings must be
         acknowledged explicitly on the affected row first.
       </p>
+      {% if is_repeat_of_completed %}
+        <p class="messages__item messages__item--warning">
+          A completed import with these exact file contents already exists — check you don't mean to
+          re-import the same data.
+        </p>
+        <label>
+          <input type="checkbox" name="confirm_repeat_upload" value="true" required>
+          I confirm this is intentional.
+        </label>
+      {% endif %}
       <button type="submit" class="btn btn--primary">Execute import</button>
     </form>
   {% endif %}
@@ -76,6 +89,7 @@
         <th>Brand / Model</th>
         <th>Serial</th>
         <th>Location</th>
+        <th>Stock Purpose</th>
         <th>Outcome</th>
         <th>Detail</th>
         {% if can_edit %}<th>Actions</th>{% endif %}
@@ -87,7 +101,11 @@
           <td>{{ row.row_number }}</td>
           <td>{{ row.normalized_data.brand_name }} {{ row.normalized_data.model }}</td>
           <td>{{ row.normalized_data.vendor_serial|default:"—" }}</td>
-          <td>{{ row.normalized_data.location_text }}{% if row.normalized_data.sub_location_text %} / {{ row.normalized_data.sub_location_text }}{% endif %}</td>
+          <td>
+            {{ row.normalized_data.location_text }}{% if row.normalized_data.sub_location_text %} / {{ row.normalized_data.sub_location_text }}{% endif %}
+            {% if row.normalized_data.used_batch_default_location %}<span class="text-muted">(batch default)</span>{% endif %}
+          </td>
+          <td>{{ row.normalized_data.stock_purpose|default:"—"|capfirst }}</td>
           <td><span class="badge {{ row.outcome|badge_class }}">{{ row.get_outcome_display }}</span></td>
           <td>{{ row.outcome_detail }}</td>
           {% if can_edit %}

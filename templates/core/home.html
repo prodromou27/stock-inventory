@@ -16,6 +16,31 @@
     <p class="messages__item messages__item--warning">No role group assigned yet. Contact an Administrator.</p>
   {% endif %}
 
+  {% if user_is_administrator or "StockManager" in user_role_groups %}
+    <div class="card-grid">
+      <a class="action-card action-card--primary" href="{% url 'inventory:receive_bulk' %}">
+        <span class="action-card__title">Receive</span>
+        <span class="action-card__desc">Record new stock arriving into a location.</span>
+      </a>
+      <a class="action-card action-card--primary" href="{% url 'imports:upload' %}">
+        <span class="action-card__title">Import</span>
+        <span class="action-card__desc">Bulk-load stock from an Excel/CSV file.</span>
+      </a>
+      <a class="action-card action-card--primary" href="{% url 'inventory:transfer' %}">
+        <span class="action-card__title">Transfer</span>
+        <span class="action-card__desc">Move stock between locations.</span>
+      </a>
+      <a class="action-card action-card--primary" href="{% url 'inventory:assign' %}">
+        <span class="action-card__title">Assign</span>
+        <span class="action-card__desc">Hand out stock to a named employee.</span>
+      </a>
+      <a class="action-card action-card--primary" href="{% url 'inventory:deliver' %}">
+        <span class="action-card__title">Deliver</span>
+        <span class="action-card__desc">Remove stock for an external delivery.</span>
+      </a>
+    </div>
+  {% endif %}
+
   <div class="stat-grid">
     <a class="stat-card" href="{% url 'inventory:asset_list' %}?status=in_stock">
       <div class="stat-card__value">{{ stats.assets_in_stock }}</div>
@@ -25,6 +50,14 @@
       <div class="stat-card__value">{{ stats.quantity_on_hand }}</div>
       <div class="stat-card__label">Quantity on hand</div>
     </a>
+    <a class="stat-card" href="{% url 'inventory:asset_list' %}?stock_purpose=internal">
+      <div class="stat-card__value">{{ stats.internal_stock_count }}</div>
+      <div class="stat-card__label">Internal stock</div>
+    </a>
+    <a class="stat-card" href="{% url 'inventory:asset_list' %}?stock_purpose=customer">
+      <div class="stat-card__value">{{ stats.customer_stock_count }}</div>
+      <div class="stat-card__label">Customer stock</div>
+    </a>
     <a class="stat-card{% if stats.low_stock_count %} stat-card--alert{% endif %}" href="{% url 'reporting:low_stock' %}">
       <div class="stat-card__value">{{ stats.low_stock_count }}</div>
       <div class="stat-card__label">Low stock alerts</div>
@@ -33,6 +66,14 @@
       <div class="stat-card__value">{{ stats.active_reservations }}</div>
       <div class="stat-card__label">Active reservations</div>
     </a>
+    <a class="stat-card" href="{% url 'inventory:asset_list' %}?status=assigned">
+      <div class="stat-card__value">{{ stats.assigned_count }}</div>
+      <div class="stat-card__label">Assigned</div>
+    </a>
+    <a class="stat-card" href="{% url 'inventory:asset_list' %}?status=delivered">
+      <div class="stat-card__value">{{ stats.delivered_count }}</div>
+      <div class="stat-card__label">Delivered</div>
+    </a>
     <a class="stat-card{% if stats.damaged_count %} stat-card--alert{% endif %}" href="{% url 'reporting:damaged_assets' %}">
       <div class="stat-card__value">{{ stats.damaged_count }}</div>
       <div class="stat-card__label">Damaged</div>
@@ -40,6 +81,10 @@
     <a class="stat-card{% if stats.lost_count %} stat-card--alert{% endif %}" href="{% url 'reporting:lost_assets' %}">
       <div class="stat-card__value">{{ stats.lost_count }}</div>
       <div class="stat-card__label">Lost</div>
+    </a>
+    <a class="stat-card" href="{% url 'reporting:disposed_items' %}">
+      <div class="stat-card__value">{{ stats.disposed_count }}</div>
+      <div class="stat-card__label">Disposed</div>
     </a>
     <a class="stat-card" href="{% url 'inventory:transaction_list' %}">
       <div class="stat-card__value">{{ stats.recent_transactions }}</div>
@@ -61,6 +106,10 @@
       <li>
         <span>Assets missing a location</span>
         <span class="{% if data_quality.unlocated_count %}text-danger{% else %}text-muted{% endif %}">{{ data_quality.unlocated_count }}</span>
+      </li>
+      <li>
+        <span>Assigned/Delivered assets missing custodian info</span>
+        <span class="{% if data_quality.missing_custodian_count %}text-danger{% else %}text-muted{% endif %}">{{ data_quality.missing_custodian_count }}</span>
       </li>
     </ul>
   </div>

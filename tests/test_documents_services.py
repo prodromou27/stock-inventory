@@ -57,7 +57,7 @@ def assignment_txn(administrator, unit_product, location_tree):
         occurred_at=date.today(),
         unit_asset_ids=[asset.pk],
         project_reference="PRJ-DOC",
-        condition="good",
+        condition="used",
         accessories="charger",
     )
 

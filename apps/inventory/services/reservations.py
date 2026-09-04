@@ -6,7 +6,14 @@ from apps.audit.services import record_event
 from apps.core.authorization import ADMINISTRATOR, STOCK_MANAGER, require_role
 from apps.locations.scoping import require_location_access
 
-from ..models import MovementType, ReservationStatus, StockReservation, UnitAsset, UnitStatus
+from ..models import (
+    MovementType,
+    ReservationStatus,
+    StockPurpose,
+    StockReservation,
+    UnitAsset,
+    UnitStatus,
+)
 from ..transitions import validate_unit_transition
 from .ledger import (
     adjust_reserved,
@@ -81,10 +88,14 @@ def reserve_stock(
 
     for entry in quantity_lines:
         product, location, quantity = entry["product"], entry["location"], entry["quantity"]
-        adjust_reserved(product=product, location=location, delta=quantity)
+        stock_purpose = entry.get("stock_purpose") or StockPurpose.INTERNAL
+        adjust_reserved(
+            product=product, location=location, delta=quantity, stock_purpose=stock_purpose
+        )
         reservation = StockReservation.objects.create(
             product=product,
             location=location,
+            stock_purpose=stock_purpose,
             quantity=quantity,
             project_reference=project_reference,
             final_customer=final_customer,
@@ -165,7 +176,10 @@ def release_reservation(*, user, occurred_at, unit_asset_ids=None, reservations=
             raise ValidationError(f"Reservation {reservation.pk} is not active.")
         remaining = reservation.quantity - reservation.consumed_quantity
         adjust_reserved(
-            product=reservation.product, location=reservation.location, delta=-remaining
+            product=reservation.product,
+            location=reservation.location,
+            delta=-remaining,
+            stock_purpose=reservation.stock_purpose,
         )
         reservation.status = ReservationStatus.RELEASED
         reservation.save(update_fields=["status"])

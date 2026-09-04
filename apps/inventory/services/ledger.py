@@ -20,7 +20,11 @@ from ..models import (
     InventoryTransaction,
     InventoryTransactionLine,
     StockBalance,
+    StockPurpose,
+    UnitStatus,
 )
+
+_CUSTODY_STATUSES = (UnitStatus.ASSIGNED, UnitStatus.DELIVERED)
 
 
 def next_transaction_number():
@@ -49,6 +53,7 @@ def create_transaction_header(
     expected_return_date=None,
     wipe_method="",
     witness_name="",
+    recipient_reference="",
     notes="",
     related_transaction=None,
     duplicate_serial_acknowledged=False,
@@ -63,6 +68,7 @@ def create_transaction_header(
         project_reference=project_reference,
         final_customer=final_customer,
         employee_name=employee_name,
+        recipient_reference=recipient_reference,
         is_temporary_assignment=is_temporary_assignment,
         expected_return_date=expected_return_date,
         wipe_method=wipe_method,
@@ -83,6 +89,7 @@ def write_unit_line(
     user,
     condition=None,
     accessories=None,
+    stock_purpose=None,
     notes="",
 ):
     """Applies a status/location change to one UnitAsset: writes the
@@ -107,6 +114,7 @@ def write_unit_line(
         unit_asset=asset,
         product=asset.product,
         quantity_delta=1,
+        stock_purpose_snapshot=stock_purpose or asset.stock_purpose,
         from_status=from_status,
         to_status=to_status,
         from_location=from_location,
@@ -132,6 +140,8 @@ def write_unit_line(
         asset.condition = condition
     if accessories is not None:
         asset.accessories = accessories
+    if stock_purpose is not None:
+        asset.stock_purpose = stock_purpose
     if transaction.project_reference:
         asset.project_reference = transaction.project_reference
     if transaction.final_customer:
@@ -140,6 +150,15 @@ def write_unit_line(
         # Physically leaves storage — spec §8's Removal Date, preserved
         # through a later return (doc 02/03).
         asset.last_removal_date = transaction.occurred_at
+    if to_status in _CUSTODY_STATUSES:
+        # Establishing (or re-establishing, via an Administrator correction)
+        # custody — every "Assigned To" display field is read from this
+        # transaction, so it becomes the new custody pointer.
+        asset.current_custody_transaction = transaction
+    elif from_status in _CUSTODY_STATUSES:
+        # Leaving Assigned/Delivered (return, or a direct damaged/lost/
+        # disposed/correction from that state) — no one currently holds it.
+        asset.current_custody_transaction = None
     asset.updated_by = user
     asset.full_clean(exclude=["normalized_serial"])
     asset.save()
@@ -164,6 +183,7 @@ def write_quantity_line(
     quantity_delta,
     from_location=None,
     to_location=None,
+    stock_purpose=StockPurpose.INTERNAL,
     project_reference="",
     final_customer="",
     supplier="",
@@ -179,6 +199,7 @@ def write_quantity_line(
         line_number=line_number,
         unit_asset=None,
         product=product,
+        stock_purpose_snapshot=stock_purpose,
         quantity_delta=quantity_delta,
         from_location=from_location,
         to_location=to_location,
@@ -209,6 +230,7 @@ def write_reservation_line(
         unit_asset=None,
         product=product,
         stock_reservation=reservation,
+        stock_purpose_snapshot=reservation.stock_purpose,
         quantity_delta=0,
         reserved_quantity_delta=reserved_quantity_delta,
         from_location=reservation.location,
@@ -224,29 +246,32 @@ def write_reservation_line(
     )
 
 
-def adjust_balance(*, product, location, delta, respect_available=True):
-    """Locks and mutates the (product, location) StockBalance row.
-    `respect_available` (default True) additionally rejects a negative-delta
-    change that would dip into reserved quantity — receipts (always
+def adjust_balance(
+    *, product, location, delta, stock_purpose=StockPurpose.INTERNAL, respect_available=True
+):
+    """Locks and mutates the (product, location, stock_purpose) StockBalance
+    row. `respect_available` (default True) additionally rejects a negative-
+    delta change that would dip into reserved quantity — receipts (always
     positive) are unaffected; only Administrator corrections pass False,
     deliberately, to allow a direct on-hand adjustment.
     """
     if product.tracking_method != TrackingMethod.QUANTITY:
         raise ValidationError("Stock balances require a quantity-tracked product.")
     balance, _ = StockBalance.objects.select_for_update().get_or_create(
-        product=product, location=location
+        product=product, location=location, stock_purpose=stock_purpose
     )
 
     if respect_available and delta < 0 and (balance.available_quantity + delta) < 0:
         raise ValidationError(
-            f"Insufficient available stock: {product} at {location} has "
-            f"{balance.available_quantity} available."
+            f"Insufficient available stock: {product} at {location} "
+            f"({balance.get_stock_purpose_display()}) has {balance.available_quantity} available."
         )
 
     new_on_hand = balance.on_hand_quantity + delta
     if new_on_hand < 0:
         raise ValidationError(
-            f"Insufficient stock: {product} at {location} has {balance.on_hand_quantity} on hand."
+            f"Insufficient stock: {product} at {location} "
+            f"({balance.get_stock_purpose_display()}) has {balance.on_hand_quantity} on hand."
         )
     balance.on_hand_quantity = new_on_hand
     balance.full_clean()
@@ -254,10 +279,12 @@ def adjust_balance(*, product, location, delta, respect_available=True):
     return balance
 
 
-def adjust_reserved(*, product, location, delta):
+def adjust_reserved(*, product, location, delta, stock_purpose=StockPurpose.INTERNAL):
     if product.tracking_method != TrackingMethod.QUANTITY:
         raise ValidationError("Stock reservations require a quantity-tracked product.")
-    balance = StockBalance.objects.select_for_update().get(product=product, location=location)
+    balance = StockBalance.objects.select_for_update().get(
+        product=product, location=location, stock_purpose=stock_purpose
+    )
 
     new_reserved = balance.reserved_quantity + delta
     if new_reserved < 0:

@@ -6,7 +6,14 @@ from apps.audit.services import record_event
 from apps.core.authorization import ADMINISTRATOR, STOCK_MANAGER, require_role
 from apps.locations.scoping import require_location_access
 
-from ..models import MovementType, ReservationStatus, StockReservation, UnitAsset, UnitStatus
+from ..models import (
+    MovementType,
+    ReservationStatus,
+    StockPurpose,
+    StockReservation,
+    UnitAsset,
+    UnitStatus,
+)
 from ..transitions import validate_unit_transition
 from .ledger import (
     adjust_balance,
@@ -19,11 +26,19 @@ from .ledger import (
 
 
 def _consume_matching_reservations(
-    *, product, location, quantity, transaction, line_number, notes=""
+    *,
+    product,
+    location,
+    quantity,
+    transaction,
+    line_number,
+    stock_purpose=StockPurpose.INTERNAL,
+    notes="",
 ):
     reservation_query = StockReservation.objects.select_for_update().filter(
         product=product,
         location=location,
+        stock_purpose=stock_purpose,
         status=ReservationStatus.ACTIVE,
         project_reference=transaction.project_reference,
     )
@@ -55,7 +70,9 @@ def _consume_matching_reservations(
         if not remaining_issue:
             break
     if consumed:
-        adjust_reserved(product=product, location=location, delta=-consumed)
+        adjust_reserved(
+            product=product, location=location, delta=-consumed, stock_purpose=stock_purpose
+        )
     return line_number
 
 
@@ -70,6 +87,7 @@ def _issue_stock(
     project_reference="",
     final_customer="",
     employee_name="",
+    recipient_reference="",
     is_temporary_assignment=None,
     expected_return_date=None,
     condition=None,
@@ -79,7 +97,8 @@ def _issue_stock(
     """Shared by assign_to_employee() and deliver_to_customer() — both remove
     stock from storage (spec §9, acceptance criterion §21.6: multiple unit
     and quantity lines in one transaction). `quantity_lines` is a list of
-    {"product": Product, "location": Location, "quantity": int}.
+    {"product": Product, "location": Location, "quantity": int, "stock_purpose"?: str}
+    — stock_purpose defaults to Internal per line when omitted.
     """
     require_role(user, ADMINISTRATOR, STOCK_MANAGER)
 
@@ -110,6 +129,7 @@ def _issue_stock(
         project_reference=project_reference,
         final_customer=final_customer,
         employee_name=employee_name,
+        recipient_reference=recipient_reference,
         is_temporary_assignment=is_temporary_assignment,
         expected_return_date=expected_return_date,
         notes=notes,
@@ -128,19 +148,25 @@ def _issue_stock(
             accessories=accessories,
             notes=notes,
         )
+        # write_unit_line() sets asset.current_custody_transaction = txn
+        # automatically whenever to_status is Assigned/Delivered.
         line_number += 1
 
     for entry in quantity_lines:
         product, location, quantity = entry["product"], entry["location"], entry["quantity"]
+        stock_purpose = entry.get("stock_purpose") or StockPurpose.INTERNAL
         line_number = _consume_matching_reservations(
             product=product,
             location=location,
             quantity=quantity,
             transaction=txn,
             line_number=line_number,
+            stock_purpose=stock_purpose,
             notes=notes,
         )
-        adjust_balance(product=product, location=location, delta=-quantity)
+        adjust_balance(
+            product=product, location=location, delta=-quantity, stock_purpose=stock_purpose
+        )
         write_quantity_line(
             transaction=txn,
             line_number=line_number,
@@ -148,6 +174,7 @@ def _issue_stock(
             quantity_delta=-quantity,
             from_location=location,
             to_location=None,
+            stock_purpose=stock_purpose,
             notes=notes,
         )
         line_number += 1
@@ -173,6 +200,7 @@ def assign_to_employee(
     unit_asset_ids=None,
     quantity_lines=None,
     project_reference="",
+    recipient_reference="",
     is_temporary_assignment=None,
     expected_return_date=None,
     condition=None,
@@ -191,6 +219,7 @@ def assign_to_employee(
         quantity_lines=quantity_lines,
         project_reference=project_reference,
         employee_name=employee_name,
+        recipient_reference=recipient_reference,
         is_temporary_assignment=is_temporary_assignment,
         expected_return_date=expected_return_date,
         condition=condition,
@@ -208,6 +237,7 @@ def deliver_to_customer(
     unit_asset_ids=None,
     quantity_lines=None,
     project_reference="",
+    recipient_reference="",
     condition=None,
     accessories=None,
     notes="",
@@ -224,6 +254,7 @@ def deliver_to_customer(
         quantity_lines=quantity_lines,
         project_reference=project_reference,
         final_customer=final_customer,
+        recipient_reference=recipient_reference,
         condition=condition,
         accessories=accessories,
         notes=notes,

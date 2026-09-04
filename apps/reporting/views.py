@@ -13,6 +13,8 @@ from django.views.generic import ListView
 
 from apps.core.csv_export import CSVExportMixin
 from apps.inventory.models import UnitAsset
+from apps.locations.models import Location
+from apps.locations.scoping import accessible_locations
 
 from . import queries
 from .forms import ReportBaseModelForm, ReportBuilderForm, ReportFilterFormSet
@@ -293,7 +295,17 @@ class LowStockView(LoginRequiredMixin, ListView):
     paginate_by = 50
 
     def get_queryset(self):
-        return queries.low_stock_balances(self.request.user)
+        location = None
+        location_id = self.request.GET.get("location")
+        if location_id:
+            location = Location.objects.filter(pk=location_id).first()
+        return queries.low_stock_balances(self.request.user, location=location)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["locations"] = accessible_locations(self.request.user).order_by("level", "name")
+        context["filters"] = self.request.GET
+        return context
 
 
 # --- Ad-hoc report builder ("more structured reporting", user request) ---

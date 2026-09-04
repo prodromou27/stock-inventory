@@ -10,16 +10,32 @@
     </div>
   </div>
 
+  <form method="get" class="toolbar">
+    <label>Country / location
+      <select name="location">
+        <option value="">All locations</option>
+        {% for location in locations %}
+          <option value="{{ location.pk }}" {% if filters.location == location.pk|stringformat:"s" %}selected{% endif %}>
+            {{ location.name }} ({{ location.get_level_display }})
+          </option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit" class="btn btn--primary">Filter</button>
+    {% if filters.location %}<a class="btn btn--ghost" href="{% url 'reporting:low_stock' %}">Clear</a>{% endif %}
+  </form>
+
   {% if balances %}
     <table>
       <thead>
-        <tr><th>Product</th><th>Location</th><th>Available</th><th>Threshold</th></tr>
+        <tr><th>Product</th><th>Location</th><th>Stock purpose</th><th>Available</th><th>Threshold</th></tr>
       </thead>
       <tbody>
         {% for balance in balances %}
           <tr>
             <td><a href="{{ balance.get_absolute_url }}">{{ balance.product }}</a></td>
             <td>{{ balance.location }}</td>
+            <td>{{ balance.get_stock_purpose_display }}</td>
             <td>{{ balance.available_quantity }}</td>
             <td>{{ balance.product.low_stock_threshold }}</td>
           </tr>

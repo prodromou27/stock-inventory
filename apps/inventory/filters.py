@@ -59,6 +59,8 @@ def filter_unit_assets(queryset, params):
         queryset = queryset.filter(normalized_serial__icontains=serial.upper())
     if status := _get(params, "status"):
         queryset = queryset.filter(status=status)
+    if stock_purpose := _get(params, "stock_purpose"):
+        queryset = queryset.filter(stock_purpose=stock_purpose)
     if project_reference := _get(params, "project_reference"):
         queryset = queryset.filter(project_reference__icontains=project_reference)
     if final_customer := _get(params, "final_customer"):
@@ -103,5 +105,7 @@ def filter_stock_balances(queryset, params):
         queryset = queryset.filter(product__sku__icontains=sku)
     if product_type := _get(params, "type"):
         queryset = queryset.filter(product__product_type__name__icontains=product_type)
+    if stock_purpose := _get(params, "stock_purpose"):
+        queryset = queryset.filter(stock_purpose=stock_purpose)
 
     return _filter_by_location(queryset, params, location_field="location")

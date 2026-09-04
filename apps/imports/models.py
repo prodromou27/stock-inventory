@@ -5,6 +5,7 @@ from django.db import models
 from django.urls import reverse
 
 from apps.core.models import TimestampedModel, UUIDPrimaryKeyModel
+from apps.inventory.models import StockPurpose
 
 
 def _import_upload_path(instance, filename):
@@ -46,6 +47,22 @@ class ImportBatch(UUIDPrimaryKeyModel, TimestampedModel):
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="import_batches"
     )
     uploaded_at = models.DateTimeField(auto_now_add=True)
+    # Batch-level defaults, set at upload time — "apply one location/purpose
+    # to the batch, override per row" (each row's LOCATION/STOCK PURPOSE
+    # columns, or a per-row location override, still win when present; see
+    # apps.imports.services._stage_row()). Not required: a batch relying
+    # entirely on per-row LOCATION columns leaves this null, matching the
+    # pipeline's original per-row-only behavior.
+    default_location = models.ForeignKey(
+        "locations.Location",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="+",
+    )
+    default_stock_purpose = models.CharField(
+        max_length=20, choices=StockPurpose.choices, default=StockPurpose.INTERNAL
+    )
     status = models.CharField(
         max_length=20, choices=ImportBatchStatus.choices, default=ImportBatchStatus.UPLOADED
     )

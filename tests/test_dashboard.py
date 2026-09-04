@@ -156,6 +156,66 @@ class TestDashboardSummary:
         stats = dashboard_summary(stock_manager_with_room_access)
         assert stats["assets_in_stock"] == 1
 
+    def test_splits_internal_and_customer_stock_counts(
+        self, administrator, unit_product, location_tree
+    ):
+        from apps.inventory.models import StockPurpose
+
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-DASH-INTERNAL",
+        )
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-DASH-CUSTOMER",
+            stock_purpose=StockPurpose.CUSTOMER,
+            final_customer="Acme Co",
+        )
+        stats = dashboard_summary(administrator)
+        assert stats["internal_stock_count"] == 1
+        assert stats["customer_stock_count"] == 1
+
+    def test_counts_assigned_and_delivered_separately(
+        self, administrator, unit_product, location_tree
+    ):
+        from apps.inventory.services.assignments import assign_to_employee, deliver_to_customer
+
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-DASH-ASSIGNED",
+        )
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-DASH-DELIVERED",
+        )
+        assign_to_employee(
+            user=administrator,
+            employee_name="Jane",
+            occurred_at=date.today(),
+            unit_asset_ids=[UnitAsset.objects.get(vendor_serial="SN-DASH-ASSIGNED").pk],
+        )
+        deliver_to_customer(
+            user=administrator,
+            final_customer="Acme",
+            occurred_at=date.today(),
+            unit_asset_ids=[UnitAsset.objects.get(vendor_serial="SN-DASH-DELIVERED").pk],
+        )
+        stats = dashboard_summary(administrator)
+        assert stats["assigned_count"] == 1
+        assert stats["delivered_count"] == 1
+
 
 @pytest.mark.django_db
 class TestDataQualitySummary:
@@ -275,6 +335,35 @@ class TestDataQualitySummary:
         )
         summary = data_quality_summary(stock_manager_with_room_access)
         assert summary["duplicate_serial_count"] == 0
+
+    def test_flags_assigned_asset_missing_custodian_pointer(
+        self, administrator, unit_product, location_tree
+    ):
+        from apps.inventory.services.assignments import assign_to_employee
+
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-QUALITY-MISSING-CUSTODIAN",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-QUALITY-MISSING-CUSTODIAN")
+        assign_to_employee(
+            user=administrator,
+            employee_name="Jane",
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+        )
+        summary = data_quality_summary(administrator)
+        assert summary["missing_custodian_count"] == 0
+
+        # Simulate a data-integrity gap (e.g. a pre-existing row from before
+        # this field existed) — not reachable through any movement service.
+        asset.current_custody_transaction = None
+        asset.save(update_fields=["current_custody_transaction"])
+        summary = data_quality_summary(administrator)
+        assert summary["missing_custodian_count"] == 1
 
 
 @pytest.mark.django_db

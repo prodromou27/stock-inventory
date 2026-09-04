@@ -449,6 +449,50 @@ class TestLowStockReport:
         response = client.get(reverse("reporting:low_stock"))
         assert list(response.context["balances"]) == []
 
+    def test_filterable_by_country_or_location(
+        self, client, administrator, quantity_product, location_tree, other_room
+    ):
+        update_product(
+            product=quantity_product,
+            user=administrator,
+            brand_name=quantity_product.brand.name,
+            model=quantity_product.model,
+            product_type_name=quantity_product.product_type.name,
+            tracking_method=quantity_product.tracking_method,
+            low_stock_threshold=10,
+        )
+        receive_stock(
+            user=administrator,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=1,
+        )
+        receive_stock(
+            user=administrator,
+            product=quantity_product,
+            location=other_room,
+            occurred_at=date.today(),
+            quantity=2,
+        )
+
+        client.force_login(administrator)
+        response = client.get(reverse("reporting:low_stock"))
+        assert len(response.context["balances"]) == 2
+
+        response = client.get(
+            reverse("reporting:low_stock"), {"location": str(location_tree["room"].pk)}
+        )
+        balances = list(response.context["balances"])
+        assert len(balances) == 1
+        assert balances[0].location == location_tree["room"]
+
+        # Filtering by the country ancestor includes every descendant room too.
+        response = client.get(
+            reverse("reporting:low_stock"), {"location": str(location_tree["country"].pk)}
+        )
+        assert len(response.context["balances"]) == 1
+
 
 @pytest.mark.django_db
 class TestStockByLocationReport:

@@ -17,6 +17,7 @@
   {% include "inventory/_inventory_tabs.html" %}
 
   {{ statuses|json_script:"asset-status-choices" }}
+  {{ stock_purposes|json_script:"asset-stock-purpose-choices" }}
 
   <div class="inventory-grid is-hidden">
     <div class="grid-toolbar">
@@ -81,6 +82,14 @@
           {% endfor %}
         </select>
       </label>
+      <label>Stock purpose
+        <select name="stock_purpose">
+          <option value="">All stock</option>
+          {% for value, label in stock_purposes %}
+            <option value="{{ value }}" {% if filters.stock_purpose == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
       <label>Brand<input type="text" name="brand" value="{{ filters.brand }}"></label>
       <label>Model<input type="text" name="model" value="{{ filters.model }}"></label>
       <label>SKU<input type="text" name="sku" value="{{ filters.sku }}"></label>
@@ -103,7 +112,7 @@
       </div>
     </form>
 
-    {% if query or selected_status or filters.location or filters.brand or filters.model or filters.sku or filters.type or filters.project_reference or filters.final_customer or filters.supplier or filters.invoice_number or filters.duplicate_serial or filters.arrival_after or filters.arrival_before or filters.removal_after or filters.removal_before %}
+    {% if query or selected_status or filters.stock_purpose or filters.location or filters.brand or filters.model or filters.sku or filters.type or filters.project_reference or filters.final_customer or filters.supplier or filters.invoice_number or filters.duplicate_serial or filters.arrival_after or filters.arrival_before or filters.removal_after or filters.removal_before %}
       <div class="active-filters" aria-label="Active filters"><strong>Active filters</strong><span class="filter-chip">Filtered results</span><a href="{% url 'inventory:asset_list' %}">Clear all</a></div>
     {% endif %}
 
@@ -114,7 +123,9 @@
             {% sort_th "product" "Product" %}
             {% sort_th "serial" "Serial" %}
             {% sort_th "status" "Status" %}
+            <th>Stock purpose</th>
             {% sort_th "location" "Location" %}
+            <th>Assigned to</th>
             {% sort_th "arrival_date" "Arrival date" %}
           </tr>
         </thead>
@@ -124,7 +135,15 @@
               <td><a href="{{ asset.get_absolute_url }}">{{ asset.product }}</a></td>
               <td>{{ asset.vendor_serial|default:"—" }}</td>
               <td><span class="badge {{ asset.status|badge_class }}">{{ asset.get_status_display }}</span></td>
+              <td>{{ asset.get_stock_purpose_display }}</td>
               <td>{{ asset.current_location|default:"—" }}</td>
+              <td>
+                {% if asset.current_custody_transaction %}
+                  {{ asset.current_custody_transaction.employee_name|default:asset.current_custody_transaction.final_customer }}
+                {% else %}
+                  —
+                {% endif %}
+              </td>
               <td>{{ asset.arrival_date }}</td>
             </tr>
           {% endfor %}
@@ -155,6 +174,7 @@
       if (!window.InventoryGrid) return;
       const G = window.InventoryGrid;
       const statusChoices = JSON.parse(document.getElementById("asset-status-choices").textContent);
+      const stockPurposeChoices = JSON.parse(document.getElementById("asset-stock-purpose-choices").textContent);
       // Server-enforced too (apps.inventory.views.AssetGridFieldUpdateView /
       // require_role) — this only decides whether the grid *offers* an
       // editor on a cell; a Read-Only user posting directly to the save
@@ -204,8 +224,23 @@
           },
           { title: "Condition", field: "condition", width: 110, visible: false, displayField: "condition_display",
             headerFilter: "list",
-            headerFilterParams: { values: { "": "Any condition", new: "New", good: "Good", fair: "Fair", damaged: "Damaged", unknown: "Unknown" } },
+            headerFilterParams: { values: { "": "Any condition", new: "New", refurbished: "Refurbished", used: "Used", damaged: "Damaged" } },
             formatter: G.badgeFormatter },
+          {
+            title: "Stock Purpose", field: "stock_purpose", width: 130, displayField: "stock_purpose_display",
+            headerFilter: "list",
+            headerFilterParams: { values: Object.fromEntries([["", "All stock"], ...stockPurposeChoices]) },
+            formatter: G.badgeFormatter,
+          },
+          {
+            title: "Assigned To", field: "assigned_to", width: 180, headerSort: false,
+            formatter: (cell) => {
+              const value = cell.getValue();
+              if (!value) return "";
+              const name = value.name ? String(value.name).replace(/&/g, "&amp;").replace(/</g, "&lt;") : "";
+              return `<a href="${value.transaction_url}">${name}</a> <span class="text-muted">(${value.type_display})</span>`;
+            },
+          },
           { title: "Country", field: "country", headerFilter: "input", width: 130 },
           { title: "Storage Room", field: "storage_room", headerFilter: "input", width: 150 },
           { title: "Shelf", field: "shelf", headerFilter: "input", width: 110, visible: false },

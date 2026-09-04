@@ -8,7 +8,13 @@ from apps.core.authorization import ADMINISTRATOR, STOCK_MANAGER, require_role
 from apps.locations.scoping import require_location_access
 
 from ..access import require_asset_access, require_transaction_access
-from ..models import InventoryTransactionLine, MovementType, UnitAsset, UnitStatus
+from ..models import (
+    InventoryTransactionLine,
+    MovementType,
+    StockPurpose,
+    UnitAsset,
+    UnitStatus,
+)
 from ..transitions import validate_unit_transition
 from .ledger import adjust_balance, create_transaction_header, write_quantity_line, write_unit_line
 
@@ -132,11 +138,19 @@ def return_stock(
             accessories=accessories,
             notes=notes,
         )
+        # write_unit_line() clears asset.current_custody_transaction
+        # automatically whenever from_status was Assigned/Delivered. History
+        # is untouched: the original assignment/delivery transaction and
+        # every AssetStatusHistory row remain exactly as they were
+        # (append-only ledger).
         line_number += 1
 
     for entry in quantity_lines:
         product, quantity = entry["product"], entry["quantity"]
-        adjust_balance(product=product, location=location, delta=quantity)
+        stock_purpose = entry.get("stock_purpose") or StockPurpose.INTERNAL
+        adjust_balance(
+            product=product, location=location, delta=quantity, stock_purpose=stock_purpose
+        )
         write_quantity_line(
             transaction=txn,
             line_number=line_number,
@@ -144,6 +158,7 @@ def return_stock(
             quantity_delta=quantity,
             from_location=None,
             to_location=location,
+            stock_purpose=stock_purpose,
             notes=notes,
         )
         line_number += 1

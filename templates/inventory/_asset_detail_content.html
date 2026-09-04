@@ -3,6 +3,13 @@
   <dl class="definition-list">
     <dt>Serial</dt><dd>{{ asset.vendor_serial|default:"—" }}</dd>
     <dt>Status</dt><dd><span class="badge {{ asset.status|badge_class }}">{{ asset.get_status_display }}</span></dd>
+    <dt>Stock purpose</dt>
+    <dd>
+      <span class="badge {{ asset.stock_purpose|badge_class }}">{{ asset.get_stock_purpose_display }}</span>
+      {% if user_is_administrator or "StockManager" in user_role_groups %}
+        <a class="btn btn--sm btn--ghost" href="{% url 'inventory:asset_reclassify_purpose' asset.pk %}">Reclassify</a>
+      {% endif %}
+    </dd>
     <dt>Location</dt><dd>{{ asset.current_location|default:"—" }}</dd>
     <dt>Condition</dt><dd><span class="badge {{ asset.condition|badge_class }}">{{ asset.get_condition_display }}</span></dd>
     {% if asset.accessories %}<dt>Accessories</dt><dd>{{ asset.accessories }}</dd>{% endif %}
@@ -15,6 +22,21 @@
     {% if asset.notes %}<dt>Notes</dt><dd>{{ asset.notes }}</dd>{% endif %}
   </dl>
 </div>
+
+{% if assigned_to %}
+  <div class="card">
+    <h2>Current assignment/delivery</h2>
+    <dl class="definition-list">
+      <dt>Assigned to</dt><dd>{{ assigned_to.type_display }} — {{ assigned_to.name }}</dd>
+      {% if assigned_to.reference %}<dt>Reference</dt><dd>{{ assigned_to.reference }}</dd>{% endif %}
+      {% if assigned_to.project_reference %}<dt>Project reference</dt><dd>{{ assigned_to.project_reference }}</dd>{% endif %}
+      <dt>Transaction</dt><dd><a href="{{ assigned_to.transaction_url }}">{{ assigned_to.transaction_number }}</a></dd>
+      <dt>Date</dt><dd>{{ assigned_to.date }}</dd>
+      {% if assigned_to.expected_return_date %}<dt>Expected return</dt><dd>{{ assigned_to.expected_return_date }}</dd>{% endif %}
+      {% if assigned_to.notes %}<dt>Notes</dt><dd>{{ assigned_to.notes }}</dd>{% endif %}
+    </dl>
+  </div>
+{% endif %}
 
 <h2>History</h2>
 {% if history %}

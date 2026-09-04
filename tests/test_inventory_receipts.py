@@ -10,6 +10,7 @@ from apps.inventory.models import (
     InventoryTransactionLine,
     MovementType,
     StockBalance,
+    StockPurpose,
     UnitAsset,
     UnitStatus,
 )
@@ -18,6 +19,7 @@ from apps.inventory.services.receipts import (
     DuplicateSerialError,
     receive_stock,
     receive_stock_batch,
+    receive_stock_bulk,
 )
 
 
@@ -510,3 +512,172 @@ class TestReceiveStockBatch:
             asset = UnitAsset.objects.get(vendor_serial=row["serial"])
             assert asset.project_reference == "PROJ-42"
             assert asset.final_customer == "Acme Co"
+
+
+@pytest.mark.django_db
+class TestReceiveStockBulk:
+    """apps.inventory.views.ReceiveBulkView's service — one atomic
+    multi-line receipt covering several products, mixed serialized/quantity.
+    """
+
+    def test_mixed_serialized_and_quantity_lines_in_one_transaction(
+        self, administrator, unit_product, quantity_product, location_tree
+    ):
+        txn = receive_stock_bulk(
+            user=administrator,
+            occurred_at=date.today(),
+            default_location=location_tree["room"],
+            lines=[
+                {"product": unit_product, "vendor_serials": ["SN-BULK-1", "SN-BULK-2"]},
+                {"product": quantity_product, "quantity": 20},
+            ],
+        )
+        assert txn.movement_type == MovementType.RECEIPT
+        assert InventoryTransactionLine.objects.filter(transaction=txn).count() == 3
+        assert UnitAsset.objects.filter(vendor_serial__in=["SN-BULK-1", "SN-BULK-2"]).count() == 2
+        balance = StockBalance.objects.get(product=quantity_product, location=location_tree["room"])
+        assert balance.on_hand_quantity == 20
+
+    def test_default_location_applied_and_per_row_override_wins(
+        self, administrator, unit_product, quantity_product, location_tree, other_location_tree
+    ):
+        from apps.locations.models import Location
+        from apps.locations.services import create_location
+
+        other_floor = create_location(
+            level=Location.Level.FLOOR,
+            name="Other Floor For Bulk",
+            parent=other_location_tree["site"],
+            user=administrator,
+        )
+        other_room = create_location(
+            level=Location.Level.STORAGE_ROOM,
+            name="Other Room For Bulk",
+            parent=other_floor,
+            user=administrator,
+        )
+        txn = receive_stock_bulk(
+            user=administrator,
+            occurred_at=date.today(),
+            default_location=location_tree["room"],
+            lines=[
+                {"product": unit_product, "vendor_serials": ["SN-BULK-DEFAULT"]},
+                {
+                    "product": quantity_product,
+                    "quantity": 5,
+                    "location": other_room,
+                },
+            ],
+        )
+        assert txn is not None
+        default_asset = UnitAsset.objects.get(vendor_serial="SN-BULK-DEFAULT")
+        assert default_asset.current_location == location_tree["room"]
+        assert (
+            StockBalance.objects.get(product=quantity_product, location=other_room).on_hand_quantity
+            == 5
+        )
+        assert not StockBalance.objects.filter(
+            product=quantity_product, location=location_tree["room"]
+        ).exists()
+
+    def test_default_and_per_row_stock_purpose(
+        self, administrator, unit_product, quantity_product, location_tree
+    ):
+        receive_stock_bulk(
+            user=administrator,
+            occurred_at=date.today(),
+            default_location=location_tree["room"],
+            default_stock_purpose=StockPurpose.CUSTOMER,
+            final_customer="Acme Co",
+            lines=[
+                {"product": unit_product, "vendor_serials": ["SN-BULK-CUST"]},
+                {
+                    "product": quantity_product,
+                    "quantity": 3,
+                    "stock_purpose": StockPurpose.INTERNAL,
+                },
+            ],
+        )
+        assert UnitAsset.objects.get(vendor_serial="SN-BULK-CUST").stock_purpose == (
+            StockPurpose.CUSTOMER
+        )
+        internal_balance = StockBalance.objects.get(
+            product=quantity_product,
+            location=location_tree["room"],
+            stock_purpose=StockPurpose.INTERNAL,
+        )
+        assert internal_balance.on_hand_quantity == 3
+        assert not StockBalance.objects.filter(
+            product=quantity_product, stock_purpose=StockPurpose.CUSTOMER
+        ).exists()
+
+    def test_duplicate_serial_across_the_batch_raises_and_writes_nothing(
+        self, administrator, unit_product, location_tree
+    ):
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-BULK-PREEXISTING",
+        )
+        with pytest.raises(DuplicateSerialError):
+            receive_stock_bulk(
+                user=administrator,
+                occurred_at=date.today(),
+                default_location=location_tree["room"],
+                lines=[
+                    {
+                        "product": unit_product,
+                        "vendor_serials": ["SN-BULK-NEW", "SN-BULK-PREEXISTING"],
+                    },
+                ],
+            )
+        # Nothing from this failed batch was written — not even the "new" serial.
+        assert not UnitAsset.objects.filter(vendor_serial="SN-BULK-NEW").exists()
+
+    def test_mid_batch_validation_failure_rolls_back_everything(
+        self, administrator, unit_product, quantity_product, location_tree
+    ):
+        with pytest.raises(ValidationError):
+            receive_stock_bulk(
+                user=administrator,
+                occurred_at=date.today(),
+                default_location=location_tree["room"],
+                lines=[
+                    {"product": unit_product, "vendor_serials": ["SN-BULK-ROLLBACK"]},
+                    {"product": quantity_product, "quantity": 0},  # invalid: not positive
+                ],
+            )
+        assert not UnitAsset.objects.filter(vendor_serial="SN-BULK-ROLLBACK").exists()
+        assert not StockBalance.objects.filter(product=quantity_product).exists()
+
+    def test_repeated_serial_within_the_same_batch_rejected(
+        self, administrator, unit_product, location_tree
+    ):
+        with pytest.raises(ValidationError, match="repeated"):
+            receive_stock_bulk(
+                user=administrator,
+                occurred_at=date.today(),
+                default_location=location_tree["room"],
+                lines=[{"product": unit_product, "vendor_serials": ["SN-BULK-DUP", "SN-BULK-DUP"]}],
+            )
+        assert not UnitAsset.objects.filter(vendor_serial="SN-BULK-DUP").exists()
+
+    def test_requires_role(self, read_only_user, unit_product, location_tree):
+        with pytest.raises(PermissionDenied):
+            receive_stock_bulk(
+                user=read_only_user,
+                occurred_at=date.today(),
+                default_location=location_tree["room"],
+                lines=[{"product": unit_product, "vendor_serials": ["SN-1"]}],
+            )
+
+    def test_empty_lines_rejected(self, administrator, location_tree):
+        with pytest.raises(ValidationError):
+            receive_stock_bulk(
+                user=administrator,
+                occurred_at=date.today(),
+                default_location=location_tree["room"],
+                lines=[],
+            )

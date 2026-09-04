@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% load ui_extras %}
+
+{% block title %}Reclassify Stock Purpose — Stock Inventory{% endblock %}
+
+{% block content %}
+  <p><a href="{{ balance.get_absolute_url }}">&larr; {{ balance.product }} @ {{ balance.location }}</a></p>
+  <div class="page-header">
+    <div>
+      <h1>Reclassify stock purpose</h1>
+      <div class="page-header__subtitle">
+        Current: <span class="badge {{ balance.stock_purpose|badge_class }}">{{ balance.get_stock_purpose_display }}</span>
+        — on hand {{ balance.on_hand_quantity }}, available {{ balance.available_quantity }}.
+        Moves quantity to the other stock purpose bucket at this same location.
+      </div>
+    </div>
+  </div>
+
+  {% if form.non_field_errors %}
+    <p class="messages__item messages__item--error">{{ form.non_field_errors|join:" " }}</p>
+  {% endif %}
+
+  <form method="post" class="card">
+    {% csrf_token %}
+    {% for field in form %}
+      {% include "_form_field.html" with field=field %}
+    {% endfor %}
+    <div class="form-actions">
+      <button type="submit" class="btn btn--primary">Reclassify</button>
+    </div>
+  </form>
+{% endblock %}

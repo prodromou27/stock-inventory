@@ -13,7 +13,7 @@
   {% if transactions %}
     <table>
       <thead>
-        <tr><th>Transaction</th><th>Date</th><th>Final customer</th><th>Project reference</th></tr>
+        <tr><th>Transaction</th><th>Date</th><th>Final customer</th><th>Reference</th><th>Project reference</th></tr>
       </thead>
       <tbody>
         {% for txn in transactions %}
@@ -21,6 +21,7 @@
             <td><a href="{{ txn.get_absolute_url }}">{{ txn.transaction_number }}</a></td>
             <td>{{ txn.occurred_at }}</td>
             <td>{{ txn.final_customer }}</td>
+            <td>{{ txn.recipient_reference|default:"—" }}</td>
             <td>{{ txn.project_reference }}</td>
           </tr>
         {% endfor %}

@@ -1,16 +1,22 @@
 {% extends "base.html" %}
+{% load ui_extras %}
 
 {% block title %}{{ balance.product }} @ {{ balance.location }} — Stock Inventory{% endblock %}
 
 {% block content %}
   <div class="page-header">
     <h1>{{ balance.product }} @ {{ balance.location }}</h1>
-    {% if user_is_administrator %}
-      <div class="page-header__actions">
+    <div class="page-header__actions">
+      {% if user_is_administrator or "StockManager" in user_role_groups %}
+        <a class="btn" href="{% url 'inventory:balance_reclassify_purpose' balance.pk %}">Reclassify purpose</a>
+      {% endif %}
+      {% if user_is_administrator %}
         <a class="btn" href="{% url 'inventory:balance_correct' balance.pk %}">Administrator correction</a>
-      </div>
-    {% endif %}
+      {% endif %}
+    </div>
   </div>
+
+  <p><span class="badge {{ balance.stock_purpose|badge_class }}">{{ balance.get_stock_purpose_display }}</span></p>
 
   <div class="stat-grid">
     <div class="stat-card">

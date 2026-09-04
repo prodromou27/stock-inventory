@@ -126,12 +126,12 @@ class TestReturnStock:
             location=location_tree["room"],
             occurred_at=date.today(),
             unit_asset_ids=[asset.pk],
-            condition=Condition.FAIR,
+            condition=Condition.REFURBISHED,
             accessories="Charger missing",
         )
 
         line = InventoryTransactionLine.objects.get(transaction=return_txn, unit_asset=asset)
-        assert line.condition_snapshot == Condition.FAIR
+        assert line.condition_snapshot == Condition.REFURBISHED
         assert line.accessories_snapshot == "Charger missing"
 
     def test_return_creates_new_transaction_linked_to_original(

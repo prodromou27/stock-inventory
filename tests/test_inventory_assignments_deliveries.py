@@ -82,14 +82,14 @@ class TestAssignToEmployee:
             employee_name="Carl",
             occurred_at=date.today(),
             unit_asset_ids=[asset.pk],
-            condition="good",
+            condition="refurbished",
             accessories="charger, case",
         )
         line = InventoryTransactionLine.objects.get(transaction=txn)
-        assert line.condition_snapshot == "good"
+        assert line.condition_snapshot == "refurbished"
         assert line.accessories_snapshot == "charger, case"
         asset.refresh_from_db()
-        assert asset.condition == "good"
+        assert asset.condition == "refurbished"
         assert asset.accessories == "charger, case"
 
     def test_employee_name_required(self, administrator, unit_product, location_tree):
@@ -233,3 +233,119 @@ class TestDeliverToCustomer:
                 occurred_at=date.today(),
                 unit_asset_ids=[],
             )
+
+
+@pytest.mark.django_db
+class TestCurrentCustodyTracking:
+    """UnitAsset.current_custody_transaction — the denormalized "who has
+    this right now" pointer set/cleared by apps.inventory.services.ledger.
+    write_unit_line() (new on direct request; see
+    docs/architecture/09-delivery-backlog.md's dated entry for this wave).
+    """
+
+    def test_assignment_sets_custody_pointer_and_recipient_reference(
+        self, administrator, unit_product, location_tree
+    ):
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-CUST-1",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-CUST-1")
+
+        txn = assign_to_employee(
+            user=administrator,
+            employee_name="Jane Doe",
+            recipient_reference="EMP-042",
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+        )
+        asset.refresh_from_db()
+        assert asset.current_custody_transaction_id == txn.pk
+        assert txn.recipient_reference == "EMP-042"
+
+    def test_delivery_sets_custody_pointer(self, administrator, unit_product, location_tree):
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-CUST-2",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-CUST-2")
+
+        txn = deliver_to_customer(
+            user=administrator,
+            final_customer="Acme Corp",
+            recipient_reference="CUST-7",
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+        )
+        asset.refresh_from_db()
+        assert asset.current_custody_transaction_id == txn.pk
+
+    def test_custody_pointer_cleared_on_return(self, administrator, unit_product, location_tree):
+        from apps.inventory.services.returns import return_stock
+
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-CUST-3",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-CUST-3")
+        assignment_txn = assign_to_employee(
+            user=administrator,
+            employee_name="Jane Doe",
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+        )
+        asset.refresh_from_db()
+        assert asset.current_custody_transaction_id == assignment_txn.pk
+
+        return_stock(
+            user=administrator,
+            original_transaction=assignment_txn,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+        )
+        asset.refresh_from_db()
+        assert asset.current_custody_transaction_id is None
+        # History is untouched — the assignment transaction itself still exists unmodified.
+        assert assignment_txn.employee_name == "Jane Doe"
+
+    def test_mark_lost_directly_from_assigned_clears_custody(
+        self, administrator, unit_product, location_tree
+    ):
+        from apps.inventory.services.disposition import mark_lost
+
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-CUST-4",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-CUST-4")
+        assign_to_employee(
+            user=administrator,
+            employee_name="Jane Doe",
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+        )
+        asset.refresh_from_db()
+        assert asset.current_custody_transaction_id is not None
+
+        mark_lost(
+            user=administrator,
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+            notes="Reported lost by employee",
+        )
+        asset.refresh_from_db()
+        assert asset.status == UnitStatus.LOST
+        assert asset.current_custody_transaction_id is None

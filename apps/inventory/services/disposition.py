@@ -7,7 +7,7 @@ from apps.core.authorization import ADMINISTRATOR, STOCK_MANAGER, require_role
 from apps.locations.scoping import require_location_access
 
 from ..access import require_asset_access
-from ..models import MovementType, UnitAsset, UnitStatus
+from ..models import MovementType, StockPurpose, UnitAsset, UnitStatus
 from ..transitions import validate_unit_transition
 from .ledger import adjust_balance, create_transaction_header, write_quantity_line, write_unit_line
 
@@ -87,7 +87,10 @@ def _change_unit_and_quantity_status(
 
     for entry in quantity_lines:
         product, location, quantity = entry["product"], entry["location"], entry["quantity"]
-        adjust_balance(product=product, location=location, delta=-quantity)
+        stock_purpose = entry.get("stock_purpose") or StockPurpose.INTERNAL
+        adjust_balance(
+            product=product, location=location, delta=-quantity, stock_purpose=stock_purpose
+        )
         write_quantity_line(
             transaction=txn,
             line_number=line_number,
@@ -95,6 +98,7 @@ def _change_unit_and_quantity_status(
             quantity_delta=-quantity,
             from_location=location,
             to_location=None,
+            stock_purpose=stock_purpose,
             notes=notes,
         )
         line_number += 1

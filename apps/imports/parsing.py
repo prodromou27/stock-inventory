@@ -29,6 +29,7 @@ COLUMNS = [
     "Return Date",
     "Removal Date",
     "Registrar",
+    "Stock Purpose",
 ]
 
 REQUIRED_COLUMNS = ["BRAND", "MODEL/Part No./SKU", "TYPE/DESCRIPTION", "S/N", "QTY", "LOCATION"]

@@ -17,6 +17,10 @@
       <span class="action-card__title">Quick receive</span>
       <span class="action-card__desc">One product/location, many serials at once.</span>
     </a>
+    <a class="action-card action-card--primary" href="{% url 'inventory:receive_bulk' %}">
+      <span class="action-card__title">Receive (multi-line)</span>
+      <span class="action-card__desc">Several products in one atomic receipt, with review.</span>
+    </a>
     <a class="action-card action-card--primary" href="{% url 'inventory:transfer' %}">
       <span class="action-card__title">Transfer</span>
       <span class="action-card__desc">Move stock between locations.</span>

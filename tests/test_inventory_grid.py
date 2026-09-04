@@ -203,7 +203,15 @@ class TestAssetGridFieldUpdateView:
         ).exists()
 
     @pytest.mark.parametrize(
-        "field", ["status", "current_location", "vendor_serial", "arrival_date"]
+        "field",
+        [
+            "status",
+            "current_location",
+            "vendor_serial",
+            "arrival_date",
+            "stock_purpose",
+            "current_custody_transaction",
+        ],
     )
     def test_rejects_disallowed_fields(
         self, client, administrator, unit_product, location_tree, field
@@ -707,3 +715,82 @@ class TestAssetPickerDataView:
         assert data[0]["id"] == str(target.pk)
         assert data[0]["preselected"] is True
         assert all(row["preselected"] is False for row in data[1:])
+
+
+@pytest.mark.django_db
+class TestAssetGridStockPurposeAndAssignedTo:
+    """New serialized fields on UnitAssetGridDataView — stock_purpose (new
+    classification) and assigned_to (the current custody pointer's display
+    block). See docs/architecture/09-delivery-backlog.md's dated entry.
+    """
+
+    def test_stock_purpose_serialized_and_filterable(
+        self, client, administrator, unit_product, location_tree
+    ):
+        from apps.inventory.models import StockPurpose
+
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-GRID-PURPOSE-INT",
+        )
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-GRID-PURPOSE-CUST",
+            stock_purpose=StockPurpose.CUSTOMER,
+            final_customer="Acme Co",
+        )
+        client.force_login(administrator)
+
+        response = client.get(reverse("inventory:asset_grid_data"), {"stock_purpose": "customer"})
+        serials = [row["serial"] for row in response.json()["data"]]
+        assert serials == ["SN-GRID-PURPOSE-CUST"]
+
+        response = client.get(reverse("inventory:asset_grid_data"))
+        row = next(r for r in response.json()["data"] if r["serial"] == "SN-GRID-PURPOSE-CUST")
+        assert row["stock_purpose"] == "customer"
+        assert row["stock_purpose_display"] == "Customer"
+
+    def test_assigned_to_block_present_when_assigned_and_absent_when_in_stock(
+        self, client, administrator, unit_product, location_tree
+    ):
+        from apps.inventory.services.assignments import assign_to_employee
+
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-GRID-ASSIGNED",
+        )
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-GRID-IN-STOCK",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-GRID-ASSIGNED")
+        assign_to_employee(
+            user=administrator,
+            employee_name="Jane Doe",
+            recipient_reference="EMP-1",
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+        )
+        client.force_login(administrator)
+        response = client.get(reverse("inventory:asset_grid_data"), {"status": ""})
+        rows_by_serial = {r["serial"]: r for r in response.json()["data"]}
+
+        assigned_row = rows_by_serial["SN-GRID-ASSIGNED"]
+        assert assigned_row["assigned_to"]["type"] == "employee"
+        assert assigned_row["assigned_to"]["name"] == "Jane Doe"
+        assert assigned_row["assigned_to"]["reference"] == "EMP-1"
+
+        in_stock_row = rows_by_serial["SN-GRID-IN-STOCK"]
+        assert in_stock_row["assigned_to"] is None

@@ -8,6 +8,7 @@ urlpatterns = [
     path("movements/", views.MovementsHubView.as_view(), name="movements_hub"),
     path("receive/", views.ReceiveStockView.as_view(), name="receive_stock"),
     path("receive/quick/", views.QuickReceiveView.as_view(), name="quick_receive"),
+    path("receive/bulk/", views.ReceiveBulkView.as_view(), name="receive_bulk"),
     path("products/grid-data/", views.ProductGridDataView.as_view(), name="product_grid_data"),
     path("assets/", views.UnitAssetListView.as_view(), name="asset_list"),
     path("assets/grid-data/", views.UnitAssetGridDataView.as_view(), name="asset_grid_data"),
@@ -18,6 +19,11 @@ urlpatterns = [
     ),
     path("assets/<uuid:pk>/", views.UnitAssetDetailView.as_view(), name="asset_detail"),
     path("assets/<uuid:pk>/correct/", views.AdminCorrectUnitView.as_view(), name="asset_correct"),
+    path(
+        "assets/<uuid:pk>/reclassify/",
+        views.UnitPurposeReclassifyView.as_view(),
+        name="asset_reclassify_purpose",
+    ),
     path("assets/picker-data/", views.AssetPickerDataView.as_view(), name="asset_picker_data"),
     path(
         "grid-views/<str:grid_key>/",
@@ -36,6 +42,11 @@ urlpatterns = [
         "balances/<uuid:pk>/correct/",
         views.AdminCorrectBalanceView.as_view(),
         name="balance_correct",
+    ),
+    path(
+        "balances/<uuid:pk>/reclassify/",
+        views.QuantityPurposeReclassifyView.as_view(),
+        name="balance_reclassify_purpose",
     ),
     path("transactions/", views.TransactionListView.as_view(), name="transaction_list"),
     path(

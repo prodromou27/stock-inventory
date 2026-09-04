@@ -25,11 +25,16 @@ class UnitStatus(models.TextChoices):
 
 
 class Condition(models.TextChoices):
+    """Changed on direct request from the original 5-value set (New/Good/
+    Fair/Damaged/Unknown) to this 4-value lifecycle-state set — see the
+    dated entry in docs/architecture/09-delivery-backlog.md and migration
+    0009 for the Good/Fair/Unknown -> Used data remap.
+    """
+
     NEW = "new", "New"
-    GOOD = "good", "Good"
-    FAIR = "fair", "Fair"
+    REFURBISHED = "refurbished", "Refurbished"
+    USED = "used", "Used"
     DAMAGED = "damaged", "Damaged"
-    UNKNOWN = "unknown", "Unknown"
 
 
 class MovementType(models.TextChoices):
@@ -52,6 +57,19 @@ class MovementType(models.TextChoices):
     DISPOSAL = "disposal", "Disposal"
     CORRECTION = "correction", "Administrator correction"
     REVERSAL = "reversal", "Reversal"
+    PURPOSE_CHANGE = "purpose_change", "Stock purpose reclassification"
+
+
+class StockPurpose(models.TextChoices):
+    """Whether a unit/quantity of stock is held for internal use or earmarked
+    for a customer — orthogonal to `UnitStatus` (an item can be Internal +
+    In Stock, Customer + Reserved, Customer + Delivered, etc.). Not part of
+    the original build spec/architecture docs — added on direct request; see
+    docs/architecture/09-delivery-backlog.md's dated entry for this wave.
+    """
+
+    INTERNAL = "internal", "Internal"
+    CUSTOMER = "customer", "Customer"
 
 
 class WipeMethod(models.TextChoices):
@@ -82,6 +100,9 @@ class UnitAsset(UUIDPrimaryKeyModel, UserStampedModel):
     status = models.CharField(
         max_length=20, choices=UnitStatus.choices, default=UnitStatus.IN_STOCK
     )
+    stock_purpose = models.CharField(
+        max_length=20, choices=StockPurpose.choices, default=StockPurpose.INTERNAL
+    )
     current_location = models.ForeignKey(
         "locations.Location",
         null=True,
@@ -89,14 +110,23 @@ class UnitAsset(UUIDPrimaryKeyModel, UserStampedModel):
         on_delete=models.PROTECT,
         related_name="unit_assets",
     )
+    current_custody_transaction = models.ForeignKey(
+        "InventoryTransaction",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="custodied_assets",
+        help_text="The assignment/delivery transaction that currently holds this asset "
+        "outside storage — cleared on return. Every other 'Assigned To' display field "
+        "(recipient, project reference, date, expected return) is read from this "
+        "transaction rather than duplicated onto UnitAsset.",
+    )
     project_reference = models.CharField(max_length=120, blank=True)
     final_customer = models.CharField(max_length=120, blank=True)
     supplier = models.CharField(max_length=120, blank=True)
     invoice_number = models.CharField(max_length=60, blank=True)
     arrival_date = models.DateField()
-    condition = models.CharField(
-        max_length=20, choices=Condition.choices, default=Condition.UNKNOWN
-    )
+    condition = models.CharField(max_length=20, choices=Condition.choices, default=Condition.USED)
     accessories = models.TextField(blank=True)
     notes = models.TextField(blank=True)
     last_removal_date = models.DateField(null=True, blank=True)
@@ -106,6 +136,7 @@ class UnitAsset(UUIDPrimaryKeyModel, UserStampedModel):
             models.Index(fields=["normalized_serial"], name="unitasset_serial_idx"),
             models.Index(fields=["product", "status"], name="unitasset_product_status_idx"),
             models.Index(fields=["status"], name="unitasset_status_idx"),
+            models.Index(fields=["stock_purpose"], name="unitasset_stock_purpose_idx"),
             models.Index(fields=["current_location"], name="unitasset_location_idx"),
             models.Index(fields=["project_reference"], name="unitasset_project_ref_idx"),
             models.Index(fields=["final_customer"], name="unitasset_final_customer_idx"),
@@ -202,6 +233,9 @@ class StockBalance(UUIDPrimaryKeyModel):
     location = models.ForeignKey(
         "locations.Location", on_delete=models.PROTECT, related_name="stock_balances"
     )
+    stock_purpose = models.CharField(
+        max_length=20, choices=StockPurpose.choices, default=StockPurpose.INTERNAL
+    )
     on_hand_quantity = models.IntegerField(default=0)
     reserved_quantity = models.IntegerField(default=0)
     updated_at = models.DateTimeField(auto_now=True)
@@ -209,7 +243,8 @@ class StockBalance(UUIDPrimaryKeyModel):
     class Meta:
         constraints = [
             models.UniqueConstraint(
-                fields=["product", "location"], name="stockbalance_unique_product_location"
+                fields=["product", "location", "stock_purpose"],
+                name="stockbalance_unique_product_location_purpose",
             ),
             models.CheckConstraint(
                 condition=models.Q(on_hand_quantity__gte=0), name="stockbalance_on_hand_nonnegative"
@@ -265,6 +300,12 @@ class InventoryTransaction(UUIDPrimaryKeyModel, AppendOnlyModel):
     project_reference = models.CharField(max_length=120, blank=True)
     final_customer = models.CharField(max_length=120, blank=True)
     employee_name = models.CharField(max_length=120, blank=True)
+    recipient_reference = models.CharField(
+        max_length=120,
+        blank=True,
+        help_text="Optional employee or customer reference/ID, entered manually — not a "
+        "lookup against any master data (spec §22 excludes customer/contact master data).",
+    )
     is_temporary_assignment = models.BooleanField(null=True, blank=True)
     expected_return_date = models.DateField(null=True, blank=True)
     wipe_method = models.CharField(max_length=25, choices=WipeMethod.choices, blank=True)
@@ -321,6 +362,9 @@ class StockReservation(UUIDPrimaryKeyModel):
     location = models.ForeignKey(
         "locations.Location", on_delete=models.PROTECT, related_name="reservations"
     )
+    stock_purpose = models.CharField(
+        max_length=20, choices=StockPurpose.choices, default=StockPurpose.INTERNAL
+    )
     quantity = models.PositiveIntegerField()
     project_reference = models.CharField(max_length=120, blank=True)
     final_customer = models.CharField(max_length=120, blank=True)
@@ -370,6 +414,9 @@ class InventoryTransactionLine(UUIDPrimaryKeyModel, AppendOnlyModel):
     )
     product = models.ForeignKey(
         "catalog.Product", on_delete=models.PROTECT, related_name="transaction_lines"
+    )
+    stock_purpose_snapshot = models.CharField(
+        max_length=20, choices=StockPurpose.choices, default=StockPurpose.INTERNAL
     )
     quantity_delta = models.IntegerField()
     reserved_quantity_delta = models.IntegerField(default=0)

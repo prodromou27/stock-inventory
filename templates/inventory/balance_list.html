@@ -13,6 +13,8 @@
 
   {% include "inventory/_inventory_tabs.html" %}
 
+  {{ stock_purposes|json_script:"balance-stock-purpose-choices" }}
+
   <div class="inventory-grid is-hidden">
     <div class="grid-toolbar">
       <input type="search" class="grid-toolbar__search" id="balance-grid-search" placeholder="Search brand, model, SKU, type…" aria-label="Search stock balances">
@@ -53,6 +55,14 @@
       <label>Model<input type="text" name="model" value="{{ filters.model }}"></label>
       <label>SKU<input type="text" name="sku" value="{{ filters.sku }}"></label>
       <label>Type<input type="text" name="type" value="{{ filters.type }}"></label>
+      <label>Stock purpose
+        <select name="stock_purpose">
+          <option value="">All stock</option>
+          {% for value, label in stock_purposes %}
+            <option value="{{ value }}" {% if filters.stock_purpose == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
       <button type="submit" class="btn btn--primary">Filter</button>
     </form>
 
@@ -62,6 +72,7 @@
           <tr>
             {% sort_th "product" "Product" %}
             {% sort_th "location" "Location" %}
+            <th>Stock purpose</th>
             {% sort_th "on_hand" "On hand" %}
             {% sort_th "reserved" "Reserved" %}
             <th>Available</th>
@@ -72,6 +83,7 @@
             <tr>
               <td><a href="{{ balance.get_absolute_url }}">{{ balance.product }}</a></td>
               <td>{{ balance.location }}</td>
+              <td>{{ balance.get_stock_purpose_display }}</td>
               <td>{{ balance.on_hand_quantity }}</td>
               <td>{{ balance.reserved_quantity }}</td>
               <td>{{ balance.available_quantity }}</td>
@@ -103,6 +115,7 @@
     document.addEventListener("DOMContentLoaded", () => {
       if (!window.InventoryGrid) return;
       const G = window.InventoryGrid;
+      const stockPurposeChoices = JSON.parse(document.getElementById("balance-stock-purpose-choices").textContent);
 
       const table = G.init({
         containerSelector: "#balance-grid-table",
@@ -123,6 +136,12 @@
           { title: "Country", field: "country", headerFilter: "input", width: 130, visible: false },
           { title: "Storage Room", field: "storage_room", headerFilter: "input", width: 150, visible: false },
           { title: "Shelf", field: "shelf", headerFilter: "input", width: 110, visible: false },
+          {
+            title: "Stock Purpose", field: "stock_purpose", width: 130, displayField: "stock_purpose_display",
+            headerFilter: "list",
+            headerFilterParams: { values: Object.fromEntries([["", "All stock"], ...stockPurposeChoices]) },
+            formatter: G.badgeFormatter,
+          },
           { title: "On Hand", field: "on_hand", hozAlign: "right", width: 110 },
           { title: "Reserved", field: "reserved", hozAlign: "right", width: 110 },
           { title: "Available", field: "available", hozAlign: "right", width: 110 },

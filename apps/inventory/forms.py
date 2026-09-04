@@ -1,10 +1,11 @@
 from django import forms
+from django.forms import formset_factory
 
 from apps.catalog.models import Product, TrackingMethod
 from apps.locations.models import Location
 from apps.locations.scoping import accessible_locations
 
-from .models import Condition, UnitStatus, WipeMethod
+from .models import Condition, StockPurpose, UnitStatus, WipeMethod
 
 
 def _scoped_location_queryset(user):
@@ -61,6 +62,12 @@ class ReceiveStockForm(forms.Form):
     )
     location = forms.ModelChoiceField(queryset=Location.objects.none())
     occurred_at = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
+    stock_purpose = forms.ChoiceField(
+        choices=StockPurpose.choices,
+        required=False,
+        initial=StockPurpose.INTERNAL,
+        label="Stock purpose",
+    )
     # data-tracking-method: static/js/movement_forms.js shows/hides these two
     # based on the selected product (unit-tracked needs a serial, quantity-
     # tracked needs a quantity) — purely a UX layer; clean() below remains
@@ -97,6 +104,9 @@ class ReceiveStockForm(forms.Form):
             and not cleaned.get("quantity")
         ):
             self.add_error("quantity", "Quantity is required for quantity-tracked products.")
+        cleaned["stock_purpose"] = cleaned.get("stock_purpose") or StockPurpose.INTERNAL
+        if cleaned["stock_purpose"] == StockPurpose.CUSTOMER and not cleaned.get("final_customer"):
+            self.add_error("final_customer", "Final customer is required for Customer stock.")
         return cleaned
 
 
@@ -115,6 +125,12 @@ class QuickReceiveForm(forms.Form):
     location = forms.ModelChoiceField(queryset=Location.objects.none())
     occurred_at = forms.DateField(
         widget=forms.DateInput(attrs={"type": "date"}), label="Arrival date"
+    )
+    stock_purpose = forms.ChoiceField(
+        choices=StockPurpose.choices,
+        required=False,
+        initial=StockPurpose.INTERNAL,
+        label="Stock purpose",
     )
     vendor_serials = forms.CharField(
         widget=forms.Textarea(attrs={"rows": 10, "placeholder": "One serial per line"}),
@@ -144,6 +160,13 @@ class QuickReceiveForm(forms.Form):
         if not any(line.strip() for line in lines):
             raise forms.ValidationError("Enter at least one serial.")
         return lines
+
+    def clean(self):
+        cleaned = super().clean()
+        cleaned["stock_purpose"] = cleaned.get("stock_purpose") or StockPurpose.INTERNAL
+        if cleaned["stock_purpose"] == StockPurpose.CUSTOMER and not cleaned.get("final_customer"):
+            self.add_error("final_customer", "Final customer is required for Customer stock.")
+        return cleaned
 
 
 class _BaseMovementForm(forms.Form):
@@ -198,6 +221,12 @@ class _QuantityLocationMixin(forms.Form):
     quantity_location = forms.ModelChoiceField(
         queryset=Location.objects.none(), required=False, label="Quantity location"
     )
+    quantity_stock_purpose = forms.ChoiceField(
+        choices=StockPurpose.choices,
+        required=False,
+        initial=StockPurpose.INTERNAL,
+        label="Stock purpose",
+    )
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, user=user, **kwargs)
@@ -214,6 +243,12 @@ class TransferForm(_BaseMovementForm):
     destination_location = forms.ModelChoiceField(queryset=Location.objects.none())
     quantity_source_location = forms.ModelChoiceField(
         queryset=Location.objects.none(), required=False, label="Quantity source location"
+    )
+    quantity_stock_purpose = forms.ChoiceField(
+        choices=StockPurpose.choices,
+        required=False,
+        initial=StockPurpose.INTERNAL,
+        label="Stock purpose",
     )
 
     def __init__(self, *args, user=None, **kwargs):
@@ -237,28 +272,32 @@ class ReserveForm(_QuantityLocationMixin, _BaseMovementForm):
 
 class AssignForm(_QuantityLocationMixin, _BaseMovementForm):
     employee_name = forms.CharField(max_length=120, label="Employee name")
+    recipient_reference = forms.CharField(
+        max_length=120, required=False, label="Employee reference (optional)"
+    )
     project_reference = forms.CharField(max_length=120, required=False)
     is_temporary_assignment = forms.BooleanField(required=False, label="Temporary assignment")
     expected_return_date = forms.DateField(
         required=False, widget=forms.DateInput(attrs={"type": "date"}), label="Expected return date"
     )
-    condition = forms.ChoiceField(choices=Condition.choices, required=False, initial=Condition.GOOD)
+    condition = forms.ChoiceField(choices=Condition.choices, required=False, initial=Condition.USED)
     accessories = forms.CharField(required=False, widget=forms.Textarea)
 
 
 class DeliverForm(_QuantityLocationMixin, _BaseMovementForm):
     final_customer = forms.CharField(max_length=120, label="Final customer")
+    recipient_reference = forms.CharField(
+        max_length=120, required=False, label="Customer reference (optional)"
+    )
     project_reference = forms.CharField(max_length=120, required=False)
-    condition = forms.ChoiceField(choices=Condition.choices, required=False, initial=Condition.GOOD)
+    condition = forms.ChoiceField(choices=Condition.choices, required=False, initial=Condition.USED)
     accessories = forms.CharField(required=False, widget=forms.Textarea)
 
 
 class ReturnForm(forms.Form):
     location = forms.ModelChoiceField(queryset=Location.objects.none(), label="Receiving location")
     occurred_at = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
-    condition = forms.ChoiceField(
-        choices=Condition.choices, required=False, initial=Condition.UNKNOWN
-    )
+    condition = forms.ChoiceField(choices=Condition.choices, required=False, initial=Condition.USED)
     accessories = forms.CharField(required=False, widget=forms.Textarea)
     quantity_product = forms.ModelChoiceField(
         queryset=Product.objects.none(),
@@ -267,6 +306,12 @@ class ReturnForm(forms.Form):
         widget=forms.Select(attrs={"data-filterable": "true"}),
     )
     quantity_amount = forms.IntegerField(required=False, min_value=1, label="Quantity returned")
+    quantity_stock_purpose = forms.ChoiceField(
+        choices=StockPurpose.choices,
+        required=False,
+        initial=StockPurpose.INTERNAL,
+        label="Stock purpose",
+    )
     notes = forms.CharField(required=False, widget=forms.Textarea)
 
     def __init__(self, *args, user=None, quantity_product_choices=None, **kwargs):
@@ -353,3 +398,129 @@ class AdminCorrectBalanceForm(forms.Form):
 class AdminReversalForm(forms.Form):
     occurred_at = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
     reason = forms.CharField(widget=forms.Textarea)
+
+
+class UnitPurposeReclassifyForm(forms.Form):
+    """apps.inventory.services.purpose.reclassify_unit_purpose() — relabels a
+    single serialized asset's Stock Purpose. `new_purpose` excludes the
+    asset's current value in the view (see UnitPurposeReclassifyView), since
+    reclassifying to the same purpose is a no-op the service itself rejects.
+    """
+
+    new_purpose = forms.ChoiceField(choices=StockPurpose.choices, label="New stock purpose")
+    occurred_at = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
+    reason = forms.CharField(widget=forms.Textarea)
+
+
+class QuantityPurposeReclassifyForm(forms.Form):
+    """apps.inventory.services.purpose.reclassify_quantity_purpose() — moves
+    `quantity` of a quantity-tracked product between two Stock Purpose
+    buckets at one location.
+    """
+
+    from_purpose = forms.ChoiceField(choices=StockPurpose.choices, label="From")
+    to_purpose = forms.ChoiceField(choices=StockPurpose.choices, label="To")
+    quantity = forms.IntegerField(min_value=1)
+    occurred_at = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
+    reason = forms.CharField(widget=forms.Textarea)
+
+    def clean(self):
+        cleaned = super().clean()
+        if (
+            cleaned.get("from_purpose")
+            and cleaned.get("to_purpose")
+            and cleaned["from_purpose"] == cleaned["to_purpose"]
+        ):
+            self.add_error("to_purpose", "Source and destination stock purpose must differ.")
+        return cleaned
+
+
+class ReceiveBulkBatchForm(forms.Form):
+    """Batch-level defaults for apps.inventory.views.ReceiveBulkView — shared
+    across every line of ReceiveBulkFormSet unless a row overrides
+    location/stock_purpose ("apply one location to the batch or override it
+    for individual items").
+    """
+
+    occurred_at = forms.DateField(
+        widget=forms.DateInput(attrs={"type": "date"}), label="Arrival date"
+    )
+    default_location = forms.ModelChoiceField(
+        queryset=Location.objects.none(), label="Default location"
+    )
+    default_stock_purpose = forms.ChoiceField(
+        choices=StockPurpose.choices,
+        initial=StockPurpose.INTERNAL,
+        label="Default stock purpose",
+    )
+    supplier = forms.CharField(max_length=120, required=False)
+    invoice_number = forms.CharField(max_length=60, required=False, label="Invoice number")
+    project_reference = forms.CharField(max_length=120, required=False, label="Project reference")
+    final_customer = forms.CharField(max_length=120, required=False, label="Final customer")
+    notes = forms.CharField(required=False, widget=forms.Textarea)
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        _apply_scoped_location(self.fields["default_location"], user)
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("default_stock_purpose") == StockPurpose.CUSTOMER and not cleaned.get(
+            "final_customer"
+        ):
+            self.add_error("final_customer", "Final customer is required for Customer stock.")
+        return cleaned
+
+
+class ReceiveBulkLineForm(forms.Form):
+    """One row of ReceiveBulkFormSet — a single product line in a multi-
+    product goods receipt (apps.inventory.services.receipts.
+    receive_stock_bulk()). `location`/`stock_purpose` are optional per-row
+    overrides of ReceiveBulkBatchForm's batch-level default. A completely
+    blank row (no product selected) is silently skipped, matching
+    apps.catalog.forms.QuickAddProductFormSet's convention.
+    """
+
+    product = forms.ModelChoiceField(
+        queryset=Product.objects.filter(is_active=True).select_related("brand"),
+        required=False,
+        widget=TrackingMethodSelect(attrs={"data-filterable": "true"}),
+    )
+    vendor_serials = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 3, "placeholder": "One serial per line"}),
+        label="Serials",
+    )
+    quantity = forms.IntegerField(required=False, min_value=1)
+    location = forms.ModelChoiceField(
+        queryset=Location.objects.none(), required=False, label="Location override"
+    )
+    stock_purpose = forms.ChoiceField(
+        choices=StockPurpose.choices, required=False, label="Stock purpose override"
+    )
+    condition = forms.ChoiceField(choices=Condition.choices, required=False, initial=Condition.NEW)
+    accessories = forms.CharField(required=False, widget=forms.Textarea)
+    notes = forms.CharField(required=False, widget=forms.Textarea)
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        _apply_scoped_location(self.fields["location"], user)
+
+    def clean(self):
+        cleaned = super().clean()
+        product = cleaned.get("product")
+        if not product:
+            return cleaned  # blank row — silently skipped, not an error
+        if product.tracking_method == TrackingMethod.UNIT:
+            serials = [
+                s.strip() for s in (cleaned.get("vendor_serials") or "").splitlines() if s.strip()
+            ]
+            if not serials:
+                self.add_error("vendor_serials", "Enter at least one serial for this product.")
+            cleaned["parsed_serials"] = serials
+        elif not cleaned.get("quantity"):
+            self.add_error("quantity", "Quantity is required for quantity-tracked products.")
+        return cleaned
+
+
+ReceiveBulkFormSet = formset_factory(ReceiveBulkLineForm, extra=5)

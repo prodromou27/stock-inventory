@@ -9,7 +9,13 @@
     removal information from the file is preserved in the resulting record's notes, not converted into further
     movements — enter those manually afterward if needed.
   </p>
-  <p><a href="{% url 'imports:template_download' %}">Download the template CSV</a> for the expected column layout.</p>
+  <p>
+    Download the template for the expected column layout:
+    <a href="{% url 'imports:template_download' %}">CSV</a> ·
+    <a href="{% url 'imports:template_xlsx_download' %}">Excel</a>.
+    The optional "Stock Purpose" column accepts "Internal" or "Customer" — leave it blank to use the
+    default set below.
+  </p>
 
   <form method="post" enctype="multipart/form-data">
     {% csrf_token %}

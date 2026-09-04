@@ -118,7 +118,7 @@ def sample_document_context():
                 "description": "",
                 "serial": "SN-SAMPLE-001",
                 "quantity": 1,
-                "condition": "Good",
+                "condition": "Used",
                 "accessories": "Power adapter",
             },
             {

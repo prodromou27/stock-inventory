@@ -10,6 +10,7 @@ from ..models import (
     MovementType,
     ReservationStatus,
     StockBalance,
+    StockPurpose,
     StockReservation,
     UnitAsset,
     UnitStatus,
@@ -87,7 +88,16 @@ def correct_unit_status(*, user, unit_asset, to_status, occurred_at, reason, to_
 
 
 @transaction.atomic
-def correct_balance(*, user, product, location, new_on_hand_quantity, occurred_at, reason):
+def correct_balance(
+    *,
+    user,
+    product,
+    location,
+    new_on_hand_quantity,
+    occurred_at,
+    reason,
+    stock_purpose=StockPurpose.INTERNAL,
+):
     """Administrator-only direct StockBalance.on_hand_quantity adjustment
     (spec §6: "an Administrator performs an explicitly logged correction").
     """
@@ -97,7 +107,9 @@ def correct_balance(*, user, product, location, new_on_hand_quantity, occurred_a
     if new_on_hand_quantity < 0:
         raise ValidationError("On-hand quantity cannot be negative even for a correction.")
 
-    balance = StockBalance.objects.select_for_update().get(product=product, location=location)
+    balance = StockBalance.objects.select_for_update().get(
+        product=product, location=location, stock_purpose=stock_purpose
+    )
     old_on_hand = balance.on_hand_quantity
     delta = new_on_hand_quantity - old_on_hand
     if delta == 0:
@@ -120,6 +132,7 @@ def correct_balance(*, user, product, location, new_on_hand_quantity, occurred_a
         quantity_delta=delta,
         from_location=location if delta < 0 else None,
         to_location=location if delta > 0 else None,
+        stock_purpose=stock_purpose,
         notes=reason,
     )
 
@@ -206,6 +219,7 @@ def reverse_transaction(*, user, original_transaction, occurred_at, reason):
                     product=line.product,
                     location=reservation.location,
                     delta=-line.reserved_quantity_delta,
+                    stock_purpose=line.stock_purpose_snapshot,
                 )
                 reservation.status = (
                     ReservationStatus.RELEASED
@@ -241,12 +255,14 @@ def reverse_transaction(*, user, original_transaction, occurred_at, reason):
                     product=line.product,
                     location=line.to_location,
                     delta=-line.quantity_delta,
+                    stock_purpose=line.stock_purpose_snapshot,
                     respect_available=False,
                 )
                 adjust_balance(
                     product=line.product,
                     location=line.from_location,
                     delta=line.quantity_delta,
+                    stock_purpose=line.stock_purpose_snapshot,
                     respect_available=False,
                 )
                 write_quantity_line(
@@ -256,6 +272,7 @@ def reverse_transaction(*, user, original_transaction, occurred_at, reason):
                     quantity_delta=-line.quantity_delta,
                     from_location=line.to_location,
                     to_location=line.from_location,
+                    stock_purpose=line.stock_purpose_snapshot,
                     notes=reason,
                 )
                 continue
@@ -264,6 +281,7 @@ def reverse_transaction(*, user, original_transaction, occurred_at, reason):
                 product=line.product,
                 location=reversal_location,
                 delta=-line.quantity_delta,
+                stock_purpose=line.stock_purpose_snapshot,
                 respect_available=False,
             )
             write_quantity_line(
@@ -273,6 +291,7 @@ def reverse_transaction(*, user, original_transaction, occurred_at, reason):
                 quantity_delta=-line.quantity_delta,
                 from_location=line.to_location,
                 to_location=line.from_location,
+                stock_purpose=line.stock_purpose_snapshot,
                 notes=reason,
             )
 

@@ -251,5 +251,7 @@ class TestBalanceListFilters:
         assert response["Content-Type"] == "text/csv"
         body = response.content.decode()
         lines = body.strip().splitlines()
-        assert lines[0] == "Brand,Model,SKU,Type,Location,On Hand,Reserved,Available"
-        assert any(quantity_product.model in line and ",12,0,12" in line for line in lines[1:])
+        assert lines[0] == "Brand,Model,SKU,Type,Location,Stock Purpose,On Hand,Reserved,Available"
+        assert any(
+            quantity_product.model in line and ",Internal,12,0,12" in line for line in lines[1:]
+        )

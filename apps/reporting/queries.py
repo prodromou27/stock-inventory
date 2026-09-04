@@ -18,6 +18,7 @@ from apps.inventory.models import (
     MovementType,
     ReservationStatus,
     StockBalance,
+    StockPurpose,
     StockReservation,
     UnitAsset,
     UnitStatus,
@@ -206,17 +207,23 @@ def movement_history(user, unit_asset=None):
     return queryset.order_by("-occurred_at")
 
 
-def low_stock_balances(user):
+def low_stock_balances(user, location=None):
     """Disabled unless configured (spec §16) — only products with a
-    low_stock_threshold set are considered at all.
+    low_stock_threshold set are considered at all. `location` (any level,
+    including a Country) optionally restricts to that location and its
+    descendants — apps.reporting.views.LowStockView's country/location
+    filter, same ltree descendant-or-self match every other location filter
+    in this app uses (apps.inventory.filters._filter_by_location).
     """
-    return (
+    queryset = (
         _scoped_balances(user)
         .filter(product__low_stock_threshold__isnull=False)
         .annotate(available=F("on_hand_quantity") - F("reserved_quantity"))
         .filter(available__lte=F("product__low_stock_threshold"))
-        .order_by("product__brand__name", "product__model")
     )
+    if location is not None:
+        queryset = queryset.filter(location__path__descendant_or_self=location.path)
+    return queryset.order_by("product__brand__name", "product__model")
 
 
 def dashboard_summary(user):
@@ -230,17 +237,24 @@ def dashboard_summary(user):
     # occurred_at is a DateField, not DateTimeField.
     since = timezone.now().date() - timedelta(days=7)
     on_hand_total = _scoped_balances(user).aggregate(total=Sum("on_hand_quantity"))["total"] or 0
+    scoped_assets = _scoped_assets(user)
     return {
         "assets_in_stock": _scoped_assets(user, status=UnitStatus.IN_STOCK).count(),
         "quantity_on_hand": on_hand_total,
         "low_stock_count": low_stock_balances(user).count(),
+        "internal_stock_count": scoped_assets.filter(stock_purpose=StockPurpose.INTERNAL).count(),
+        "customer_stock_count": scoped_assets.filter(stock_purpose=StockPurpose.CUSTOMER).count(),
         "active_reservations": scope_queryset(
             user,
             StockReservation.objects.filter(status=ReservationStatus.ACTIVE),
             location_field="location",
         ).count(),
+        "reserved_count": _scoped_assets(user, status=UnitStatus.RESERVED).count(),
+        "assigned_count": _scoped_assets(user, status=UnitStatus.ASSIGNED).count(),
+        "delivered_count": _scoped_assets(user, status=UnitStatus.DELIVERED).count(),
         "damaged_count": damaged_assets(user).count(),
         "lost_count": lost_assets(user).count(),
+        "disposed_count": _scoped_assets(user, status=UnitStatus.DISPOSED).count(),
         "recent_transactions": scope_transaction_queryset(
             user, InventoryTransaction.objects.filter(occurred_at__gte=since)
         ).count(),
@@ -259,13 +273,21 @@ _STATUSES_WITHOUT_LOCATION = (
     UnitStatus.DISPOSED,
 )
 
+# The only two statuses write_unit_line() (apps.inventory.services.ledger)
+# ever attaches a current_custody_transaction pointer for — an asset in one
+# of these without one is a genuine data-integrity gap (pre-dates this
+# feature, e.g. rows created before the field existed), not a normal state.
+_CUSTODY_STATUSES = (UnitStatus.ASSIGNED, UnitStatus.DELIVERED)
+
 
 def data_quality_summary(user):
     """The Dashboard's "Data quality" panel — issues surfaced from data
     that's already queryable elsewhere, never a new detection rule:
     duplicate serials (duplicate_serial_values(), the same set the Assets
-    grid's "Duplicate serials only" filter already uses) and assets missing
-    a current_location despite a status that should always carry one.
+    grid's "Duplicate serials only" filter already uses), assets missing a
+    current_location despite a status that should always carry one, and
+    assets missing their current-custodian pointer despite being Assigned/
+    Delivered.
     """
     assets = _scoped_assets(user)
     return {
@@ -273,4 +295,7 @@ def data_quality_summary(user):
         "unlocated_count": assets.filter(current_location__isnull=True)
         .exclude(status__in=_STATUSES_WITHOUT_LOCATION)
         .count(),
+        "missing_custodian_count": assets.filter(
+            status__in=_CUSTODY_STATUSES, current_custody_transaction__isnull=True
+        ).count(),
     }

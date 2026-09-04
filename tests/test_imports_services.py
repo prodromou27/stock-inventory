@@ -1,3 +1,5 @@
+import io
+
 import pytest
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -130,6 +132,62 @@ class TestStageRow:
         assert "Delivered" in normalized["notes"]
         assert "J. Smith" in normalized["notes"]
 
+    def test_unresolved_location_falls_back_to_batch_default_without_a_warning(self, location_tree):
+        from apps.inventory.models import StockPurpose
+
+        raw = _base_row(LOCATION="Nonexistent Place")
+        normalized, outcome, detail = services._stage_row(
+            raw, default_location=location_tree["room"], default_stock_purpose=StockPurpose.INTERNAL
+        )
+        assert outcome == ImportRowOutcome.PENDING
+        assert normalized["resolved_location_id"] == str(location_tree["room"].pk)
+        assert normalized["used_batch_default_location"] is True
+
+    def test_per_row_location_wins_over_batch_default(
+        self, administrator, location_tree, other_location_tree
+    ):
+        from apps.locations.models import Location
+        from apps.locations.services import create_location
+
+        other_floor = create_location(
+            level=Location.Level.FLOOR,
+            name="Other Floor",
+            parent=other_location_tree["site"],
+            user=administrator,
+        )
+        raw = _base_row(LOCATION="Room A")
+        normalized, outcome, detail = services._stage_row(
+            raw, default_location=other_floor, default_stock_purpose="internal"
+        )
+        assert normalized["resolved_location_id"] == str(location_tree["room"].pk)
+        assert normalized["used_batch_default_location"] is False
+
+    def test_stock_purpose_column_recognized(self, location_tree):
+        from apps.inventory.models import StockPurpose
+
+        raw = _base_row(LOCATION="Room A", **{"Stock Purpose": "Customer"})
+        normalized, outcome, detail = services._stage_row(raw)
+        assert normalized["stock_purpose"] == StockPurpose.CUSTOMER
+
+    def test_stock_purpose_falls_back_to_batch_default_when_blank(self, location_tree):
+        from apps.inventory.models import StockPurpose
+
+        raw = _base_row(LOCATION="Room A")
+        normalized, outcome, detail = services._stage_row(
+            raw, default_stock_purpose=StockPurpose.CUSTOMER
+        )
+        assert normalized["stock_purpose"] == StockPurpose.CUSTOMER
+
+    def test_unrecognized_stock_purpose_warns_and_uses_default(self, location_tree):
+        from apps.inventory.models import StockPurpose
+
+        raw = _base_row(LOCATION="Room A", **{"Stock Purpose": "Nonsense"})
+        normalized, outcome, detail = services._stage_row(
+            raw, default_stock_purpose=StockPurpose.INTERNAL
+        )
+        assert outcome == ImportRowOutcome.WARNING
+        assert normalized["stock_purpose"] == StockPurpose.INTERNAL
+
 
 @pytest.mark.django_db
 class TestCreateBatchFromUpload:
@@ -160,6 +218,25 @@ class TestCreateBatchFromUpload:
         assert batch.row_count() == 7
         # LOCATION="Customer" rows can't resolve against location_tree's "Room A", so they warn.
         assert batch.rows.filter(outcome=ImportRowOutcome.WARNING).count() >= 2
+
+    def test_default_location_and_purpose_stored_on_batch_and_applied_to_rows(
+        self, administrator, location_tree
+    ):
+        from apps.inventory.models import StockPurpose
+
+        upload = _csv_upload([_base_row(LOCATION="Unresolvable Place", **{"S/N": "SN-DEFAULT"})])
+        batch, _ = services.create_batch_from_upload(
+            uploaded_file=upload,
+            user=administrator,
+            default_location=location_tree["room"],
+            default_stock_purpose=StockPurpose.CUSTOMER,
+        )
+        assert batch.default_location == location_tree["room"]
+        assert batch.default_stock_purpose == StockPurpose.CUSTOMER
+        row = batch.rows.get()
+        assert row.outcome == ImportRowOutcome.PENDING
+        assert row.normalized_data["resolved_location_id"] == str(location_tree["room"].pk)
+        assert row.normalized_data["stock_purpose"] == StockPurpose.CUSTOMER
 
 
 @pytest.mark.django_db
@@ -194,6 +271,18 @@ class TestExecuteBatch:
         assert InventoryTransaction.objects.count() == txn_count_after_first
         assert batch.imported_count == 1
         assert UnitAsset.objects.filter(vendor_serial="SN-IDEMPOTENT").count() == 1
+
+    def test_stock_purpose_flows_through_to_the_created_asset(self, administrator, location_tree):
+        from apps.inventory.models import StockPurpose
+
+        upload = _csv_upload(
+            [_base_row(LOCATION="Room A", **{"S/N": "SN-PURPOSE", "Stock Purpose": "Customer"})]
+        )
+        batch, _ = services.create_batch_from_upload(uploaded_file=upload, user=administrator)
+        services.execute_batch(batch=batch, user=administrator)
+
+        asset = UnitAsset.objects.get(vendor_serial="SN-PURPOSE")
+        assert asset.stock_purpose == StockPurpose.CUSTOMER
 
     def test_second_executor_is_rejected_while_batch_is_running(self, administrator, location_tree):
         upload = _csv_upload([_base_row(LOCATION="Room A", **{"S/N": "SN-CONCURRENT"})])
@@ -354,3 +443,21 @@ class TestDownloads:
         content = services.build_results_csv(batch)
         assert "SN-RESULT" in content
         assert "Imported" in content
+
+    def test_template_xlsx_round_trips_through_the_parser(self, administrator, location_tree):
+        import openpyxl
+
+        content = services.build_template_xlsx()
+        workbook = openpyxl.load_workbook(io.BytesIO(content))
+        sheet = workbook.active
+        header = [cell.value for cell in next(sheet.iter_rows(min_row=1, max_row=1))]
+        assert header == COLUMNS
+
+        upload = SimpleUploadedFile(
+            "template.xlsx",
+            content,
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        batch, _ = services.create_batch_from_upload(uploaded_file=upload, user=administrator)
+        assert batch.row_count() == 2
+        assert batch.rows.filter(outcome=ImportRowOutcome.FAILED).count() == 0

@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block title %}Receive Stock (Bulk) — Stock Inventory{% endblock %}
+
+{% block content %}
+  <p><a href="{% url 'inventory:movements_hub' %}">&larr; Operations</a></p>
+  <div class="page-header">
+    <div>
+      <h1>Receive stock — multi-line</h1>
+      <div class="page-header__subtitle">
+        Receive several products (serialized and/or quantity) in one batch. Set a default location and stock
+        purpose below, or override either on an individual row. Nothing is saved until you submit — this whole
+        receipt is created as one transaction, or none of it is.
+      </div>
+    </div>
+  </div>
+
+  {% if batch_form.non_field_errors %}
+    <p class="messages__item messages__item--error">{{ batch_form.non_field_errors|join:" " }}</p>
+  {% endif %}
+  {% if formset.non_form_errors %}
+    <p class="messages__item messages__item--error">{{ formset.non_form_errors|join:" " }}</p>
+  {% endif %}
+
+  {% if show_duplicate_warning %}
+    <div class="messages__item messages__item--warning">
+      <p>One or more serials already exist on another unit asset:</p>
+      <ul>
+        {% for serial, matches in duplicate_by_serial.items %}
+          <li>
+            <strong>{{ serial }}</strong>:
+            {% for match in matches %}
+              <a href="{{ match.get_absolute_url }}">{{ match.product }}</a> ({{ match.get_status_display }}){% if not forloop.last %}, {% endif %}
+            {% endfor %}
+          </li>
+        {% endfor %}
+      </ul>
+      <p>Submit again to confirm every flagged serial is a separate, legitimate item.</p>
+    </div>
+  {% endif %}
+
+  <form method="post" class="card">
+    {% csrf_token %}
+
+    <h2>Batch defaults</h2>
+    {% for field in batch_form %}
+      {% include "_form_field.html" with field=field %}
+    {% endfor %}
+
+    <h2>Lines</h2>
+    {{ formset.management_form }}
+    <div class="table-scroll" tabindex="0">
+      <table class="dense-table">
+        <thead>
+          <tr>
+            <th>Product</th>
+            <th>Serials (unit-tracked)</th>
+            <th>Quantity (quantity-tracked)</th>
+            <th>Location override</th>
+            <th>Purpose override</th>
+            <th>Condition</th>
+            <th>Accessories</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for form in formset %}
+            <tr>
+              <td>
+                {{ form.id }}
+                {{ form.product }}
+                {% if form.product.errors %}<div class="errorlist">{{ form.product.errors|join:" " }}</div>{% endif %}
+              </td>
+              <td>
+                {{ form.vendor_serials }}
+                {% if form.vendor_serials.errors %}<div class="errorlist">{{ form.vendor_serials.errors|join:" " }}</div>{% endif %}
+              </td>
+              <td>
+                {{ form.quantity }}
+                {% if form.quantity.errors %}<div class="errorlist">{{ form.quantity.errors|join:" " }}</div>{% endif %}
+              </td>
+              <td>{{ form.location }}</td>
+              <td>{{ form.stock_purpose }}</td>
+              <td>{{ form.condition }}</td>
+              <td>{{ form.accessories }}</td>
+              <td>{{ form.notes }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if show_duplicate_warning %}
+      <p>
+        <label>
+          <input type="checkbox" name="duplicate_serial_acknowledged" value="true" checked>
+          I confirm every flagged serial is a separate, legitimate item.
+        </label>
+      </p>
+    {% endif %}
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn--primary">Receive all lines</button>
+    </div>
+  </form>
+{% endblock %}

@@ -6,7 +6,7 @@ from apps.audit.services import record_event
 from apps.core.authorization import ADMINISTRATOR, STOCK_MANAGER, require_role
 from apps.locations.scoping import require_location_access
 
-from ..models import MovementType, UnitAsset
+from ..models import MovementType, StockPurpose, UnitAsset
 from ..transitions import validate_transferable
 from .ledger import adjust_balance, create_transaction_header, write_quantity_line, write_unit_line
 
@@ -78,8 +78,16 @@ def bulk_transfer(
             entry["source_location"],
             entry["quantity"],
         )
-        adjust_balance(product=product, location=source_location, delta=-quantity)
-        adjust_balance(product=product, location=destination_location, delta=quantity)
+        stock_purpose = entry.get("stock_purpose") or StockPurpose.INTERNAL
+        adjust_balance(
+            product=product, location=source_location, delta=-quantity, stock_purpose=stock_purpose
+        )
+        adjust_balance(
+            product=product,
+            location=destination_location,
+            delta=quantity,
+            stock_purpose=stock_purpose,
+        )
         write_quantity_line(
             transaction=txn,
             line_number=line_number,
@@ -87,6 +95,7 @@ def bulk_transfer(
             quantity_delta=quantity,
             from_location=source_location,
             to_location=destination_location,
+            stock_purpose=stock_purpose,
             notes=notes,
         )
         line_number += 1

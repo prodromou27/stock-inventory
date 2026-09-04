@@ -17,6 +17,7 @@ from .services import (
     acknowledge_row_duplicate_serial,
     build_results_csv,
     build_template_csv,
+    build_template_xlsx,
     create_batch_from_upload,
     execute_batch,
     set_row_location_override,
@@ -49,7 +50,10 @@ class ImportUploadView(LoginRequiredMixin, RoleRequiredMixin, View):
 
         try:
             batch, is_repeat_upload = create_batch_from_upload(
-                uploaded_file=form.cleaned_data["file"], user=request.user
+                uploaded_file=form.cleaned_data["file"],
+                user=request.user,
+                default_location=form.cleaned_data["default_location"],
+                default_stock_purpose=form.cleaned_data["default_stock_purpose"],
             )
         except ValidationError as exc:
             form.add_error("file", exc)
@@ -63,6 +67,22 @@ class ImportUploadView(LoginRequiredMixin, RoleRequiredMixin, View):
             )
         messages.success(request, f"Staged {batch.row_count()} row(s) for review.")
         return redirect(batch.get_absolute_url())
+
+
+def _is_repeat_of_completed(batch):
+    """Whether another COMPLETED batch shares this one's exact file
+    contents — apps.imports.services.create_batch_from_upload()'s advisory
+    checksum check, re-evaluated at execute time (not just upload time) so
+    the confirmation gate below covers a batch left staged for a while
+    before being executed, not just the moment it was uploaded.
+    """
+    return (
+        ImportBatch.objects.filter(
+            file_checksum=batch.file_checksum, status=ImportBatchStatus.COMPLETED
+        )
+        .exclude(pk=batch.pk)
+        .exists()
+    )
 
 
 class ImportBatchDetailView(LoginRequiredMixin, RoleRequiredMixin, View):
@@ -96,6 +116,7 @@ class ImportBatchDetailView(LoginRequiredMixin, RoleRequiredMixin, View):
                 in (ImportBatchStatus.PREVIEWED, ImportBatchStatus.PARTIALLY_COMPLETED),
                 "can_execute": batch.status
                 in (ImportBatchStatus.PREVIEWED, ImportBatchStatus.PARTIALLY_COMPLETED),
+                "is_repeat_of_completed": _is_repeat_of_completed(batch),
             },
         )
 
@@ -161,6 +182,14 @@ class ImportExecuteView(LoginRequiredMixin, RoleRequiredMixin, View):
             messages.error(request, "This batch cannot be executed in its current state.")
             return redirect(batch.get_absolute_url())
 
+        if _is_repeat_of_completed(batch) and request.POST.get("confirm_repeat_upload") != "true":
+            messages.error(
+                request,
+                "A completed import with the same file contents already exists. Confirm below "
+                "to proceed, or cancel if this is a mistake.",
+            )
+            return redirect(batch.get_absolute_url())
+
         execute_batch(batch=batch, user=request.user)
         messages.success(
             request,
@@ -192,4 +221,16 @@ class ImportTemplateDownloadView(LoginRequiredMixin, RoleRequiredMixin, View):
     def get(self, request):
         response = HttpResponse(build_template_csv(), content_type="text/csv")
         response["Content-Disposition"] = 'attachment; filename="stock_import_template.csv"'
+        return response
+
+
+class ImportTemplateXlsxDownloadView(LoginRequiredMixin, RoleRequiredMixin, View):
+    allowed_roles = (ADMINISTRATOR,)
+
+    def get(self, request):
+        response = HttpResponse(
+            build_template_xlsx(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = 'attachment; filename="stock_import_template.xlsx"'
         return response

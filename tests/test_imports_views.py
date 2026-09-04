@@ -132,3 +132,52 @@ class TestExecuteAndDownloads:
         client.force_login(stock_manager)
         response = client.post(reverse("imports:execute", args=[batch.pk]))
         assert response.status_code == 403
+
+    def test_template_xlsx_download(self, client, administrator):
+        client.force_login(administrator)
+        response = client.get(reverse("imports:template_xlsx_download"))
+        assert response.status_code == 200
+        assert response["Content-Type"] == (
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
+    def test_execute_blocked_when_repeat_of_completed_until_confirmed(
+        self, client, administrator, location_tree
+    ):
+        upload_content = _csv_upload([_base_row(LOCATION="Room A", **{"S/N": "SN-REPEAT-1"})])
+        first_batch, _ = services.create_batch_from_upload(
+            uploaded_file=upload_content, user=administrator
+        )
+        services.execute_batch(batch=first_batch, user=administrator)
+        first_batch.refresh_from_db()
+        assert first_batch.status == ImportBatchStatus.COMPLETED
+
+        # A second upload with byte-identical content.
+        repeat_upload = SimpleUploadedFile(
+            "test.csv",
+            first_batch.file.read(),
+            content_type="text/csv",
+        )
+        second_batch, is_repeat = services.create_batch_from_upload(
+            uploaded_file=repeat_upload, user=administrator
+        )
+        assert is_repeat is True
+
+        client.force_login(administrator)
+        response = client.post(reverse("imports:execute", args=[second_batch.pk]))
+        assert response.status_code == 302
+        second_batch.refresh_from_db()
+        assert second_batch.status == ImportBatchStatus.PREVIEWED  # not executed
+
+        confirmed_response = client.post(
+            reverse("imports:execute", args=[second_batch.pk]),
+            {"confirm_repeat_upload": "true"},
+        )
+        assert confirmed_response.status_code == 302
+        second_batch.refresh_from_db()
+        # The row's own serial now duplicates the first batch's already-imported
+        # asset, so it's held for an explicit per-row acknowledgement (separate,
+        # pre-existing protection) rather than fully completing — the point
+        # here is that the repeat-upload gate no longer blocks execution once
+        # confirmed, not that every row succeeds.
+        assert second_batch.status != ImportBatchStatus.PREVIEWED
