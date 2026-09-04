@@ -37,6 +37,15 @@ class TestProductListView:
         response = client.get(reverse("catalog:product_list"), {"sort": "not-a-field"})
         assert response.status_code == 200
 
+    def test_csv_export_streams_filtered_rows(self, client, read_only_user, unit_product):
+        client.force_login(read_only_user)
+        response = client.get(reverse("catalog:product_list"), {"format": "csv"})
+        assert response.status_code == 200
+        assert response["Content-Type"] == "text/csv"
+        body = response.content.decode()
+        assert "Brand,Model,SKU,Type,Tracking method,Supplier,Status" in body
+        assert unit_product.model in body
+
 
 @pytest.mark.django_db
 class TestProductDetailView:
@@ -44,6 +53,17 @@ class TestProductDetailView:
         client.force_login(read_only_user)
         response = client.get(reverse("catalog:product_detail", kwargs={"pk": unit_product.pk}))
         assert response.status_code == 200
+
+    def test_ajax_request_renders_grid_side_panel_partial(
+        self, client, read_only_user, unit_product
+    ):
+        client.force_login(read_only_user)
+        response = client.get(
+            reverse("catalog:product_detail", kwargs={"pk": unit_product.pk}),
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        assert response.status_code == 200
+        assert response.templates[0].name == "catalog/_product_detail_panel.html"
 
 
 @pytest.mark.django_db

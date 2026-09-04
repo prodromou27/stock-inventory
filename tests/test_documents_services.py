@@ -17,7 +17,28 @@ from apps.documents.services import (
 )
 from apps.inventory.models import UnitAsset
 from apps.inventory.services.assignments import assign_to_employee, deliver_to_customer
+from apps.inventory.services.disposition import dispose
 from apps.inventory.services.receipts import receive_stock
+
+
+@pytest.fixture
+def disposal_txn(administrator, unit_product, location_tree):
+    receive_stock(
+        user=administrator,
+        product=unit_product,
+        location=location_tree["room"],
+        occurred_at=date.today(),
+        vendor_serial="SN-DOC-DISPOSAL",
+    )
+    asset = UnitAsset.objects.get(vendor_serial="SN-DOC-DISPOSAL")
+    return dispose(
+        user=administrator,
+        occurred_at=date.today(),
+        unit_asset_ids=[asset.pk],
+        notes="end of life",
+        wipe_method="software_wipe",
+        witness_name="R. Patel",
+    )
 
 
 @pytest.fixture
@@ -58,6 +79,30 @@ class TestGenerateDocument:
         after = set(Path(settings.MEDIA_ROOT).rglob("*"))
         assert {path for path in after - before if path.is_file()} == set()
         assert not GeneratedDocument.objects.filter(transaction=assignment_txn).exists()
+
+    def test_rejects_a_movement_type_with_no_printable_document(
+        self, administrator, unit_product, location_tree
+    ):
+        txn = receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-DOC-RECEIPT",
+        )
+        with pytest.raises(ValidationError):
+            generate_document(txn=txn, user=administrator)
+
+    def test_disposal_generates_a_disposal_certificate(self, administrator, disposal_txn):
+        document = generate_document(txn=disposal_txn, user=administrator)
+        assert document.document_type == "disposal"
+        assert document.context_snapshot["wipe_method_display"] == "Software data wipe"
+        assert document.context_snapshot["witness_name"] == "R. Patel"
+
+    def test_non_disposal_context_has_blank_wipe_fields(self, administrator, assignment_txn):
+        document = generate_document(txn=assignment_txn, user=administrator)
+        assert document.context_snapshot["wipe_method_display"] == ""
+        assert document.context_snapshot["witness_name"] == ""
 
     def test_generates_a_real_pdf(self, administrator, assignment_txn):
         document = generate_document(txn=assignment_txn, user=administrator)

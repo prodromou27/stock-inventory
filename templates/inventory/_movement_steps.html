@@ -1,0 +1,15 @@
+{% comment %}
+Usage: {% include "inventory/_movement_steps.html" with step=1 step_title="Select stock" %}
+
+A numbered step header shared by every guided movement-workflow template
+(Transfer/Reserve/Assign/Deliver/AssessReturn/disposition_form.html) — a
+purely visual grouping of each form's existing sections into "1. Select
+stock / 2. Enter details / 3. Review and confirm", not a stateful
+multi-page wizard: every field from every step still submits in the one
+POST the view already validates, and server-side validation/redirect
+behavior is completely untouched.
+{% endcomment %}
+<div class="movement-step__header">
+  <span class="movement-step__number">{{ step }}</span>
+  <h2 class="movement-step__title">{{ step_title }}</h2>
+</div>

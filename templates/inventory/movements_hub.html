@@ -1,74 +1,130 @@
 {% extends "base.html" %}
 
-{% block title %}Movements — Stock Inventory{% endblock %}
+{% block title %}Operations — Stock Inventory{% endblock %}
 
 {% block content %}
   <div class="page-header">
-    <h1>Movements</h1>
+    <h1>Operations</h1>
   </div>
 
-  <h2>Bringing stock in</h2>
+  <h2>Primary actions</h2>
   <div class="card-grid">
-    <a class="action-card" href="{% url 'inventory:receive_stock' %}">
+    <a class="action-card action-card--primary" href="{% url 'inventory:receive_stock' %}">
       <span class="action-card__title">Receive stock</span>
       <span class="action-card__desc">Record a new arrival into a location.</span>
     </a>
-    <a class="action-card" href="{% url 'inventory:quick_receive' %}">
+    <a class="action-card action-card--primary" href="{% url 'inventory:quick_receive' %}">
       <span class="action-card__title">Quick receive</span>
       <span class="action-card__desc">One product/location, many serials at once.</span>
     </a>
-  </div>
-
-  <h2>Moving &amp; holding</h2>
-  <div class="card-grid">
-    <a class="action-card" href="{% url 'inventory:transfer' %}">
-      <span class="action-card__title">Bulk location transfer</span>
+    <a class="action-card action-card--primary" href="{% url 'inventory:transfer' %}">
+      <span class="action-card__title">Transfer</span>
       <span class="action-card__desc">Move stock between locations.</span>
     </a>
+    <a class="action-card action-card--primary" href="{% url 'inventory:assign' %}">
+      <span class="action-card__title">Assign</span>
+      <span class="action-card__desc">Hand out stock to a named employee.</span>
+    </a>
+    <a class="action-card action-card--primary" href="{% url 'inventory:deliver' %}">
+      <span class="action-card__title">Deliver</span>
+      <span class="action-card__desc">Remove stock for an external delivery.</span>
+    </a>
+  </div>
+
+  <h2>Secondary</h2>
+  <div class="card-grid">
     <a class="action-card" href="{% url 'inventory:reserve' %}">
-      <span class="action-card__title">Reserve stock</span>
+      <span class="action-card__title">Reserve</span>
       <span class="action-card__desc">Hold quantity against a project or order.</span>
     </a>
     <a class="action-card" href="{% url 'inventory:reservation_list' %}">
       <span class="action-card__title">Reservations</span>
       <span class="action-card__desc">View and release active reservations.</span>
     </a>
-  </div>
-
-  <h2>Giving stock out</h2>
-  <div class="card-grid">
-    <a class="action-card" href="{% url 'inventory:assign' %}">
-      <span class="action-card__title">Assign to employee</span>
-      <span class="action-card__desc">Hand out stock to a named employee.</span>
-    </a>
-    <a class="action-card" href="{% url 'inventory:deliver' %}">
-      <span class="action-card__title">Deliver to customer</span>
-      <span class="action-card__desc">Remove stock for an external delivery.</span>
-    </a>
-  </div>
-
-  <h2>Returns &amp; problems</h2>
-  <div class="card-grid">
     <a class="action-card" href="{% url 'inventory:assess_return' %}">
       <span class="action-card__title">Assess returned assets</span>
       <span class="action-card__desc">Triage assets that have come back.</span>
-    </a>
-    <a class="action-card" href="{% url 'inventory:mark_damaged' %}">
-      <span class="action-card__title">Mark damaged</span>
-      <span class="action-card__desc">Flag assets as damaged and out of service.</span>
     </a>
     <a class="action-card" href="{% url 'inventory:repair_damaged' %}">
       <span class="action-card__title">Return repaired assets to stock</span>
       <span class="action-card__desc">Bring damaged assets back into stock.</span>
     </a>
-    <a class="action-card" href="{% url 'inventory:mark_lost' %}">
+    <a class="action-card" href="{% url 'inventory:transaction_list' %}">
+      <span class="action-card__title">Return</span>
+      <span class="action-card__desc">Open the original assignment or delivery transaction to record a return.</span>
+    </a>
+  </div>
+
+  <h2>Problems</h2>
+  <div class="card-grid">
+    <a class="action-card action-card--problem" href="{% url 'inventory:mark_damaged' %}">
+      <span class="action-card__title">Mark damaged</span>
+      <span class="action-card__desc">Flag assets as damaged and out of service.</span>
+    </a>
+    <a class="action-card action-card--problem" href="{% url 'inventory:mark_lost' %}">
       <span class="action-card__title">Mark lost</span>
       <span class="action-card__desc">Record assets as lost.</span>
     </a>
-    <a class="action-card" href="{% url 'inventory:dispose' %}">
+    <a class="action-card action-card--problem" href="{% url 'inventory:dispose' %}">
       <span class="action-card__title">Dispose</span>
       <span class="action-card__desc">Remove assets from stock permanently.</span>
     </a>
   </div>
-  <p class="text-muted">To record a return, open the original assignment/delivery transaction and use "Record a return."</p>
+
+  <div class="hub-panels">
+    <div class="card">
+      <h2>Recent transactions</h2>
+      {% if recent_transactions %}
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr><th>Number</th><th>Type</th><th>Date</th><th>Performed by</th></tr>
+            </thead>
+            <tbody>
+              {% for txn in recent_transactions %}
+                <tr>
+                  <td><a href="{{ txn.get_absolute_url }}">{{ txn.transaction_number }}</a></td>
+                  <td>{{ txn.get_movement_type_display }}</td>
+                  <td>{{ txn.occurred_at }}</td>
+                  <td>{{ txn.performed_by.get_username }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <p><a href="{% url 'inventory:transaction_list' %}">View all transactions &rarr;</a></p>
+      {% else %}
+        <p class="empty-state">No transactions in your authorized scope yet.</p>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <h2>Frequently used</h2>
+      {% if frequent_products %}
+        <p class="hub-panel__subheading">Products (last 30 days)</p>
+        <ul class="hub-quick-list">
+          {% for product in frequent_products %}
+            <li>
+              <a href="{% url 'catalog:product_detail' product.id %}">{{ product.label }}</a>
+              <span class="text-muted">{{ product.count }}</span>
+            </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+      {% if frequent_locations %}
+        <p class="hub-panel__subheading">Locations (last 30 days)</p>
+        <ul class="hub-quick-list">
+          {% for entry in frequent_locations %}
+            <li>
+              <a href="{% url 'locations:detail' entry.location.pk %}">{{ entry.location.name }}</a>
+              <span class="text-muted">{{ entry.count }}</span>
+            </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+      {% if not frequent_products and not frequent_locations %}
+        <p class="empty-state">No recent activity yet.</p>
+      {% endif %}
+    </div>
+  </div>
 {% endblock %}

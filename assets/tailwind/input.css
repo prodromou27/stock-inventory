@@ -21,7 +21,7 @@
 
 @layer base {
   :root {
-    color-scheme: light dark;
+    color-scheme: light;
 
     --font-sans: "Segoe UI", system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
     --font-mono: ui-monospace, "Cascadia Code", "Consolas", "SFMono-Regular", monospace;
@@ -60,34 +60,40 @@
     --topbar-height: 3.5rem;
   }
 
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --color-bg: #0f1216;
-      --color-surface: #171b21;
-      --color-border: #2a2f37;
-      --color-border-strong: #3a4048;
-      --color-text: #e7eaee;
-      --color-text-muted: #a2aab5;
-      --color-text-faint: #6d7681;
+  /* Explicit, user-controlled theming — not OS-driven. The app defaults to
+     light (the bare :root values above) regardless of the visitor's system
+     preference; dark is opt-in only, toggled by static/js/theme.js, which
+     sets this attribute on <html> and remembers the choice in localStorage.
+     No @media (prefers-color-scheme) fallback: "light by default, dark
+     optional" means the app doesn't silently guess from the OS. */
+  :root[data-theme="dark"] {
+    color-scheme: dark;
 
-      --color-primary: #818cf8;
-      --color-primary-hover: #a5b4fc;
-      --color-primary-bg: #21214a;
-      --color-primary-contrast: #0b0b1a;
+    --color-bg: #0f1216;
+    --color-surface: #171b21;
+    --color-border: #2a2f37;
+    --color-border-strong: #3a4048;
+    --color-text: #e7eaee;
+    --color-text-muted: #a2aab5;
+    --color-text-faint: #6d7681;
 
-      --color-success: #4fce85;
-      --color-success-bg: #123423;
-      --color-warning: #e8b74a;
-      --color-warning-bg: #3a2d0c;
-      --color-danger: #f0776b;
-      --color-danger-bg: #3a1714;
-      --color-info: #6cb6ff;
-      --color-info-bg: #102a42;
+    --color-primary: #818cf8;
+    --color-primary-hover: #a5b4fc;
+    --color-primary-bg: #21214a;
+    --color-primary-contrast: #0b0b1a;
 
-      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-      --shadow-md: 0 8px 24px -4px rgba(0, 0, 0, 0.55), 0 2px 8px -2px rgba(0, 0, 0, 0.4);
-      --shadow-lg: 0 16px 40px -8px rgba(0, 0, 0, 0.6);
-    }
+    --color-success: #4fce85;
+    --color-success-bg: #123423;
+    --color-warning: #e8b74a;
+    --color-warning-bg: #3a2d0c;
+    --color-danger: #f0776b;
+    --color-danger-bg: #3a1714;
+    --color-info: #6cb6ff;
+    --color-info-bg: #102a42;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 8px 24px -4px rgba(0, 0, 0, 0.55), 0 2px 8px -2px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 16px 40px -8px rgba(0, 0, 0, 0.6);
   }
 
   /* ---------- reset & base typography ---------- */
@@ -527,7 +533,8 @@
   }
 
   .sidebar-toggle svg,
-  .user-menu svg {
+  .user-menu svg,
+  .theme-toggle svg {
     width: 100%;
     height: 100%;
     fill: none;
@@ -535,6 +542,44 @@
     stroke-width: 2;
     stroke-linecap: round;
     stroke-linejoin: round;
+  }
+
+  .theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 2.1rem;
+    height: 2.1rem;
+    padding: 0.4rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-full, 999px);
+    color: var(--color-text-muted);
+    background: var(--color-surface);
+  }
+
+  .theme-toggle:hover {
+    color: var(--color-text);
+    border-color: var(--color-border-strong);
+  }
+
+  .theme-toggle__icon {
+    display: none;
+  }
+
+  /* Sun shows (and dark mode's "switch to dark" affordance) when the app is
+     currently light; moon shows once :root[data-theme="dark"] is set — see
+     static/js/theme.js. */
+  .theme-toggle__icon--sun {
+    display: block;
+  }
+
+  :root[data-theme="dark"] .theme-toggle__icon--sun {
+    display: none;
+  }
+
+  :root[data-theme="dark"] .theme-toggle__icon--moon {
+    display: block;
   }
 
   .user-menu {
@@ -1113,6 +1158,81 @@
     color: var(--color-text-muted);
   }
 
+  /* ---------- guided movement-form steps (templates/inventory/_movement_steps.html) ---------- */
+
+  .movement-step__header {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    margin: 1.75rem 0 0.75rem;
+  }
+  .movement-step__header:first-child {
+    margin-top: 0;
+  }
+  .movement-step__number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.6rem;
+    height: 1.6rem;
+    flex: none;
+    border-radius: var(--radius-full, 999px);
+    background: var(--color-primary);
+    color: var(--color-primary-contrast, #fff);
+    font-size: 0.8rem;
+    font-weight: 700;
+  }
+  .movement-step__title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--color-text);
+    margin: 0;
+  }
+
+  /* ---------- Operations hub (templates/inventory/movements_hub.html) ---------- */
+
+  .action-card--problem {
+    border-left: 3px solid var(--color-danger);
+  }
+
+  .hub-panels {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 20rem;
+    gap: 1.5rem;
+    align-items: start;
+  }
+  @media (max-width: 1100px) {
+    .hub-panels {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .hub-quick-list {
+    list-style: none;
+    margin: 0 0 1.25rem;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+  .hub-quick-list:last-child {
+    margin-bottom: 0;
+  }
+  .hub-quick-list li {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+  }
+  .hub-panel__subheading {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-text-muted);
+    margin: 0 0 0.5rem;
+  }
+
   .stat-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
@@ -1184,6 +1304,35 @@
     color: var(--color-primary);
   }
 
+  /* templates/inventory/_inventory_tabs.html — Products/Assets/Stock
+     Balances stay separate pages/URLs (different models, different grids),
+     but read as one "Inventory" destination the operator can pivot inside
+     of, not three unrelated sidebar links. */
+  .tab-strip {
+    display: flex;
+    gap: 0.25rem;
+    border-bottom: 1px solid var(--color-border);
+    margin-bottom: 1.25rem;
+  }
+
+  .tab-strip__tab {
+    padding: 0.55rem 0.9rem;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+  }
+
+  .tab-strip__tab:hover {
+    color: var(--color-text);
+  }
+
+  .tab-strip__tab.is-active {
+    color: var(--color-primary);
+    border-bottom-color: var(--color-primary);
+  }
+
   .pagination {
     display: flex;
     align-items: center;
@@ -1230,6 +1379,11 @@
 
   .text-muted {
     color: var(--color-text-muted);
+  }
+
+  .text-danger {
+    color: var(--color-danger);
+    font-weight: 600;
   }
 
   .empty-state {
@@ -1289,6 +1443,144 @@
   .definition-list dd {
     margin: 0;
     font-size: 0.9rem;
+  }
+
+  /* ---------- asset history timeline (templates/inventory/_asset_detail_content.html) ---------- */
+
+  .timeline {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .timeline__item {
+    position: relative;
+    padding: 0 0 1.5rem 1.6rem;
+    border-left: 2px solid var(--color-border);
+  }
+  .timeline__item:last-child {
+    border-left-color: transparent;
+    padding-bottom: 0;
+  }
+
+  .timeline__marker {
+    position: absolute;
+    left: -0.4rem;
+    top: 0.2rem;
+    width: 0.75rem;
+    height: 0.75rem;
+    border-radius: var(--radius-full, 999px);
+    background: var(--color-primary);
+    border: 2px solid var(--color-surface);
+  }
+
+  .timeline__content {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: 0.75rem 1rem;
+  }
+
+  .timeline__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .timeline__date {
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+  }
+
+  .timeline__status {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.35rem;
+  }
+
+  .timeline__location {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.85rem;
+    color: var(--color-text);
+    margin-bottom: 0.35rem;
+  }
+
+  .timeline__arrow {
+    color: var(--color-text-muted);
+  }
+
+  .timeline__meta {
+    font-size: 0.78rem;
+    color: var(--color-text-muted);
+  }
+
+  /* ---------- drag/drop file upload (static/js/app.js's [data-dropzone]) ---------- */
+
+  .dropzone {
+    position: relative;
+    border: 2px dashed var(--color-border);
+    border-radius: var(--radius-md);
+    padding: 1.25rem;
+    text-align: center;
+    background: var(--color-bg);
+    transition: border-color 0.15s ease, background 0.15s ease;
+    margin-bottom: 0.5rem;
+  }
+  .dropzone.is-dragover {
+    border-color: var(--color-primary);
+    background: color-mix(in srgb, var(--color-primary) 6%, transparent);
+  }
+  .dropzone input[type="file"] {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+  }
+  .dropzone__preview {
+    display: block;
+    max-height: 4rem;
+    max-width: 100%;
+    margin: 0 auto 0.5rem;
+    pointer-events: none;
+  }
+  .dropzone__prompt {
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+    pointer-events: none;
+    margin: 0;
+  }
+
+  /* ---------- document template live preview (templates/documents/template_edit.html) ---------- */
+
+  .template-preview-frame-wrap {
+    position: relative;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    min-height: 24rem;
+  }
+  .template-preview-frame-wrap iframe {
+    display: block;
+    width: 100%;
+    height: 24rem;
+    border: 0;
+  }
+  .template-preview-frame-wrap .empty-state {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    margin: 0;
+    background: var(--color-surface);
   }
 
   .form-card { max-width: 44rem; }
@@ -1672,6 +1964,14 @@
   border-radius: var(--radius-sm);
   background: var(--color-surface);
   color: var(--color-text);
+}
+.grid-toolbar__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  white-space: nowrap;
 }
 .grid-selection-count {
   font-size: 0.82rem;

@@ -12,6 +12,8 @@
   th, td { border: 1px solid #444; padding: 4px 6px; text-align: left; font-size: 9pt; vertical-align: top; }
   th { background: #eee; }
   .notes { margin-top: 1em; }
+  .disposal-certificate { margin-top: 1em; padding: 0.6em 0.8em; border: 1px solid #444; }
+  .disposal-certificate p { margin: 0.2em 0; }
   .signatures { margin-top: 3em; width: 100%; }
   .signatures td { border: none; padding: 0 1em 0 0; width: 50%; }
   .signature-line { border-bottom: 1px solid #000; height: 2.5em; }
@@ -59,6 +61,14 @@
     </tbody>
   </table>
 
+  {% if wipe_method_display %}
+    <div class="disposal-certificate">
+      <p><strong>Certificate of Disposal</strong></p>
+      <p>Storage media disposition: {{ wipe_method_display }}</p>
+      {% if witness_name %}<p>Witnessed by: {{ witness_name }}</p>{% endif %}
+    </div>
+  {% endif %}
+
   {% if notes %}
     <div class="notes"><strong>Notes:</strong> {{ notes }}</div>
   {% endif %}
@@ -69,11 +79,11 @@
     <tr>
       <td>
         <div class="signature-line"></div>
-        <div class="signature-caption">Delivered by (signature) — Date: ______________</div>
+        <div class="signature-caption">{% if wipe_method_display %}Disposed by (signature){% else %}Delivered by (signature){% endif %} — Date: ______________</div>
       </td>
       <td>
         <div class="signature-line"></div>
-        <div class="signature-caption">Received by (signature) — Date: ______________</div>
+        <div class="signature-caption">{% if wipe_method_display %}Witnessed by (signature){% else %}Received by (signature){% endif %} — Date: ______________</div>
       </td>
     </tr>
   </table>

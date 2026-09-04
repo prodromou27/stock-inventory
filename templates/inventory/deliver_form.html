@@ -3,7 +3,7 @@
 {% block title %}Deliver to Customer — Stock Inventory{% endblock %}
 
 {% block content %}
-  <p><a href="{% url 'inventory:movements_hub' %}">&larr; Movements</a></p>
+  <p><a href="{% url 'inventory:movements_hub' %}">&larr; Operations</a></p>
   <div class="page-header">
     <h1>Deliver to customer</h1>
   </div>
@@ -14,12 +14,18 @@
 
   <form method="post">
     {% csrf_token %}
+
+    {% include "inventory/_movement_steps.html" with step=1 step_title="Select stock" %}
+    {% include "inventory/_asset_picker.html" %}
+
+    {% include "inventory/_movement_steps.html" with step=2 step_title="Enter details" %}
     <div class="card">
       {% for field in form %}
         {% include "_form_field.html" with field=field %}
       {% endfor %}
     </div>
-    {% include "inventory/_asset_picker.html" %}
+
+    {% include "inventory/_movement_steps.html" with step=3 step_title="Review and confirm" %}
     <div class="form-actions">
       <button type="submit" class="btn btn--primary">Deliver</button>
     </div>

@@ -1,0 +1,32 @@
+{% load inventory_extras %}
+<div class="grid-panel__header">
+  <div>
+    <h2>{{ product }}</h2>
+    {% if product.is_active %}
+      <span class="badge badge--success">Active</span>
+    {% else %}
+      <span class="badge badge--neutral">Inactive</span>
+    {% endif %}
+  </div>
+  <button type="button" class="btn btn--ghost" data-panel-close aria-label="Close details">Close</button>
+</div>
+
+{% if user_is_administrator or "StockManager" in user_role_groups %}
+  <div class="grid-panel__actions">
+    <a class="btn btn--sm" href="{% url 'catalog:product_update' product.pk %}">Edit</a>
+    <a class="btn btn--sm" href="{% url 'inventory:receive_stock' %}?product={{ product.pk }}">Receive stock</a>
+  </div>
+{% endif %}
+
+<a class="grid-panel__full-link" href="{{ product.get_absolute_url }}">Open full page →</a>
+
+<dl class="definition-list">
+  <dt>Brand</dt><dd>{{ product.brand.name }}</dd>
+  <dt>SKU</dt><dd>{{ product.sku|default:"—" }}</dd>
+  <dt>Type</dt><dd>{{ product.product_type.name }}</dd>
+  <dt>Tracking method</dt><dd>{{ product.get_tracking_method_display }}</dd>
+  {% if product.supplier %}<dt>Supplier</dt><dd>{{ product.supplier }}</dd>{% endif %}
+  {% if product.low_stock_threshold %}<dt>Low-stock threshold</dt><dd>{{ product.low_stock_threshold }}</dd>{% endif %}
+</dl>
+
+{% product_inventory_summary product %}

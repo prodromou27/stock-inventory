@@ -14,6 +14,8 @@
     </div>
   </div>
 
+  {% include "inventory/_inventory_tabs.html" %}
+
   {{ statuses|json_script:"asset-status-choices" }}
 
   <div class="inventory-grid is-hidden">
@@ -297,55 +299,23 @@
         input.addEventListener("change", () => table.setPage(1).then(() => table.replaceData()));
       });
 
-      // "Export filtered CSV" mirrors whatever's currently applied in the
-      // grid (global search + header filters + date-range panel) onto the
-      // classic ?format=csv link — apps.core.csv_export.CSVExportMixin reads
-      // the exact same param names, so this stays a plain server-rendered
-      // download, no client-side CSV assembly.
-      const exportLink = document.getElementById("asset-grid-export-filtered");
-      function refreshExportLink() {
-        const params = new URLSearchParams({ format: "csv" });
-        const search = document.getElementById("asset-grid-search").value.trim();
-        if (search) params.set("q", search);
-        table.getHeaderFilters().forEach((f) => f.value !== "" && params.set(f.field, f.value));
-        moreFiltersForm.querySelectorAll("[data-filter]").forEach((input) => {
-          const key = input.dataset.filter;
-          const value = input.type === "checkbox" ? (input.checked ? "1" : "") : input.value;
-          if (value) params.set(key, value);
-        });
-        exportLink.href = `?${params.toString()}`;
-      }
-      table.on("dataLoaded", refreshExportLink);
+      G.initExportLink({
+        linkSelector: "#asset-grid-export-filtered",
+        table,
+        searchInputSelector: "#asset-grid-search",
+        extraParams: () => {
+          const values = {};
+          moreFiltersForm.querySelectorAll("[data-filter]").forEach((input) => {
+            values[input.dataset.filter] = input.type === "checkbox" ? (input.checked ? "1" : "") : input.value;
+          });
+          return values;
+        },
+      });
 
-      // Column visibility panel — built from the live column list so it
-      // always matches exactly what's configured above, no separate list to
-      // keep in sync.
-      const columnsPanel = document.getElementById("asset-grid-columns-panel");
-      const columnsToggle = document.getElementById("asset-grid-columns-toggle");
-      table.on("tableBuilt", () => {
-        table.getColumns().forEach((column) => {
-          const field = column.getField();
-          if (!field) return;
-          const label = document.createElement("label");
-          const checkbox = document.createElement("input");
-          checkbox.type = "checkbox";
-          checkbox.checked = column.isVisible();
-          checkbox.addEventListener("change", () => (checkbox.checked ? column.show() : column.hide()));
-          label.appendChild(checkbox);
-          label.append(column.getDefinition().title);
-          columnsPanel.appendChild(label);
-        });
-      });
-      columnsToggle.addEventListener("click", () => {
-        const expanded = columnsToggle.getAttribute("aria-expanded") === "true";
-        columnsToggle.setAttribute("aria-expanded", String(!expanded));
-        columnsPanel.hidden = expanded;
-      });
-      document.addEventListener("click", (event) => {
-        if (!columnsPanel.hidden && !columnsPanel.contains(event.target) && event.target !== columnsToggle) {
-          columnsPanel.hidden = true;
-          columnsToggle.setAttribute("aria-expanded", "false");
-        }
+      G.initColumnsPanel({
+        toggleSelector: "#asset-grid-columns-toggle",
+        panelSelector: "#asset-grid-columns-panel",
+        table,
       });
 
       // Saved personal views — apps.inventory.services.grid_views. The

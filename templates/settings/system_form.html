@@ -12,18 +12,24 @@
     <p class="messages__item messages__item--error">{{ form.non_field_errors|join:" " }}</p>
   {% endif %}
 
-  {% if settings_obj.logo %}
-    <div class="card" style="max-width: 22rem;">
-      <dl class="definition-list">
-        <dt>Current logo</dt>
-        <dd><img src="{{ settings_obj.logo.url }}" alt="Current logo" style="max-height: 3rem;"></dd>
-      </dl>
-    </div>
-  {% endif %}
-
-  <form method="post" enctype="multipart/form-data">
+  <form method="post" enctype="multipart/form-data" class="form-card">
     {% csrf_token %}
-    {{ form.as_p }}
+    <div class="card">
+      {% include "_form_field.html" with field=form.site_name %}
+      {% include "_form_field.html" with field=form.allowed_hosts_override %}
+
+      <p><label for="{{ form.logo.id_for_label }}">{{ form.logo.label }}</label></p>
+      <div class="dropzone" data-dropzone>
+        <img class="dropzone__preview" data-dropzone-preview alt="Logo preview"
+             {% if settings_obj.logo %}src="{{ settings_obj.logo.url }}"{% else %}hidden{% endif %}>
+        <p class="dropzone__prompt" data-dropzone-prompt {% if settings_obj.logo %}hidden{% endif %}>
+          Drag and drop a PNG or JPEG here, or click to browse.
+        </p>
+        {{ form.logo }}
+      </div>
+      {% if form.logo.errors %}<div class="messages__item messages__item--error">{{ form.logo.errors }}</div>{% endif %}
+      <p><label>{{ form.remove_logo }} {{ form.remove_logo.label }}</label></p>
+    </div>
     <div class="form-actions">
       <button type="submit" class="btn btn--primary">Save</button>
     </div>

@@ -49,6 +49,18 @@ def parse_multi_sort(params):
     return sorters
 
 
+def positive_int_param(value, default):
+    """Shared by every grid JSON endpoint's page/size params (apps.inventory.
+    views.*GridDataView, apps.catalog.views.ProductGridDataView) — never lets
+    a malformed or non-positive value through instead of just falling back.
+    """
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
 def apply_multi_sort(queryset, sort_fields, sorters, default_ordering=()):
     """The multi-column equivalent of SortableListMixin.apply_sort() — same
     explicit allow-list contract (`sort_fields`, `{"key": "orm__path"}`),

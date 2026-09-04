@@ -54,6 +54,20 @@ class MovementType(models.TextChoices):
     REVERSAL = "reversal", "Reversal"
 
 
+class WipeMethod(models.TextChoices):
+    """How storage media was cleared before disposal — captured on a
+    Disposal transaction only (apps.inventory.services.disposition.dispose(),
+    apps.inventory.forms.DisposeForm) and rendered onto the generated
+    disposal certificate (apps.documents.pdf). Blank for every other
+    movement type.
+    """
+
+    SOFTWARE_WIPE = "software_wipe", "Software data wipe"
+    DEGAUSSED = "degaussed", "Degaussed"
+    PHYSICALLY_DESTROYED = "physically_destroyed", "Physically destroyed"
+    NOT_APPLICABLE = "not_applicable", "No storage media"
+
+
 class UnitAsset(UUIDPrimaryKeyModel, UserStampedModel):
     """One row per physical serialized item. `status`/`current_location` are a
     same-transaction denormalization of the ledger, not an independent cache
@@ -253,6 +267,8 @@ class InventoryTransaction(UUIDPrimaryKeyModel, AppendOnlyModel):
     employee_name = models.CharField(max_length=120, blank=True)
     is_temporary_assignment = models.BooleanField(null=True, blank=True)
     expected_return_date = models.DateField(null=True, blank=True)
+    wipe_method = models.CharField(max_length=25, choices=WipeMethod.choices, blank=True)
+    witness_name = models.CharField(max_length=120, blank=True)
     notes = models.TextField(blank=True)
     related_transaction = models.ForeignKey(
         "self", null=True, blank=True, on_delete=models.PROTECT, related_name="related_transactions"

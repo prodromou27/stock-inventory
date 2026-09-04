@@ -1,0 +1,6 @@
+{% load ui_extras %}
+<div class="tab-strip" role="tablist" aria-label="Inventory views">
+  <a class="tab-strip__tab {% nav_active 'product_list' 'product_detail' 'product_create' 'product_update' 'quick_add' 'product_grid' %}" href="{% url 'catalog:product_list' %}">Products</a>
+  <a class="tab-strip__tab {% nav_active 'asset_list' 'asset_detail' 'asset_correct' %}" href="{% url 'inventory:asset_list' %}">Assets</a>
+  <a class="tab-strip__tab {% nav_active 'balance_list' 'balance_detail' 'balance_correct' %}" href="{% url 'inventory:balance_list' %}">Stock Balances</a>
+</div>

@@ -472,6 +472,126 @@ class TestStockBalanceGridDataView:
 
 
 @pytest.mark.django_db
+class TestProductGridDataView:
+    """apps.inventory.views.ProductGridDataView — the Products grid's JSON
+    data source (templates/catalog/product_list.html)."""
+
+    def test_requires_login(self, client):
+        response = client.get(reverse("inventory:product_grid_data"))
+        assert response.status_code == 302
+
+    def test_lists_products_globally_not_location_scoped(
+        self, client, stock_manager_with_room_access, unit_product
+    ):
+        # Products are catalog-global — a Stock Manager sees every product
+        # even though their location access is narrow.
+        client.force_login(stock_manager_with_room_access)
+        response = client.get(reverse("inventory:product_grid_data"))
+        assert response.status_code == 200
+        models = [row["model"] for row in response.json()["data"]]
+        assert unit_product.model in models
+
+    def test_inactive_excluded_unless_show_inactive(self, client, administrator, unit_product):
+        unit_product.is_active = False
+        unit_product.save(update_fields=["is_active"])
+        client.force_login(administrator)
+        response = client.get(reverse("inventory:product_grid_data"))
+        models = [row["model"] for row in response.json()["data"]]
+        assert unit_product.model not in models
+
+        response = client.get(reverse("inventory:product_grid_data"), {"show_inactive": "1"})
+        models = [row["model"] for row in response.json()["data"]]
+        assert unit_product.model in models
+
+    def test_search_narrows_results(self, client, administrator, unit_product, quantity_product):
+        client.force_login(administrator)
+        response = client.get(reverse("inventory:product_grid_data"), {"q": unit_product.model})
+        models = [row["model"] for row in response.json()["data"]]
+        assert unit_product.model in models
+        assert quantity_product.model not in models
+
+    def test_low_stock_badge_flags_available_at_or_below_threshold(
+        self, client, administrator, quantity_product, location_tree
+    ):
+        # quantity_product's fixture already sets low_stock_threshold=5.
+        receive_stock(
+            user=administrator,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=5,
+        )
+        client.force_login(administrator)
+        response = client.get(reverse("inventory:product_grid_data"))
+        row = next(r for r in response.json()["data"] if r["model"] == quantity_product.model)
+        assert row["available"] == 5
+        assert row["is_low_stock"] is True
+
+    def test_available_above_threshold_is_not_low_stock(
+        self, client, administrator, quantity_product, location_tree
+    ):
+        receive_stock(
+            user=administrator,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=50,
+        )
+        client.force_login(administrator)
+        response = client.get(reverse("inventory:product_grid_data"))
+        row = next(r for r in response.json()["data"] if r["model"] == quantity_product.model)
+        assert row["available"] == 50
+        assert row["is_low_stock"] is False
+
+    def test_no_balance_row_reports_available_as_none(
+        self, client, administrator, quantity_product
+    ):
+        client.force_login(administrator)
+        response = client.get(reverse("inventory:product_grid_data"))
+        row = next(r for r in response.json()["data"] if r["model"] == quantity_product.model)
+        assert row["available"] is None
+        assert row["is_low_stock"] is False
+
+    def test_low_stock_available_scoped_to_accessible_locations(
+        self,
+        client,
+        administrator,
+        stock_manager_with_room_access,
+        quantity_product,
+        other_location_tree,
+    ):
+        from apps.locations.models import Location
+        from apps.locations.services import create_location
+
+        other_floor = create_location(
+            level=Location.Level.FLOOR,
+            name="Product Grid Floor",
+            parent=other_location_tree["site"],
+            user=administrator,
+        )
+        other_room = create_location(
+            level=Location.Level.STORAGE_ROOM,
+            name="Product Grid Room",
+            parent=other_floor,
+            user=administrator,
+        )
+        receive_stock(
+            user=administrator,
+            product=quantity_product,
+            location=other_room,
+            occurred_at=date.today(),
+            quantity=50,
+        )
+        client.force_login(stock_manager_with_room_access)
+        response = client.get(reverse("inventory:product_grid_data"))
+        row = next(r for r in response.json()["data"] if r["model"] == quantity_product.model)
+        # The Stock Manager can't see other_room's balance at all, so the
+        # product looks like it has no recorded stock in their scope — never
+        # a (false) global total that includes locations they can't access.
+        assert row["available"] is None
+
+
+@pytest.mark.django_db
 class TestAssetPickerDataView:
     """apps.inventory.views.AssetPickerDataView — the mass-select grid
     embedded in templates/inventory/_asset_picker.html, used by Transfer/

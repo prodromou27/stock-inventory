@@ -66,6 +66,10 @@ def build_document_context(*, transaction, document_number):
         "final_customer": transaction.final_customer,
         "project_reference": transaction.project_reference,
         "source_locations": source_locations,
+        "wipe_method_display": (
+            transaction.get_wipe_method_display() if transaction.wipe_method else ""
+        ),
+        "witness_name": transaction.witness_name,
         "notes": transaction.notes,
         "prepared_by": transaction.performed_by.get_username(),
         "lines": [
@@ -100,6 +104,8 @@ def sample_document_context():
         "final_customer": "Acme Corp",
         "project_reference": "PRJ-0001",
         "source_locations": ["Main Warehouse / Storage Room A"],
+        "wipe_method_display": "Software data wipe",
+        "witness_name": "R. Patel",
         "notes": "Sample preview data — no real transaction.",
         "prepared_by": "jdoe",
         "lines": [
@@ -132,7 +138,11 @@ def sample_document_context():
 
 
 def document_type_for(transaction):
-    return "assignment" if transaction.movement_type == MovementType.ASSIGNMENT else "delivery"
+    if transaction.movement_type == MovementType.ASSIGNMENT:
+        return "assignment"
+    if transaction.movement_type == MovementType.DISPOSAL:
+        return "disposal"
+    return "delivery"
 
 
 def default_template_source():

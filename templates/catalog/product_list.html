@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load ui_extras %}
+{% load static ui_extras %}
 
 {% block title %}Products — Stock Inventory{% endblock %}
 
@@ -15,61 +15,198 @@
     {% endif %}
   </div>
 
-  <form method="get" class="toolbar">
-    <label>Search
-      <input type="text" name="q" value="{{ query }}" placeholder="Brand, model, SKU, type">
-    </label>
-    <label>
-      <input type="checkbox" name="show_inactive" value="1" {% if show_inactive %}checked{% endif %}>
-      Show inactive
-    </label>
-    <button type="submit" class="btn btn--primary">Search</button>
-  </form>
+  {% include "inventory/_inventory_tabs.html" %}
 
-  {% if products %}
-    <table>
-      <thead>
-        <tr>
-          {% sort_th "brand" "Brand" %}
-          {% sort_th "model" "Model" %}
-          {% sort_th "sku" "SKU" %}
-          {% sort_th "type" "Type" %}
-          <th>Tracking</th>
-          {% sort_th "status" "Status" %}
-        </tr>
-      </thead>
-      <tbody>
-        {% for product in products %}
+  <div class="inventory-grid is-hidden">
+    <div class="grid-toolbar">
+      <input type="search" class="grid-toolbar__search" id="product-grid-search" placeholder="Search brand, model, SKU, type…" aria-label="Search products">
+      <label class="grid-toolbar__toggle">
+        <input type="checkbox" id="product-grid-show-inactive" {% if show_inactive %}checked{% endif %}>
+        Show inactive
+      </label>
+      <div class="grid-density-toggle" id="product-grid-density" role="group" aria-label="Row density">
+        <button type="button" data-density="comfortable" class="is-active">Comfortable</button>
+        <button type="button" data-density="compact">Compact</button>
+      </div>
+      <div style="position: relative;">
+        <button type="button" class="btn" id="product-grid-columns-toggle" aria-expanded="false">Columns</button>
+        <div class="grid-columns-panel" id="product-grid-columns-panel" hidden></div>
+      </div>
+      <a class="btn" id="product-grid-export-filtered" href="?format=csv">Export filtered CSV</a>
+      <span class="grid-views">
+        <label class="sr-only" for="product-grid-saved-views">Saved views</label>
+        <select id="product-grid-saved-views"><option value="">— Saved views —</option></select>
+        <button type="button" class="btn" id="product-grid-save-view">Save view</button>
+        <button type="button" class="btn btn--ghost" id="product-grid-delete-view" hidden aria-label="Delete selected saved view">Delete</button>
+      </span>
+    </div>
+
+    <div id="product-grid-table" aria-label="Product results"></div>
+  </div>
+
+  <div class="grid-side-panel" id="product-grid-panel" hidden>
+    <div class="grid-side-panel__backdrop" data-panel-close></div>
+    <div class="grid-side-panel__content" id="product-grid-panel-content" role="dialog" aria-modal="true" aria-label="Product details"></div>
+  </div>
+
+  <div id="product-grid-fallback">
+    <form method="get" class="toolbar">
+      <label>Search
+        <input type="text" name="q" value="{{ query }}" placeholder="Brand, model, SKU, type">
+      </label>
+      <label>
+        <input type="checkbox" name="show_inactive" value="1" {% if show_inactive %}checked{% endif %}>
+        Show inactive
+      </label>
+      <button type="submit" class="btn btn--primary">Search</button>
+    </form>
+
+    {% if products %}
+      <div class="table-scroll" tabindex="0" aria-label="Product results"><table>
+        <thead>
           <tr>
-            <td><a href="{{ product.get_absolute_url }}">{{ product.brand.name }}</a></td>
-            <td>{{ product.model }}</td>
-            <td>{{ product.sku|default:"—" }}</td>
-            <td>{{ product.product_type.name }}</td>
-            <td>{{ product.get_tracking_method_display }}</td>
-            <td>
-              {% if product.is_active %}
-                <span class="badge badge--success">Active</span>
-              {% else %}
-                <span class="badge badge--neutral">Inactive</span>
-              {% endif %}
-            </td>
+            {% sort_th "brand" "Brand" %}
+            {% sort_th "model" "Model" %}
+            {% sort_th "sku" "SKU" %}
+            {% sort_th "type" "Type" %}
+            <th>Tracking</th>
+            {% sort_th "status" "Status" %}
           </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {% for product in products %}
+            <tr>
+              <td><a href="{{ product.get_absolute_url }}">{{ product.brand.name }}</a></td>
+              <td>{{ product.model }}</td>
+              <td>{{ product.sku|default:"—" }}</td>
+              <td>{{ product.product_type.name }}</td>
+              <td>{{ product.get_tracking_method_display }}</td>
+              <td>
+                {% if product.is_active %}
+                  <span class="badge badge--success">Active</span>
+                {% else %}
+                  <span class="badge badge--neutral">Inactive</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
 
-    {% if is_paginated %}
-      <nav class="pagination">
-        {% if page_obj.has_previous %}
-          <a href="{% querystring page=page_obj.previous_page_number %}">Previous</a>
-        {% endif %}
-        <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
-        {% if page_obj.has_next %}
-          <a href="{% querystring page=page_obj.next_page_number %}">Next</a>
-        {% endif %}
-      </nav>
+      {% if is_paginated %}
+        <nav class="pagination">
+          {% if page_obj.has_previous %}
+            <a href="{% querystring page=page_obj.previous_page_number %}">Previous</a>
+          {% endif %}
+          <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+          {% if page_obj.has_next %}
+            <a href="{% querystring page=page_obj.next_page_number %}">Next</a>
+          {% endif %}
+        </nav>
+      {% endif %}
+    {% else %}
+      <p class="empty-state">No products found.</p>
     {% endif %}
-  {% else %}
-    <p class="empty-state">No products found.</p>
-  {% endif %}
+  </div>
+{% endblock %}
+
+{% block extra_scripts %}
+  <script src="{% static 'js/inventory_grid.js' %}" defer></script>
+  <script defer>
+    document.addEventListener("DOMContentLoaded", () => {
+      if (!window.InventoryGrid) return;
+      const G = window.InventoryGrid;
+      const showInactive = document.getElementById("product-grid-show-inactive");
+
+      // Tracking method and active/inactive aren't offered as per-column
+      // header filters here — this grid's server endpoint
+      // (apps.inventory.views.ProductGridDataView, reusing apps.catalog.
+      // views._filtered_products()) only understands the same q/
+      // show_inactive params the classic page already validates, so a
+      // "Status" header filter would silently do nothing rather than
+      // actually narrow results. "Show inactive" mirrors the classic
+      // toggle instead of inventing new server-side filtering semantics.
+      function lowStockFormatter(cell) {
+        const row = cell.getData();
+        if (row.tracking_method !== "quantity" || row.low_stock_threshold == null) return "—";
+        // No StockBalance row anywhere in this user's scope (never received,
+        // or only received outside their accessible locations) is distinct
+        // from a balance row that's genuinely down to zero — showing "0
+        // available" here would claim knowledge the server doesn't have
+        // (apps.inventory.views._scoped_available_by_product() only has a
+        // key for products with at least one scoped balance row, mirroring
+        // apps.reporting.queries.low_stock_balances()'s own simplification).
+        if (row.available == null) return '<span class="badge badge--neutral">No stock recorded</span>';
+        const cls = row.is_low_stock ? "badge--danger" : "badge--success";
+        const label = row.is_low_stock ? `Low — ${row.available} available` : `${row.available} available`;
+        return `<span class="badge ${cls}">${label}</span>`;
+      }
+
+      const table = G.init({
+        containerSelector: "#product-grid-table",
+        fallbackSelector: "#product-grid-fallback",
+        dataUrl: "{% url 'inventory:product_grid_data' %}",
+        searchInputSelector: "#product-grid-search",
+        densityToggleSelector: "#product-grid-density",
+        storageKey: "product-grid",
+        pageSize: 50,
+        initialSort: [{ field: "brand", dir: "asc" }],
+        rowSelectable: false,
+        extraFilters: () => ({ show_inactive: showInactive.checked ? "1" : "" }),
+        columns: [
+          { title: "Brand", field: "brand", headerFilter: "input", formatter: G.linkFormatter, width: 150 },
+          { title: "Model", field: "model", headerFilter: "input", minWidth: 160 },
+          { title: "SKU", field: "sku", headerFilter: "input", width: 120 },
+          { title: "Type", field: "product_type", headerFilter: "input", width: 140 },
+          { title: "Tracking", field: "tracking_method", width: 150, formatter: (cell) => cell.getData().tracking_method_display },
+          { title: "Supplier", field: "supplier", headerFilter: "input", width: 140, visible: false },
+          { title: "Low-stock threshold", field: "low_stock_threshold", width: 150, visible: false, hozAlign: "right" },
+          { title: "Availability", field: "available", width: 190, headerSort: false, formatter: lowStockFormatter },
+          { title: "Status", field: "status", width: 100, displayField: "status_display", formatter: G.badgeFormatter },
+        ],
+      });
+
+      if (!table) return;
+
+      G.initDetailPanel({ panelSelector: "#product-grid-panel", contentSelector: "#product-grid-panel-content", table });
+
+      showInactive.addEventListener("change", () => table.setPage(1).then(() => table.replaceData()));
+
+      G.initExportLink({
+        linkSelector: "#product-grid-export-filtered",
+        table,
+        searchInputSelector: "#product-grid-search",
+        extraParams: () => ({ show_inactive: showInactive.checked ? "1" : "" }),
+      });
+
+      G.initColumnsPanel({
+        toggleSelector: "#product-grid-columns-toggle",
+        panelSelector: "#product-grid-columns-panel",
+        table,
+      });
+
+      G.initSavedViews({
+        selectSelector: "#product-grid-saved-views",
+        saveButtonSelector: "#product-grid-save-view",
+        deleteButtonSelector: "#product-grid-delete-view",
+        listUrl: "{% url 'inventory:saved_grid_view_list_create' grid_key='products' %}",
+        deleteUrlTemplate: "{% url 'inventory:saved_grid_view_delete' pk='00000000-0000-0000-0000-000000000000' %}".replace("00000000-0000-0000-0000-000000000000", "__ID__"),
+        canShare: {% if user_is_administrator %}true{% else %}false{% endif %},
+        onCapture: () =>
+          G.captureGridState(table, document.getElementById("product-grid-table"), document.getElementById("product-grid-search"), () => ({ show_inactive: showInactive.checked })),
+        onApply: (state) => {
+          G.applyGridState(
+            table,
+            document.getElementById("product-grid-table"),
+            document.getElementById("product-grid-search"),
+            state,
+            (extra) => {
+              if (extra && typeof extra.show_inactive === "boolean") showInactive.checked = extra.show_inactive;
+              table.setPage(1).then(() => table.replaceData());
+            }
+          );
+        },
+      });
+    });
+  </script>
 {% endblock %}

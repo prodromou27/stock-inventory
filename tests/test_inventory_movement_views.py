@@ -47,6 +47,98 @@ class TestMovementsHubAccess:
 
 
 @pytest.mark.django_db
+class TestMovementsHubContext:
+    """apps.inventory.views._recent_transactions_for_hub()/
+    _frequently_used_for_hub() — the Operations hub's "Recent transactions"
+    and "Frequently used" panels.
+    """
+
+    def test_recent_transactions_lists_scoped_transactions(
+        self, client, administrator, unit_product, location_tree
+    ):
+        txn = receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-HUB-RECENT",
+        )
+        client.force_login(administrator)
+        response = client.get(reverse("inventory:movements_hub"))
+        numbers = [t.transaction_number for t in response.context["recent_transactions"]]
+        assert txn.transaction_number in numbers
+
+    def test_frequently_used_ranks_products_by_line_count(
+        self, client, administrator, unit_product, quantity_product, location_tree
+    ):
+        for i in range(3):
+            receive_stock(
+                user=administrator,
+                product=unit_product,
+                location=location_tree["room"],
+                occurred_at=date.today(),
+                vendor_serial=f"SN-HUB-FREQ-{i}",
+            )
+        receive_stock(
+            user=administrator,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=10,
+        )
+        client.force_login(administrator)
+        response = client.get(reverse("inventory:movements_hub"))
+        labels = [p["label"] for p in response.context["frequent_products"]]
+        assert labels.index(str(unit_product)) < labels.index(str(quantity_product))
+
+    def test_frequently_used_locations_scoped_to_accessible_locations(
+        self,
+        client,
+        administrator,
+        stock_manager_with_room_access,
+        unit_product,
+        location_tree,
+        other_location_tree,
+    ):
+        from apps.locations.models import Location
+        from apps.locations.services import create_location
+
+        other_floor = create_location(
+            level=Location.Level.FLOOR,
+            name="Hub Floor",
+            parent=other_location_tree["site"],
+            user=administrator,
+        )
+        other_room = create_location(
+            level=Location.Level.STORAGE_ROOM,
+            name="Hub Room",
+            parent=other_floor,
+            user=administrator,
+        )
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=other_room,
+            occurred_at=date.today(),
+            vendor_serial="SN-HUB-OUT-OF-SCOPE",
+        )
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-HUB-IN-SCOPE",
+        )
+        client.force_login(stock_manager_with_room_access)
+        response = client.get(reverse("inventory:movements_hub"))
+        location_names = [
+            entry["location"].name for entry in response.context["frequent_locations"]
+        ]
+        assert "Hub Room" not in location_names
+        assert location_tree["room"].name in location_names
+
+
+@pytest.mark.django_db
 class TestTransferView:
     def test_full_flow(
         self, client, stock_manager_with_room_access, unit_product, location_tree, rack
@@ -357,11 +449,67 @@ class TestDispositionViews:
                 "occurred_at": date.today().isoformat(),
                 "unit_asset_ids": [str(asset.pk)],
                 "notes": "eol",
+                "wipe_method": "software_wipe",
             },
         )
         assert response.status_code == 302
         asset.refresh_from_db()
         assert asset.status == UnitStatus.DISPOSED
+
+    def test_dispose_view_requires_wipe_method(
+        self, client, stock_manager_with_room_access, unit_product, location_tree
+    ):
+        receive_stock(
+            user=stock_manager_with_room_access,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-DPV-NOWIPE",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-DPV-NOWIPE")
+
+        client.force_login(stock_manager_with_room_access)
+        response = client.post(
+            reverse("inventory:dispose"),
+            {
+                "occurred_at": date.today().isoformat(),
+                "unit_asset_ids": [str(asset.pk)],
+                "notes": "eol",
+            },
+        )
+        assert response.status_code == 200
+        assert "wipe_method" in response.context["form"].errors
+        asset.refresh_from_db()
+        assert asset.status != UnitStatus.DISPOSED
+
+    def test_dispose_view_stores_witness_name(
+        self, client, stock_manager_with_room_access, unit_product, location_tree
+    ):
+        from apps.inventory.models import InventoryTransaction
+
+        receive_stock(
+            user=stock_manager_with_room_access,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-DPV-WITNESS",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-DPV-WITNESS")
+
+        client.force_login(stock_manager_with_room_access)
+        client.post(
+            reverse("inventory:dispose"),
+            {
+                "occurred_at": date.today().isoformat(),
+                "unit_asset_ids": [str(asset.pk)],
+                "notes": "eol",
+                "wipe_method": "degaussed",
+                "witness_name": "J. Alvarez",
+            },
+        )
+        txn = InventoryTransaction.objects.get(movement_type="disposal")
+        assert txn.wipe_method == "degaussed"
+        assert txn.witness_name == "J. Alvarez"
 
     def test_read_only_cannot_mark_damaged(self, client, read_only_user):
         client.force_login(read_only_user)

@@ -3,11 +3,11 @@ from datetime import date, timedelta
 import pytest
 from django.urls import reverse
 
-from apps.inventory.models import UnitAsset
-from apps.inventory.services.disposition import mark_damaged, mark_lost
+from apps.inventory.models import UnitAsset, UnitStatus
+from apps.inventory.services.disposition import dispose, mark_damaged, mark_lost
 from apps.inventory.services.receipts import receive_stock
 from apps.inventory.services.reservations import reserve_stock
-from apps.reporting.queries import dashboard_summary
+from apps.reporting.queries import dashboard_summary, data_quality_summary
 
 
 @pytest.mark.django_db
@@ -155,6 +155,126 @@ class TestDashboardSummary:
 
         stats = dashboard_summary(stock_manager_with_room_access)
         assert stats["assets_in_stock"] == 1
+
+
+@pytest.mark.django_db
+class TestDataQualitySummary:
+    """apps.reporting.queries.data_quality_summary — the Dashboard's "Data
+    quality" panel."""
+
+    def test_counts_duplicate_serials(self, administrator, unit_product, location_tree):
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-DUP",
+        )
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-DUP",
+            duplicate_serial_acknowledged=True,
+        )
+        summary = data_quality_summary(administrator)
+        assert summary["duplicate_serial_count"] == 1
+
+    def test_no_duplicates_when_serials_are_unique(
+        self, administrator, unit_product, location_tree
+    ):
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-UNIQUE",
+        )
+        summary = data_quality_summary(administrator)
+        assert summary["duplicate_serial_count"] == 0
+
+    def test_flags_in_stock_asset_with_no_location_as_unlocated(
+        self, administrator, unit_product, location_tree
+    ):
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-UNLOCATED",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-UNLOCATED")
+        # Simulates a data-integrity gap directly (this state isn't reachable
+        # through any movement service — that's exactly the point of the check).
+        asset.current_location = None
+        asset.save(update_fields=["current_location"])
+        summary = data_quality_summary(administrator)
+        assert summary["unlocated_count"] == 1
+
+    def test_disposed_asset_with_no_location_is_not_flagged(
+        self, administrator, unit_product, location_tree
+    ):
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-DISPOSED-NO-LOC",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-DISPOSED-NO-LOC")
+        dispose(
+            user=administrator,
+            unit_asset_ids=[asset.pk],
+            occurred_at=date.today(),
+            notes="End of life",
+        )
+        asset.refresh_from_db()
+        assert asset.status == UnitStatus.DISPOSED
+        assert asset.current_location is None
+        summary = data_quality_summary(administrator)
+        assert summary["unlocated_count"] == 0
+
+    def test_scoped_to_accessible_locations(
+        self,
+        administrator,
+        stock_manager_with_room_access,
+        unit_product,
+        location_tree,
+        other_location_tree,
+    ):
+        from apps.locations.models import Location
+        from apps.locations.services import create_location
+
+        other_floor = create_location(
+            level=Location.Level.FLOOR,
+            name="Quality Floor",
+            parent=other_location_tree["site"],
+            user=administrator,
+        )
+        other_room = create_location(
+            level=Location.Level.STORAGE_ROOM,
+            name="Quality Room",
+            parent=other_floor,
+            user=administrator,
+        )
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=other_room,
+            occurred_at=date.today(),
+            vendor_serial="SN-QUALITY-OUT-1",
+        )
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=other_room,
+            occurred_at=date.today(),
+            vendor_serial="SN-QUALITY-OUT-1",
+            duplicate_serial_acknowledged=True,
+        )
+        summary = data_quality_summary(stock_manager_with_room_access)
+        assert summary["duplicate_serial_count"] == 0
 
 
 @pytest.mark.django_db

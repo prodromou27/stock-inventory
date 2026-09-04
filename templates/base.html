@@ -4,13 +4,30 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{{ site_name }}{% endblock %}</title>
-  <meta name="theme-color" content="#172554">
+  <meta name="theme-color" content="#2563eb">
+  <!-- Synchronous and first, deliberately not deferred: sets data-theme
+       before the stylesheet below paints anything, so a visitor who
+       previously chose dark never sees a light flash on load. Mirrors
+       static/js/theme.js's own storage key/logic; kept inline because a
+       deferred external file would run too late to prevent the flash. -->
+  <script>
+    (function () {
+      try {
+        if (localStorage.getItem("theme") === "dark") {
+          document.documentElement.setAttribute("data-theme", "dark");
+        }
+      } catch (error) {
+        /* localStorage unavailable (private mode, disabled storage) — stays light */
+      }
+    })();
+  </script>
   <link rel="icon" href="{% static 'icons/favicon.svg' %}" type="image/svg+xml">
   <link rel="stylesheet" href="{% static 'css/vendor/tom-select.min.css' %}">
   <link rel="stylesheet" href="{% static 'css/vendor/tabulator.min.css' %}">
   <link rel="stylesheet" href="{% static 'css/app.css' %}">
   <script src="{% static 'js/vendor/tom-select.base.min.js' %}" defer></script>
   <script src="{% static 'js/vendor/tabulator.min.js' %}" defer></script>
+  <script src="{% static 'js/theme.js' %}" defer></script>
   <script src="{% static 'js/app.js' %}" defer></script>
   <script src="{% static 'js/movement_forms.js' %}" defer></script>
   <script src="{% static 'js/search.js' %}" defer></script>
@@ -31,39 +48,15 @@
       </a>
       <nav class="sidebar__nav">
         <div class="sidebar__group">
-          <div class="sidebar__group-label">Overview</div>
           <a class="sidebar__link {% nav_active 'home' %}" href="{% url 'core:home' %}"><svg class="sidebar__icon" aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#dashboard"></use></svg>Dashboard</a>
-        </div>
-
-        <div class="sidebar__group">
-          <div class="sidebar__group-label">Catalog</div>
-          <a class="sidebar__link {% nav_active_app 'catalog' %}" href="{% url 'catalog:product_list' %}"><svg class="sidebar__icon" aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#box"></use></svg>Products</a>
-        </div>
-
-        <div class="sidebar__group">
-          <div class="sidebar__group-label">Inventory</div>
-          <a class="sidebar__link {% nav_active 'asset_list' 'asset_detail' 'asset_correct' %}" href="{% url 'inventory:asset_list' %}"><svg class="sidebar__icon" aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#asset"></use></svg>Assets</a>
-          <a class="sidebar__link {% nav_active 'balance_list' 'balance_detail' 'balance_correct' %}" href="{% url 'inventory:balance_list' %}"><svg class="sidebar__icon" aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#layers"></use></svg>Stock Balances</a>
-          <a class="sidebar__link {% nav_active 'transaction_list' 'transaction_detail' 'transaction_reverse' 'return_stock' %}" href="{% url 'inventory:transaction_list' %}"><svg class="sidebar__icon" aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#history"></use></svg>Transactions</a>
+          <a class="sidebar__link {% nav_active 'product_list' 'product_detail' 'product_create' 'product_update' 'quick_add' 'product_grid' 'asset_list' 'asset_detail' 'asset_correct' 'balance_list' 'balance_detail' 'balance_correct' %}" href="{% url 'inventory:asset_list' %}"><svg class="sidebar__icon" aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#asset"></use></svg>Inventory</a>
           {% if user_is_administrator or "StockManager" in user_role_groups %}
-            <a class="sidebar__link {% nav_active 'movements_hub' 'receive_stock' 'quick_receive' 'transfer' 'reserve' 'reservation_list' 'reservation_detail' 'release_reservation' 'assign' 'deliver' 'assess_return' 'mark_damaged' 'repair_damaged' 'mark_lost' 'dispose' %}" href="{% url 'inventory:movements_hub' %}"><svg class="sidebar__icon" aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#move"></use></svg>Movements</a>
+            <a class="sidebar__link {% nav_active 'movements_hub' 'receive_stock' 'quick_receive' 'transfer' 'reserve' 'reservation_list' 'reservation_detail' 'release_reservation' 'assign' 'deliver' 'assess_return' 'mark_damaged' 'repair_damaged' 'mark_lost' 'dispose' %}" href="{% url 'inventory:movements_hub' %}"><svg class="sidebar__icon" aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#move"></use></svg>Operations</a>
           {% endif %}
-        </div>
-
-        <div class="sidebar__group">
-          <div class="sidebar__group-label">Insights</div>
+          <a class="sidebar__link {% nav_active 'transaction_list' 'transaction_detail' 'transaction_reverse' 'return_stock' %}" href="{% url 'inventory:transaction_list' %}"><svg class="sidebar__icon" aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#history"></use></svg>Transactions</a>
           <a class="sidebar__link {% nav_active_app 'reporting' %}" href="{% url 'reporting:hub' %}"><svg class="sidebar__icon" aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#chart"></use></svg>Reports</a>
-          <a class="sidebar__link {% nav_active_app 'locations' %}" href="{% url 'locations:list' %}"><svg class="sidebar__icon" aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#pin"></use></svg>Locations</a>
+          <a class="sidebar__link {% nav_active_app 'settings' 'accounts' 'exports' 'documents' 'locations' 'audit' 'imports' %}{% nav_active 'custom_field_list' 'custom_field_create' %}" href="{% url 'settings:hub' %}"><svg class="sidebar__icon" aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#settings"></use></svg>Settings</a>
         </div>
-
-        {% if user_is_administrator %}
-          <div class="sidebar__group">
-            <div class="sidebar__group-label">Administration</div>
-            <a class="sidebar__link {% nav_active_app 'audit' %}" href="{% url 'audit:log' %}"><svg class="sidebar__icon" aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#shield"></use></svg>Audit Log</a>
-            <a class="sidebar__link {% nav_active_app 'imports' %}" href="{% url 'imports:batch_list' %}"><svg class="sidebar__icon" aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#upload"></use></svg>Excel Import</a>
-            <a class="sidebar__link {% nav_active_app 'sysconfig' 'accounts' 'exports' 'documents' %}" href="{% url 'settings:hub' %}"><svg class="sidebar__icon" aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#settings"></use></svg>Settings</a>
-          </div>
-        {% endif %}
       </nav>
     </aside>
 
@@ -74,6 +67,10 @@
         <form method="get" action="{% url 'core:search' %}" data-suggest-url="{% url 'core:search_suggest' %}" class="topbar__search" role="search">
           <input type="search" name="q" value="{{ request.GET.q }}" placeholder="Search products, serials, transactions…" aria-label="Search" title="Press / to search" autocomplete="off">
         </form>
+        <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Switch to dark theme" aria-pressed="false" title="Toggle dark theme">
+          <svg class="theme-toggle__icon theme-toggle__icon--sun" aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#sun"></use></svg>
+          <svg class="theme-toggle__icon theme-toggle__icon--moon" aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#moon"></use></svg>
+        </button>
         <details class="user-menu">
           <summary><span class="user-avatar">{{ user.get_username|slice:":1"|upper }}</span><span class="user-menu__identity"><strong>{{ user.get_username }}</strong>{% if user_role_groups %}<small>{{ user_role_groups|join:", " }}</small>{% endif %}</span><svg aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#chevron"></use></svg></summary>
           <div class="user-menu__panel">

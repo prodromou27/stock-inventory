@@ -27,10 +27,15 @@ def _change_unit_and_quantity_status(
     unit_asset_ids=None,
     quantity_lines=None,
     notes="",
+    wipe_method="",
+    witness_name="",
 ):
     """Shared by mark_damaged()/mark_lost()/dispose() — spec §9 "Damage, loss,
     and disposal". `quantity_lines` is a list of
     {"product": Product, "location": Location, "quantity": int}.
+    `wipe_method`/`witness_name` are disposal-only (see dispose()'s docstring)
+    but plumbed through generically since only create_transaction_header()
+    needs to know about them.
     """
     require_role(user, ADMINISTRATOR, STOCK_MANAGER)
 
@@ -57,7 +62,12 @@ def _change_unit_and_quantity_status(
             raise ValidationError("Quantity must be positive.")
 
     txn = create_transaction_header(
-        movement_type=movement_type, performed_by=user, occurred_at=occurred_at, notes=notes
+        movement_type=movement_type,
+        performed_by=user,
+        occurred_at=occurred_at,
+        notes=notes,
+        wipe_method=wipe_method,
+        witness_name=witness_name,
     )
 
     removes_from_storage = movement_type in _REMOVES_FROM_STORAGE
@@ -125,7 +135,23 @@ def mark_lost(*, user, occurred_at, unit_asset_ids=None, quantity_lines=None, no
     )
 
 
-def dispose(*, user, occurred_at, unit_asset_ids=None, quantity_lines=None, notes=""):
+def dispose(
+    *,
+    user,
+    occurred_at,
+    unit_asset_ids=None,
+    quantity_lines=None,
+    notes="",
+    wipe_method="",
+    witness_name="",
+):
+    """`wipe_method`/`witness_name` back the disposal certificate
+    (apps.documents.pdf's generic document skeleton renders them only when
+    present — see build_document_context()) — captured here, on the
+    append-only transaction header, the same way every other movement-type-
+    specific optional field already is (employee_name for assignment,
+    final_customer for delivery, ...), not a separate model.
+    """
     return _change_unit_and_quantity_status(
         user=user,
         movement_type=MovementType.DISPOSAL,
@@ -134,6 +160,8 @@ def dispose(*, user, occurred_at, unit_asset_ids=None, quantity_lines=None, note
         unit_asset_ids=unit_asset_ids,
         quantity_lines=quantity_lines,
         notes=notes,
+        wipe_method=wipe_method,
+        witness_name=witness_name,
     )
 
 

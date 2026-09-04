@@ -4,7 +4,7 @@ from apps.catalog.models import Product, TrackingMethod
 from apps.locations.models import Location
 from apps.locations.scoping import accessible_locations
 
-from .models import Condition, UnitStatus
+from .models import Condition, UnitStatus, WipeMethod
 
 
 def _scoped_location_queryset(user):
@@ -306,6 +306,17 @@ class DispositionForm(_QuantityLocationMixin, _BaseMovementForm):
         super().__init__(*args, user=user, **kwargs)
         self.fields["notes"].required = True
         self.fields["notes"].label = "Reason"
+
+
+class DisposeForm(DispositionForm):
+    """DispositionForm plus the two fields the disposal certificate needs
+    (apps.documents.pdf's document skeleton renders them when present) —
+    only Dispose asks for these, not Mark damaged/Mark lost, so this is a
+    subclass rather than fields added to the shared DispositionForm.
+    """
+
+    wipe_method = forms.ChoiceField(choices=WipeMethod.choices, label="Storage media wipe method")
+    witness_name = forms.CharField(required=False, label="Witnessed by (optional)")
 
 
 class RepairDamagedForm(forms.Form):

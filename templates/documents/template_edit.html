@@ -17,71 +17,134 @@
   {% endif %}
 
   <div class="template-editor-layout">
-    <form method="post" enctype="multipart/form-data">
-      {% csrf_token %}
-      <div class="card">
-        <p>
-          <label for="{{ form.logo.id_for_label }}">{{ form.logo.label }}</label>
-          {{ form.logo }}
-          {% if form.logo.errors %}<div class="messages__item messages__item--error">{{ form.logo.errors }}</div>{% endif %}
-          {% if template_obj.logo %}
-            <span class="helptext">Current logo on file: {{ template_obj.logo.name }} — use Preview to see it rendered.</span>
-          {% endif %}
-        </p>
-        <p>
-          <label>{{ form.remove_logo }} {{ form.remove_logo.label }}</label>
-        </p>
-        <p>
-          <label for="{{ form.logo_position.id_for_label }}">{{ form.logo_position.label }}</label>
-          {{ form.logo_position }}
-        </p>
-        <p>
-          <label for="{{ form.accent_color.id_for_label }}">{{ form.accent_color.label }}</label>
-          {{ form.accent_color }}
-          {% if form.accent_color.errors %}<div class="messages__item messages__item--error">{{ form.accent_color.errors }}</div>{% endif %}
-        </p>
-        <p>
-          <label for="{{ form.font_choice.id_for_label }}">{{ form.font_choice.label }}</label>
-          {{ form.font_choice }}
-        </p>
-        <p>
-          <label for="{{ form.page_margin.id_for_label }}">{{ form.page_margin.label }}</label>
-          {{ form.page_margin }}
-        </p>
-      </div>
-
-      <div class="form-actions">
-        <button type="submit" class="btn btn--primary">Save</button>
-        <button type="submit" class="btn" formaction="{% url 'documents:template_preview' document_type %}" formtarget="_blank">
-          Preview (opens a sample PDF in a new tab)
-        </button>
-      </div>
-    </form>
-
-    {% if template_obj %}
-      <form method="post" action="{% url 'documents:template_reset' document_type %}"
-            data-confirm="Reset to the packaged default? Your customizations will be lost.">
+    <div>
+      <form method="post" enctype="multipart/form-data" id="template-style-form">
         {% csrf_token %}
-        <button type="submit" class="btn btn--danger btn--sm">Reset to packaged default</button>
-      </form>
-    {% endif %}
+        <div class="card">
+          <p><label for="{{ form.logo.id_for_label }}">{{ form.logo.label }}</label></p>
+          <div class="dropzone" data-dropzone>
+            <img class="dropzone__preview" data-dropzone-preview alt="Logo preview"
+                 {% if template_obj.logo %}src="{{ template_obj.logo.url }}"{% else %}hidden{% endif %}>
+            <p class="dropzone__prompt" data-dropzone-prompt {% if template_obj.logo %}hidden{% endif %}>
+              Drag and drop a PNG or JPEG here, or click to browse.
+            </p>
+            {{ form.logo }}
+          </div>
+          {% if form.logo.errors %}<div class="messages__item messages__item--error">{{ form.logo.errors }}</div>{% endif %}
+          <p>
+            <label>{{ form.remove_logo }} {{ form.remove_logo.label }}</label>
+          </p>
+          <p>
+            <label for="{{ form.logo_position.id_for_label }}">{{ form.logo_position.label }}</label>
+            {{ form.logo_position }}
+          </p>
+          <p>
+            <label for="{{ form.accent_color.id_for_label }}">{{ form.accent_color.label }}</label>
+            {{ form.accent_color }}
+            {% if form.accent_color.errors %}<div class="messages__item messages__item--error">{{ form.accent_color.errors }}</div>{% endif %}
+          </p>
+          <p>
+            <label for="{{ form.font_choice.id_for_label }}">{{ form.font_choice.label }}</label>
+            {{ form.font_choice }}
+          </p>
+          <p>
+            <label for="{{ form.page_margin.id_for_label }}">{{ form.page_margin.label }}</label>
+            {{ form.page_margin }}
+          </p>
+        </div>
 
-    <aside class="template-field-reference">
-      <h2>How this works</h2>
-      <p>No HTML or template syntax to learn — everything here is branding. The document itself (document number,
-        transaction details, the line-item table, notes, and signature lines) is always laid out automatically and
-        filled in with the real transaction's data every time a PDF is generated; you can't break that layout from
-        this screen.</p>
-      <p>What you control:</p>
-      <ul>
-        <li><strong>Logo</strong> — shown at the top of every generated PDF.</li>
-        <li><strong>Logo position</strong> — left, center, or right of the title.</li>
-        <li><strong>Accent color</strong> — used for the title and the rule under the header.</li>
-        <li><strong>Font</strong> — applied to the whole document.</li>
-        <li><strong>Page margins</strong> — how much blank space surrounds the page content.</li>
-      </ul>
-      <p>Save validates the result by rendering a real sample PDF first — a problem would be reported here, never
-        discovered the next time someone prints a real document. Use Preview as often as you like before saving.</p>
-    </aside>
+        <div class="form-actions">
+          <button type="submit" class="btn btn--primary">Save</button>
+        </div>
+      </form>
+
+      {% if template_obj %}
+        <form method="post" action="{% url 'documents:template_reset' document_type %}"
+              data-confirm="Reset to the packaged default? Your customizations will be lost.">
+          {% csrf_token %}
+          <button type="submit" class="btn btn--danger btn--sm">Reset to packaged default</button>
+        </form>
+      {% endif %}
+    </div>
+
+    <div>
+      <div class="card">
+        <h2>Live preview</h2>
+        <p class="text-muted">A sample PDF rendered with the settings on the left — updates as you change them, before you save.</p>
+        <div class="form-actions">
+          <button type="button" class="btn btn--sm" id="template-preview-refresh">Refresh preview</button>
+        </div>
+        <div class="template-preview-frame-wrap">
+          <iframe id="template-preview-frame" title="Document template preview" hidden></iframe>
+          <p class="empty-state" id="template-preview-empty">Loading preview…</p>
+        </div>
+      </div>
+
+      <aside class="template-field-reference">
+        <h2>How this works</h2>
+        <p>No HTML or template syntax to learn — everything here is branding. The document itself (document number,
+          transaction details, the line-item table, notes, and signature lines) is always laid out automatically and
+          filled in with the real transaction's data every time a PDF is generated; you can't break that layout from
+          this screen.</p>
+        <p>What you control:</p>
+        <ul>
+          <li><strong>Logo</strong> — shown at the top of every generated PDF.</li>
+          <li><strong>Logo position</strong> — left, center, or right of the title.</li>
+          <li><strong>Accent color</strong> — used for the title and the rule under the header.</li>
+          <li><strong>Font</strong> — applied to the whole document.</li>
+          <li><strong>Page margins</strong> — how much blank space surrounds the page content.</li>
+        </ul>
+        <p>Save validates the result by rendering a real sample PDF first — a problem would be reported here, never
+          discovered the next time someone prints a real document. Use the live preview as often as you like before
+          saving.</p>
+      </aside>
+    </div>
   </div>
+{% endblock %}
+
+{% block extra_scripts %}
+  <script defer>
+    document.addEventListener("DOMContentLoaded", () => {
+      const form = document.getElementById("template-style-form");
+      const frame = document.getElementById("template-preview-frame");
+      const emptyState = document.getElementById("template-preview-empty");
+      const refreshButton = document.getElementById("template-preview-refresh");
+      if (!form || !frame) return;
+
+      let currentObjectUrl = null;
+
+      function refreshPreview() {
+        emptyState.textContent = "Loading preview…";
+        emptyState.hidden = false;
+        frame.hidden = true;
+
+        const formData = new FormData(form);
+        fetch("{% url 'documents:template_preview' document_type %}", {
+          method: "POST",
+          headers: { "X-CSRFToken": formData.get("csrfmiddlewaretoken") },
+          body: formData,
+        })
+          .then((response) => (response.ok ? response.blob() : Promise.reject(response)))
+          .then((blob) => {
+            if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
+            currentObjectUrl = URL.createObjectURL(blob);
+            frame.src = currentObjectUrl;
+            frame.hidden = false;
+            emptyState.hidden = true;
+          })
+          .catch(async (response) => {
+            const detail = response && response.text ? await response.text() : "";
+            emptyState.textContent = detail || "Couldn't render a preview — check the fields above for errors.";
+            emptyState.hidden = false;
+          });
+      }
+
+      refreshButton.addEventListener("click", refreshPreview);
+      // "Refreshes on save": Save is a normal full-page POST/redirect back to
+      // this same view, so the page reload that follows a successful save
+      // re-runs this exact initial call against the just-saved values —
+      // no separate "after save" code path needed.
+      refreshPreview();
+    });
+  </script>
 {% endblock %}

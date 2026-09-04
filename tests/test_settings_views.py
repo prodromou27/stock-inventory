@@ -11,17 +11,29 @@ class TestSettingsHubPermissions:
     def test_anonymous_redirected(self, client):
         assert client.get(reverse("settings:hub")).status_code == 302
 
-    def test_stock_manager_forbidden(self, client, stock_manager):
+    def test_stock_manager_can_view(self, client, stock_manager):
+        # Settings now also hosts Locations, which Stock Managers may view
+        # and edit within their assigned countries — the hub itself is not
+        # an admin-only gate. Admin-only cards (Access & data, System &
+        # documents) are hidden in the template, not blocked at this view.
         client.force_login(stock_manager)
-        assert client.get(reverse("settings:hub")).status_code == 403
+        response = client.get(reverse("settings:hub"))
+        assert response.status_code == 200
+        assert b"Access & data" not in response.content
 
-    def test_read_only_forbidden(self, client, read_only_user):
+    def test_read_only_can_view(self, client, read_only_user):
+        # Read-only users cannot modify locations but must still be able to
+        # reach the location hierarchy, which now lives under Settings.
         client.force_login(read_only_user)
-        assert client.get(reverse("settings:hub")).status_code == 403
+        response = client.get(reverse("settings:hub"))
+        assert response.status_code == 200
+        assert b"Access & data" not in response.content
 
     def test_administrator_can_view(self, client, administrator):
         client.force_login(administrator)
-        assert client.get(reverse("settings:hub")).status_code == 200
+        response = client.get(reverse("settings:hub"))
+        assert response.status_code == 200
+        assert b"Access & data" in response.content
 
 
 @pytest.mark.django_db

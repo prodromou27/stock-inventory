@@ -47,6 +47,43 @@
     </a>
   </div>
 
+  <div class="card">
+    <h2>Data quality</h2>
+    <ul class="hub-quick-list">
+      <li>
+        {% if data_quality.duplicate_serial_count %}
+          <a href="{% url 'inventory:asset_list' %}?duplicate_serial=1">Duplicate serials</a>
+        {% else %}
+          <span>Duplicate serials</span>
+        {% endif %}
+        <span class="{% if data_quality.duplicate_serial_count %}text-danger{% else %}text-muted{% endif %}">{{ data_quality.duplicate_serial_count }}</span>
+      </li>
+      <li>
+        <span>Assets missing a location</span>
+        <span class="{% if data_quality.unlocated_count %}text-danger{% else %}text-muted{% endif %}">{{ data_quality.unlocated_count }}</span>
+      </li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>Recently viewed</h2>
+    {% if recently_viewed %}
+      <ul class="hub-quick-list">
+        {% for entry in recently_viewed %}
+          <li>
+            <span>
+              <span class="badge badge--neutral">{{ entry.type_label }}</span>
+              <a href="{{ entry.object.get_absolute_url }}">{{ entry.object }}</a>
+            </span>
+            <span class="text-muted">{{ entry.viewed_at }}</span>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="empty-state">Nothing viewed yet — products, assets, and transactions you open will show up here.</p>
+    {% endif %}
+  </div>
+
   <h2>Recent activity</h2>
   {% if recent_activity %}
     <div class="table-scroll">

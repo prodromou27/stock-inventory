@@ -1,19 +1,23 @@
 import json
+from collections import Counter
+from datetime import timedelta
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
-from django.db.models import Case, F, IntegerField, Max, Q, When
+from django.db.models import Case, Count, F, IntegerField, Max, Q, Sum, When
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import timezone
 from django.views import View
 from django.views.generic import DetailView, ListView
 
 from apps.audit.models import AuditEvent
 from apps.audit.services import record_event
-from apps.catalog.models import Product
+from apps.catalog.models import Product, TrackingMethod
+from apps.catalog.views import _filtered_products
 from apps.core.authorization import (
     ADMINISTRATOR,
     STOCK_MANAGER,
@@ -22,7 +26,14 @@ from apps.core.authorization import (
     require_role,
 )
 from apps.core.csv_export import CSVExportMixin
-from apps.core.sorting import SortableListMixin, apply_multi_sort, parse_multi_sort
+from apps.core.recently_viewed import record_recently_viewed
+from apps.core.sorting import (
+    SortableListMixin,
+    apply_multi_sort,
+    parse_multi_sort,
+    positive_int_param,
+)
+from apps.locations.models import Location
 from apps.locations.scoping import (
     accessible_locations,
     location_breadcrumb_map,
@@ -30,7 +41,11 @@ from apps.locations.scoping import (
     scope_queryset,
 )
 
-from .access import require_transaction_access, scope_transaction_queryset
+from .access import (
+    require_transaction_access,
+    scope_transaction_line_queryset,
+    scope_transaction_queryset,
+)
 from .filters import filter_stock_balances, filter_unit_assets
 from .forms import (
     AdminCorrectBalanceForm,
@@ -38,6 +53,7 @@ from .forms import (
     AdminReversalForm,
     AssignForm,
     DeliverForm,
+    DisposeForm,
     DispositionForm,
     QuickReceiveForm,
     ReceiveStockForm,
@@ -72,15 +88,97 @@ from .services.returns import assess_return, return_stock
 from .services.transfers import bulk_transfer
 
 
+def _recent_transactions_for_hub(user, limit=8):
+    """apps.reporting.queries.recent_transactions()'s twin, kept here rather
+    than imported from there: docs/architecture/01-repository-structure.md's
+    dependency table has `reporting` depend on `inventory` (it's the
+    read-only layer built *over* inventory/catalog/locations), never the
+    reverse — reporting already imports apps.inventory.access, so inventory
+    importing back from reporting would be a real circular dependency, not
+    just a style preference. The query itself is 3 lines built on
+    scope_transaction_queryset (already imported below for every other view
+    in this module), so duplicating it here is cheaper than restructuring
+    which app owns it.
+    """
+    return scope_transaction_queryset(
+        user, InventoryTransaction.objects.select_related("performed_by")
+    ).order_by("-occurred_at", "-created_at")[:limit]
+
+
+def _frequently_used_for_hub(user, limit=5):
+    """The Operations hub's "Frequently used" panel: top products and
+    locations by movement-line count over the last 30 days, scoped exactly
+    like the "Transactions and documents" screen (scope_transaction_line_
+    queryset) — a shortcut/convenience surface, not an authorization
+    boundary of its own, so it reuses that existing scope check rather than
+    inventing a new one. See _recent_transactions_for_hub()'s docstring for
+    why this lives here rather than in apps.reporting.
+
+    Locations count both from_location and to_location touches (a transfer
+    line genuinely uses both ends), tallied in Python since it's a count
+    across two FK columns on what's normally a small (30-day, scoped) row
+    set — not worth a second query or a UNION.
+    """
+    since = timezone.now().date() - timedelta(days=30)
+    lines = scope_transaction_line_queryset(
+        user, InventoryTransactionLine.objects.filter(transaction__occurred_at__gte=since)
+    )
+
+    products = list(
+        lines.exclude(product__isnull=True)
+        .values("product_id", "product__brand__name", "product__model")
+        .annotate(count=Count("id"))
+        .order_by("-count")[:limit]
+    )
+
+    location_counts = Counter()
+    for from_id, to_id in lines.values_list("from_location_id", "to_location_id"):
+        if from_id:
+            location_counts[from_id] += 1
+        if to_id:
+            location_counts[to_id] += 1
+    top_location_ids = [location_id for location_id, _ in location_counts.most_common(limit)]
+    locations_by_id = Location.objects.in_bulk(top_location_ids)
+
+    return {
+        "products": [
+            {
+                "id": p["product_id"],
+                "label": f"{p['product__brand__name']} {p['product__model']}",
+                "count": p["count"],
+            }
+            for p in products
+        ],
+        "locations": [
+            {"location": locations_by_id[location_id], "count": location_counts[location_id]}
+            for location_id in top_location_ids
+            if location_id in locations_by_id
+        ],
+    }
+
+
 class MovementsHubView(LoginRequiredMixin, RoleRequiredMixin, View):
-    """A simple index of the movement workflows, so the top nav doesn't need
-    a link per workflow.
+    """A task-focused index of the movement workflows: Primary actions
+    (Receive/Transfer/Assign/Deliver), Secondary (Reserve/Return), and
+    Problems (Damaged/Lost/Dispose), plus a "Recent transactions" list and a
+    "Frequently used" products/locations panel — so the top nav doesn't need
+    a link per workflow and an operator doesn't have to re-search for the
+    product/location they just used.
     """
 
     allowed_roles = (ADMINISTRATOR, STOCK_MANAGER)
 
     def get(self, request):
-        return render(request, "inventory/movements_hub.html")
+        frequently_used = _frequently_used_for_hub(request.user)
+        return render(
+            request,
+            "inventory/movements_hub.html",
+            {
+                "recent_transactions": _recent_transactions_for_hub(request.user),
+                "frequent_products": frequently_used["products"],
+                "frequent_locations": frequently_used["locations"],
+            },
+        )
 
 
 class ReceiveStockView(LoginRequiredMixin, RoleRequiredMixin, View):
@@ -277,14 +375,9 @@ class UnitAssetListView(LoginRequiredMixin, CSVExportMixin, SortableListMixin, L
         return context
 
 
-def _positive_int(value, default):
-    """Shared by every grid JSON endpoint's page/size params — never lets a
-    malformed or non-positive value through instead of just falling back."""
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        return default
-    return parsed if parsed > 0 else default
+# positive_int_param (apps.core.sorting) covers page/size parsing for this
+# and every other grid JSON endpoint — see its own docstring.
+_positive_int = positive_int_param
 
 
 # Explicit allow-list for the grid's multi-column sort (apps.core.sorting.
@@ -599,6 +692,14 @@ class UnitAssetDetailView(LoginRequiredMixin, DetailView):
             return ["inventory/_asset_detail_panel.html"]
         return [self.template_name]
 
+    def get(self, request, *args, **kwargs):
+        response = super().get(request, *args, **kwargs)
+        # Only the real page view, never the grid's AJAX side-panel fetch —
+        # see apps.core.recently_viewed.record_recently_viewed()'s docstring.
+        if request.headers.get("X-Requested-With") != "XMLHttpRequest":
+            record_recently_viewed(user=request.user, obj=self.object)
+        return response
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["history"] = self.object.status_history.select_related(
@@ -747,6 +848,107 @@ class StockBalanceGridDataView(LoginRequiredMixin, View):
         }
 
 
+# Explicit allow-list for the Products grid's multi-column sort, same
+# pattern as ASSET_GRID_SORT_FIELDS/BALANCE_GRID_SORT_FIELDS.
+PRODUCT_GRID_SORT_FIELDS = {
+    "brand": "brand__name",
+    "model": "model",
+    "sku": "sku",
+    "product_type": "product_type__name",
+    "tracking_method": "tracking_method",
+    "supplier": "supplier",
+    "low_stock_threshold": "low_stock_threshold",
+    "status": "is_active",
+}
+
+
+def _scoped_available_by_product(user):
+    """product_id -> available quantity (on_hand - reserved), summed across
+    only this user's accessible locations — mirrors apps.reporting.queries.
+    low_stock_balances()'s own scoping and arithmetic exactly, so the grid's
+    "Low stock" badge and that report can never disagree. Products with no
+    StockBalance row anywhere in scope simply have no key here (never a
+    false "0 available").
+    """
+    return dict(
+        scope_queryset(user, StockBalance.objects.all(), location_field="location")
+        .values("product_id")
+        .annotate(available=Sum(F("on_hand_quantity") - F("reserved_quantity")))
+        .values_list("product_id", "available")
+    )
+
+
+class ProductGridDataView(LoginRequiredMixin, View):
+    """JSON data source for the Excel-like grid on
+    templates/catalog/product_list.html — the Products counterpart to
+    UnitAssetGridDataView/StockBalanceGridDataView, living here rather than
+    in apps.catalog because it needs StockBalance (an inventory concept) to
+    compute the "Low stock" badge; docs/architecture/01-repository-structure.
+    md's dependency table has catalog depend on nothing but core, so this
+    view — not a model or service import — is the boundary-respecting side
+    to put the cross-app read on (apps.catalog.views._filtered_products() is
+    the only thing borrowed from catalog, reused exactly as ProductListView
+    itself uses it).
+
+    Unlike the Assets/Balances grids, Products themselves are catalog-global
+    (no location field), so there's no scope_queryset() on the base
+    queryset — only the per-product available-quantity figure used for the
+    low-stock badge is location-scoped (_scoped_available_by_product()), so
+    a Stock Manager sees that badge computed from their own accessible
+    locations' balances, never a global total, while still seeing every
+    product itself (same as the classic Products table today).
+    """
+
+    MAX_PAGE_SIZE = 200
+
+    def get(self, request, *args, **kwargs):
+        queryset = _filtered_products(request).select_related("brand", "product_type")
+        queryset = apply_multi_sort(
+            queryset,
+            PRODUCT_GRID_SORT_FIELDS,
+            parse_multi_sort(request.GET),
+            default_ordering=("brand__name", "model"),
+        )
+
+        page_number = _positive_int(request.GET.get("page"), default=1)
+        page_size = min(_positive_int(request.GET.get("size"), default=50), self.MAX_PAGE_SIZE)
+        paginator = Paginator(queryset, page_size)
+        page = paginator.get_page(page_number)
+
+        available_by_product = _scoped_available_by_product(request.user)
+        rows = [self._serialize(product, available_by_product) for product in page.object_list]
+
+        return JsonResponse(
+            {"data": rows, "last_page": paginator.num_pages, "total_count": paginator.count}
+        )
+
+    @staticmethod
+    def _serialize(product, available_by_product):
+        available = available_by_product.get(product.pk)
+        is_low_stock = (
+            product.tracking_method == TrackingMethod.QUANTITY
+            and product.low_stock_threshold is not None
+            and available is not None
+            and available <= product.low_stock_threshold
+        )
+        return {
+            "id": str(product.pk),
+            "brand": product.brand.name,
+            "model": product.model,
+            "sku": product.sku,
+            "product_type": product.product_type.name,
+            "tracking_method": product.tracking_method,
+            "tracking_method_display": product.get_tracking_method_display(),
+            "supplier": product.supplier,
+            "low_stock_threshold": product.low_stock_threshold,
+            "available": available,
+            "is_low_stock": is_low_stock,
+            "status": "active" if product.is_active else "inactive",
+            "status_display": "Active" if product.is_active else "Inactive",
+            "detail_url": product.get_absolute_url(),
+        }
+
+
 class StockBalanceDetailView(LoginRequiredMixin, DetailView):
     model = StockBalance
     template_name = "inventory/balance_detail.html"
@@ -828,6 +1030,11 @@ class TransactionDetailView(LoginRequiredMixin, DetailView):
         require_transaction_access(self.request.user, obj)
         return obj
 
+    def get(self, request, *args, **kwargs):
+        response = super().get(request, *args, **kwargs)
+        record_recently_viewed(user=request.user, obj=self.object)
+        return response
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["lines"] = self.object.lines.select_related("unit_asset", "product").order_by(
@@ -836,6 +1043,16 @@ class TransactionDetailView(LoginRequiredMixin, DetailView):
         context["can_return"] = self.object.movement_type in (
             MovementType.ASSIGNMENT,
             MovementType.DELIVERY,
+        )
+        # Separate from can_return: a disposal is terminal (never returned —
+        # UnitStatus.DISPOSED has no eligible next actions, see
+        # ASSET_QUICK_ACTIONS_BY_STATUS above) but still generates a
+        # printable document (its certificate), so the Documents section
+        # needs its own, wider flag rather than reusing can_return.
+        context["can_generate_document"] = self.object.movement_type in (
+            MovementType.ASSIGNMENT,
+            MovementType.DELIVERY,
+            MovementType.DISPOSAL,
         )
         context["already_reversed"] = InventoryTransaction.objects.filter(
             related_transaction=self.object, movement_type=MovementType.REVERSAL
@@ -1397,6 +1614,7 @@ class AssessReturnView(LoginRequiredMixin, RoleRequiredMixin, View):
 class _DispositionView(LoginRequiredMixin, RoleRequiredMixin, View):
     allowed_roles = (ADMINISTRATOR, STOCK_MANAGER)
     template_name = "inventory/disposition_form.html"
+    form_class = DispositionForm
     eligible_statuses = [
         UnitStatus.IN_STOCK,
         UnitStatus.RESERVED,
@@ -1407,8 +1625,14 @@ class _DispositionView(LoginRequiredMixin, RoleRequiredMixin, View):
     verb = ""
     page_title = ""
 
+    def _extra_service_kwargs(self, data):
+        """Hook for a subclass whose form_class carries fields beyond the
+        shared DispositionForm's (see DisposeView/DisposeForm) — nothing to
+        add for Mark damaged/Mark lost."""
+        return {}
+
     def get(self, request):
-        form = DispositionForm(user=request.user)
+        form = self.form_class(user=request.user)
         assets = _eligible_assets(request, self.eligible_statuses)
         return render(
             request,
@@ -1423,7 +1647,7 @@ class _DispositionView(LoginRequiredMixin, RoleRequiredMixin, View):
         )
 
     def post(self, request):
-        form = DispositionForm(request.POST, user=request.user)
+        form = self.form_class(request.POST, user=request.user)
         unit_asset_ids = request.POST.getlist("unit_asset_ids")
         assets = _eligible_assets(request, self.eligible_statuses)
         if not form.is_valid():
@@ -1441,6 +1665,7 @@ class _DispositionView(LoginRequiredMixin, RoleRequiredMixin, View):
                 unit_asset_ids=unit_asset_ids,
                 quantity_lines=_quantity_lines_from_form(data),
                 notes=data["notes"],
+                **self._extra_service_kwargs(data),
             )
         except ValidationError as exc:
             form.add_error(None, exc)
@@ -1478,6 +1703,10 @@ class DisposeView(_DispositionView):
     service = staticmethod(dispose)
     verb = "Disposed"
     page_title = "Dispose"
+    form_class = DisposeForm
+
+    def _extra_service_kwargs(self, data):
+        return {"wipe_method": data["wipe_method"], "witness_name": data["witness_name"]}
 
 
 class RepairDamagedView(LoginRequiredMixin, RoleRequiredMixin, View):

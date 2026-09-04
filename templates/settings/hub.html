@@ -7,30 +7,61 @@
     <h1>Settings</h1>
   </div>
 
+  <h2>Locations</h2>
   <div class="card-grid">
-    <a class="action-card" href="{% url 'settings:system' %}">
-      <span class="action-card__title">System configuration</span>
-      <span class="action-card__desc">Site name, logo, and the allowed-hosts override.</span>
-    </a>
-    <a class="action-card" href="{% url 'settings:certificates' %}">
-      <span class="action-card__title">TLS certificate</span>
-      <span class="action-card__desc">Upload a real certificate to replace the self-signed one.</span>
-    </a>
-    <a class="action-card" href="{% url 'documents:template_hub' %}">
-      <span class="action-card__title">Document templates</span>
-      <span class="action-card__desc">Customize the assignment/delivery PDF layout and logo.</span>
-    </a>
-    <a class="action-card" href="{% url 'catalog:custom_field_list' %}">
-      <span class="action-card__title">Product custom fields</span>
-      <span class="action-card__desc">Add extra fields to the product form without a code change.</span>
-    </a>
-    <a class="action-card" href="{% url 'exports:settings' %}">
-      <span class="action-card__title">Scheduled export</span>
-      <span class="action-card__desc">Nightly/weekly Excel snapshot destination.</span>
-    </a>
-    <a class="action-card" href="{% url 'accounts:user_access_list' %}">
-      <span class="action-card__title">Manage access</span>
-      <span class="action-card__desc">Grant or revoke roles and location scopes.</span>
+    <a class="action-card" href="{% url 'locations:list' %}">
+      <span class="action-card__title">Locations</span>
+      <span class="action-card__desc">
+        {% if user_is_administrator %}
+          Countries, sites, floors, storage rooms, racks, and shelves.
+        {% elif "StockManager" in user_role_groups %}
+          Storage rooms and shelves within your assigned countries.
+        {% else %}
+          View the location hierarchy (read-only).
+        {% endif %}
+      </span>
     </a>
   </div>
+
+  {% if user_is_administrator %}
+    <h2>Access & data</h2>
+    <div class="card-grid">
+      <a class="action-card" href="{% url 'accounts:user_access_list' %}">
+        <span class="action-card__title">Manage access</span>
+        <span class="action-card__desc">Grant or revoke roles and location scopes.</span>
+      </a>
+      <a class="action-card" href="{% url 'audit:log' %}">
+        <span class="action-card__title">Audit log</span>
+        <span class="action-card__desc">Every recorded change, who made it, and when.</span>
+      </a>
+      <a class="action-card" href="{% url 'imports:batch_list' %}">
+        <span class="action-card__title">Excel import</span>
+        <span class="action-card__desc">Bulk-load products and assets from a spreadsheet.</span>
+      </a>
+      <a class="action-card" href="{% url 'exports:settings' %}">
+        <span class="action-card__title">Scheduled export</span>
+        <span class="action-card__desc">Nightly/weekly Excel snapshot destination.</span>
+      </a>
+      <a class="action-card" href="{% url 'catalog:custom_field_list' %}">
+        <span class="action-card__title">Product custom fields</span>
+        <span class="action-card__desc">Add extra fields to the product form without a code change.</span>
+      </a>
+    </div>
+
+    <h2>System & documents</h2>
+    <div class="card-grid">
+      <a class="action-card" href="{% url 'settings:system' %}">
+        <span class="action-card__title">System configuration</span>
+        <span class="action-card__desc">Site name, logo, and the allowed-hosts override.</span>
+      </a>
+      <a class="action-card" href="{% url 'settings:certificates' %}">
+        <span class="action-card__title">TLS certificate</span>
+        <span class="action-card__desc">Upload a real certificate to replace the self-signed one.</span>
+      </a>
+      <a class="action-card" href="{% url 'documents:template_hub' %}">
+        <span class="action-card__title">Document templates</span>
+        <span class="action-card__desc">Customize the assignment/delivery PDF layout and logo.</span>
+      </a>
+    </div>
+  {% endif %}
 {% endblock %}

@@ -7,6 +7,8 @@ from django.views import View
 from django.views.generic import DetailView, ListView
 
 from apps.core.authorization import ADMINISTRATOR, STOCK_MANAGER, RoleRequiredMixin
+from apps.core.csv_export import CSVExportMixin
+from apps.core.recently_viewed import record_recently_viewed
 from apps.core.sorting import SortableListMixin
 
 from .forms import (
@@ -68,11 +70,13 @@ def _filtered_products(request):
     return queryset
 
 
-class ProductListView(LoginRequiredMixin, SortableListMixin, ListView):
+class ProductListView(LoginRequiredMixin, CSVExportMixin, SortableListMixin, ListView):
     model = Product
     template_name = "catalog/product_list.html"
     context_object_name = "products"
     paginate_by = 50
+    csv_filename = "products.csv"
+    csv_headers = ["Brand", "Model", "SKU", "Type", "Tracking method", "Supplier", "Status"]
 
     sort_fields = {
         "brand": "brand__name",
@@ -85,6 +89,18 @@ class ProductListView(LoginRequiredMixin, SortableListMixin, ListView):
 
     def get_queryset(self):
         return self.apply_sort(_filtered_products(self.request))
+
+    def csv_rows(self, queryset):
+        for product in queryset:
+            yield [
+                product.brand.name,
+                product.model,
+                product.sku,
+                product.product_type.name,
+                product.get_tracking_method_display(),
+                product.supplier,
+                "Active" if product.is_active else "Inactive",
+            ]
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -100,6 +116,19 @@ class ProductDetailView(LoginRequiredMixin, DetailView):
 
     def get_queryset(self):
         return Product.objects.select_related("brand", "product_type")
+
+    def get_template_names(self):
+        if self.request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return ["catalog/_product_detail_panel.html"]
+        return [self.template_name]
+
+    def get(self, request, *args, **kwargs):
+        response = super().get(request, *args, **kwargs)
+        # Only the real page view, never the grid's AJAX side-panel fetch —
+        # see apps.core.recently_viewed.record_recently_viewed()'s docstring.
+        if request.headers.get("X-Requested-With") != "XMLHttpRequest":
+            record_recently_viewed(user=request.user, obj=self.object)
+        return response
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

@@ -31,6 +31,7 @@ def _template_logo_upload_path(instance, filename):
 class DocumentType(models.TextChoices):
     ASSIGNMENT = "assignment", "Assignment"
     DELIVERY = "delivery", "Delivery"
+    DISPOSAL = "disposal", "Disposal certificate"
 
 
 class LogoPosition(models.TextChoices):

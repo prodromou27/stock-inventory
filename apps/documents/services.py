@@ -21,11 +21,15 @@ def next_document_number():
     return f"DOC-{value:06d}"
 
 
+_PRINTABLE_MOVEMENT_TYPES = (MovementType.ASSIGNMENT, MovementType.DELIVERY, MovementType.DISPOSAL)
+
+
 def generate_document(*, txn, user, supersedes=None):
-    """Renders and persists a PDF snapshot of a completed assignment/delivery
-    transaction (spec §10, acceptance criterion §21.13). `supersedes`, when
-    given, links to the GeneratedDocument this one replaces — regeneration
-    never edits or removes the old row/file (doc 06).
+    """Renders and persists a PDF snapshot of a completed assignment/
+    delivery/disposal transaction (spec §10, acceptance criterion §21.13,
+    plus the disposal certificate — apps.documents.pdf.document_type_for()).
+    `supersedes`, when given, links to the GeneratedDocument this one
+    replaces — regeneration never edits or removes the old row/file (doc 06).
     """
     stored_file = None
     storage = None
@@ -34,9 +38,10 @@ def generate_document(*, txn, user, supersedes=None):
             require_role(user, ADMINISTRATOR, STOCK_MANAGER)
             require_transaction_access(user, txn)
 
-            if txn.movement_type not in (MovementType.ASSIGNMENT, MovementType.DELIVERY):
+            if txn.movement_type not in _PRINTABLE_MOVEMENT_TYPES:
                 raise ValidationError(
-                    "Only assignment or delivery transactions can generate a printable document."
+                    "Only assignment, delivery, or disposal transactions can generate a "
+                    "printable document."
                 )
 
             document_number = next_document_number()

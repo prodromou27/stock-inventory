@@ -8,6 +8,7 @@ urlpatterns = [
     path("movements/", views.MovementsHubView.as_view(), name="movements_hub"),
     path("receive/", views.ReceiveStockView.as_view(), name="receive_stock"),
     path("receive/quick/", views.QuickReceiveView.as_view(), name="quick_receive"),
+    path("products/grid-data/", views.ProductGridDataView.as_view(), name="product_grid_data"),
     path("assets/", views.UnitAssetListView.as_view(), name="asset_list"),
     path("assets/grid-data/", views.UnitAssetGridDataView.as_view(), name="asset_grid_data"),
     path(

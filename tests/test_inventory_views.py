@@ -379,6 +379,60 @@ class TestTransactionDetailView:
         response = client.get(reverse("inventory:transaction_detail", kwargs={"pk": txn.pk}))
         assert response.status_code == 403
 
+    def test_disposal_can_generate_document_but_not_return(
+        self, client, administrator, unit_product, location_tree
+    ):
+        from apps.inventory.services.disposition import dispose
+
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-TXN-DISPOSAL",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-TXN-DISPOSAL")
+        txn = dispose(
+            user=administrator,
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+            notes="eol",
+            wipe_method="software_wipe",
+        )
+
+        client.force_login(administrator)
+        response = client.get(reverse("inventory:transaction_detail", kwargs={"pk": txn.pk}))
+        assert response.status_code == 200
+        assert response.context["can_generate_document"] is True
+        assert response.context["can_return"] is False
+        assert b"Generate disposal certificate" in response.content
+        assert b"Record a return" not in response.content
+
+    def test_assignment_can_generate_document_and_return(
+        self, client, administrator, unit_product, location_tree
+    ):
+        from apps.inventory.services.assignments import assign_to_employee
+
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-TXN-ASSIGN",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-TXN-ASSIGN")
+        txn = assign_to_employee(
+            user=administrator,
+            employee_name="Nadia",
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+        )
+
+        client.force_login(administrator)
+        response = client.get(reverse("inventory:transaction_detail", kwargs={"pk": txn.pk}))
+        assert response.context["can_generate_document"] is True
+        assert response.context["can_return"] is True
+
 
 @pytest.mark.django_db
 class TestUnitAssetListSort:

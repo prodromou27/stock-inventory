@@ -11,8 +11,21 @@ from .models import SystemSettings
 from .services import update_certificate, update_system_settings
 
 
-class SettingsHubView(LoginRequiredMixin, RoleRequiredMixin, View):
-    allowed_roles = (ADMINISTRATOR,)
+class SettingsHubView(LoginRequiredMixin, View):
+    """Deliberately not role-gated (unlike every other view in this module):
+    Settings is one of the app's top-level nav destinations, and it's also
+    where Locations management now lives (templates/settings/hub.html) —
+    Location viewing/editing has its own, wider permission story
+    (apps.locations.views.LocationListView is open to any authenticated
+    user; only create/edit/toggle-active require Administrator or
+    StockManager, per docs/architecture's permission matrix), so a
+    Read-Only user must still be able to reach this hub to see it. Every
+    *other* card on this page links to a view that independently enforces
+    its own stricter allowed_roles — hiding a card here is a UI nicety, not
+    the actual authorization boundary, exactly like every other hub page in
+    this app (movements_hub.html, etc.).
+    """
+
     template_name = "settings/hub.html"
 
     def get(self, request):

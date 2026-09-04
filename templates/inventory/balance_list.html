@@ -11,6 +11,8 @@
     </div>
   </div>
 
+  {% include "inventory/_inventory_tabs.html" %}
+
   <div class="inventory-grid is-hidden">
     <div class="grid-toolbar">
       <input type="search" class="grid-toolbar__search" id="balance-grid-search" placeholder="Search brand, model, SKU, type…" aria-label="Search stock balances">
@@ -129,42 +131,16 @@
 
       if (!table) return;
 
-      const exportLink = document.getElementById("balance-grid-export-filtered");
-      function refreshExportLink() {
-        const params = new URLSearchParams({ format: "csv" });
-        const search = document.getElementById("balance-grid-search").value.trim();
-        if (search) params.set("q", search);
-        table.getHeaderFilters().forEach((f) => f.value !== "" && params.set(f.field, f.value));
-        exportLink.href = `?${params.toString()}`;
-      }
-      table.on("dataLoaded", refreshExportLink);
+      G.initExportLink({
+        linkSelector: "#balance-grid-export-filtered",
+        table,
+        searchInputSelector: "#balance-grid-search",
+      });
 
-      const columnsPanel = document.getElementById("balance-grid-columns-panel");
-      const columnsToggle = document.getElementById("balance-grid-columns-toggle");
-      table.on("tableBuilt", () => {
-        table.getColumns().forEach((column) => {
-          const field = column.getField();
-          if (!field) return;
-          const label = document.createElement("label");
-          const checkbox = document.createElement("input");
-          checkbox.type = "checkbox";
-          checkbox.checked = column.isVisible();
-          checkbox.addEventListener("change", () => (checkbox.checked ? column.show() : column.hide()));
-          label.appendChild(checkbox);
-          label.append(column.getDefinition().title);
-          columnsPanel.appendChild(label);
-        });
-      });
-      columnsToggle.addEventListener("click", () => {
-        const expanded = columnsToggle.getAttribute("aria-expanded") === "true";
-        columnsToggle.setAttribute("aria-expanded", String(!expanded));
-        columnsPanel.hidden = expanded;
-      });
-      document.addEventListener("click", (event) => {
-        if (!columnsPanel.hidden && !columnsPanel.contains(event.target) && event.target !== columnsToggle) {
-          columnsPanel.hidden = true;
-          columnsToggle.setAttribute("aria-expanded", "false");
-        }
+      G.initColumnsPanel({
+        toggleSelector: "#balance-grid-columns-toggle",
+        panelSelector: "#balance-grid-columns-panel",
+        table,
       });
 
       G.initSavedViews({

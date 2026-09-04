@@ -5,12 +5,15 @@ module.exports = {
   // app references — see assets/tailwind/input.css for the component-class
   // layer (.btn, .card, .badge, etc.) every template already uses.
   content: ["./templates/**/*.html", "./apps/**/templates/**/*.html"],
-  // Not "class" — templates never toggle a .dark class; dark mode already
-  // works by redefining the --color-* custom properties under
-  // prefers-color-scheme (assets/tailwind/input.css's @layer base), so every
-  // color utility below inherits it automatically with no dark: variants
-  // needed anywhere.
-  darkMode: "media",
+  // No darkMode key: no template ever uses a dark: utility variant, so
+  // Tailwind's own dark-mode variant system plays no part in this app's
+  // theming (an explicit `false` here still triggers a Tailwind CLI warning
+  // asking for "media" or removal — this codebase followed the latter).
+  // Theming instead works by redefining the --color-* custom properties
+  // under :root[data-theme="dark"] (assets/tailwind/input.css's @layer
+  // base, toggled explicitly by static/js/theme.js — light by default,
+  // dark is an opt-in choice, not an OS guess), so every color utility
+  // below inherits it automatically.
   theme: {
     extend: {
       // Every value here is a CSS custom property already defined in

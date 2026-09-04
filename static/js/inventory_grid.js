@@ -468,10 +468,91 @@
     return { open, close };
   }
 
+  /**
+   * Wires a grid's "Columns" toggle button + visibility panel from the
+   * table's live column list, so the panel always matches what's actually
+   * configured — no separate list to keep in sync. Previously duplicated
+   * almost verbatim across asset_list.html/balance_list.html; product_list.
+   * html needing the exact same behavior was the third copy that made
+   * extracting it worthwhile.
+   *
+   * options: toggleSelector, panelSelector, table (the Tabulator instance).
+   */
+  function initColumnsPanel(options) {
+    const panel = document.querySelector(options.panelSelector);
+    const toggle = document.querySelector(options.toggleSelector);
+    if (!panel || !toggle) return;
+
+    options.table.on("tableBuilt", () => {
+      options.table.getColumns().forEach((column) => {
+        const field = column.getField();
+        if (!field) return;
+        const label = document.createElement("label");
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = column.isVisible();
+        checkbox.addEventListener("change", () => (checkbox.checked ? column.show() : column.hide()));
+        label.appendChild(checkbox);
+        label.append(column.getDefinition().title);
+        panel.appendChild(label);
+      });
+    });
+    toggle.addEventListener("click", () => {
+      const expanded = toggle.getAttribute("aria-expanded") === "true";
+      toggle.setAttribute("aria-expanded", String(!expanded));
+      panel.hidden = expanded;
+    });
+    document.addEventListener("click", (event) => {
+      if (!panel.hidden && !panel.contains(event.target) && event.target !== toggle) {
+        panel.hidden = true;
+        toggle.setAttribute("aria-expanded", "false");
+      }
+    });
+  }
+
+  /**
+   * Wires an "Export filtered CSV" link so its href mirrors whatever's
+   * currently applied in the grid (global search + header filters, plus
+   * whatever `extraParams()` returns for filters that live outside
+   * Tabulator's own state, e.g. asset_list.html's date-range panel) onto a
+   * plain server-rendered `?format=csv` download — apps.core.csv_export.
+   * CSVExportMixin reads the exact same param names, so no client-side CSV
+   * assembly is needed. Refreshes on every `dataLoaded` so the link is
+   * always in sync with what's currently on screen.
+   *
+   * options: linkSelector, table, searchInputSelector (optional),
+   *          extraParams() -> {key: value} (optional).
+   */
+  function initExportLink(options) {
+    const link = document.querySelector(options.linkSelector);
+    if (!link) return;
+    const searchInput = options.searchInputSelector
+      ? document.querySelector(options.searchInputSelector)
+      : null;
+
+    function refresh() {
+      const params = new URLSearchParams({ format: "csv" });
+      if (searchInput) {
+        const search = searchInput.value.trim();
+        if (search) params.set("q", search);
+      }
+      options.table.getHeaderFilters().forEach((f) => f.value !== "" && params.set(f.field, f.value));
+      if (options.extraParams) {
+        Object.entries(options.extraParams()).forEach(([key, value]) => {
+          if (value) params.set(key, value);
+        });
+      }
+      link.href = `?${params.toString()}`;
+    }
+    options.table.on("dataLoaded", refresh);
+  }
+
   window.InventoryGrid = {
     init: initInventoryGrid,
     initDetailPanel,
     initSavedViews,
+    initColumnsPanel,
+    initExportLink,
     captureGridState,
     applyGridState,
     badgeFormatter,

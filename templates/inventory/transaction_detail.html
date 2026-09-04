@@ -70,7 +70,7 @@
     </tbody>
   </table>
 
-  {% if can_return %}
+  {% if can_generate_document %}
     <h2>Documents</h2>
     {% if documents %}
       <ul>
@@ -84,7 +84,9 @@
     {% if user_is_administrator or "StockManager" in user_role_groups %}
       <form method="post" action="{% url 'documents:generate_document' transaction.pk %}">
         {% csrf_token %}
-        <button type="submit" class="btn btn--primary btn--sm">Generate printable document</button>
+        <button type="submit" class="btn btn--primary btn--sm">
+          {% if transaction.movement_type == "disposal" %}Generate disposal certificate{% else %}Generate printable document{% endif %}
+        </button>
       </form>
     {% endif %}
   {% endif %}

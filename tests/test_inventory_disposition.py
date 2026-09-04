@@ -169,6 +169,50 @@ class TestDispose:
         assert asset.status == UnitStatus.DISPOSED
         assert asset.current_location is None
 
+    def test_stores_wipe_method_and_witness_on_the_transaction(
+        self, administrator, unit_product, location_tree
+    ):
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-DISP-WIPE",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-DISP-WIPE")
+
+        txn = dispose(
+            user=administrator,
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+            notes="end of life",
+            wipe_method="software_wipe",
+            witness_name="R. Patel",
+        )
+        assert txn.wipe_method == "software_wipe"
+        assert txn.witness_name == "R. Patel"
+
+    def test_wipe_method_and_witness_default_to_blank(
+        self, administrator, unit_product, location_tree
+    ):
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-DISP-NOWIPE",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-DISP-NOWIPE")
+
+        txn = dispose(
+            user=administrator,
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+            notes="end of life",
+        )
+        assert txn.wipe_method == ""
+        assert txn.witness_name == ""
+
     def test_disposed_hdd_remains_searchable(self, administrator, location_tree):
         from apps.catalog.models import TrackingMethod
         from apps.catalog.services import create_product

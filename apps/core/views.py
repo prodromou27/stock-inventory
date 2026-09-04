@@ -33,11 +33,19 @@ class HomeView(LoginRequiredMixin, TemplateView):
         # dependency-free foundational layer everything else builds on
         # (apps.core.authorization's docstring); only this one view, not the
         # module itself, needs reporting's dashboard_summary().
-        from apps.reporting.queries import dashboard_summary, recent_transactions
+        from apps.reporting.queries import (
+            dashboard_summary,
+            data_quality_summary,
+            recent_transactions,
+        )
+
+        from .recently_viewed import recently_viewed_for
 
         context = super().get_context_data(**kwargs)
         context["stats"] = dashboard_summary(self.request.user)
+        context["data_quality"] = data_quality_summary(self.request.user)
         context["recent_activity"] = recent_transactions(self.request.user)
+        context["recently_viewed"] = recently_viewed_for(self.request.user)
         return context
 
 

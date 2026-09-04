@@ -11,6 +11,7 @@ from django.db.models import Count, F, Sum
 from django.utils import timezone
 
 from apps.inventory.access import scope_asset_status_history_queryset, scope_transaction_queryset
+from apps.inventory.filters import duplicate_serial_values
 from apps.inventory.models import (
     AssetStatusHistory,
     InventoryTransaction,
@@ -243,4 +244,33 @@ def dashboard_summary(user):
         "recent_transactions": scope_transaction_queryset(
             user, InventoryTransaction.objects.filter(occurred_at__gte=since)
         ).count(),
+    }
+
+
+# Only these statuses are ever supposed to leave current_location NULL
+# (docs/architecture/03-status-and-movement-rules.md's transition table:
+# assignment/delivery/loss/disposal all set current_location -> NULL as
+# part of the asset leaving storage). Anything else with a NULL location is
+# a genuine data-integrity gap, not a normal state.
+_STATUSES_WITHOUT_LOCATION = (
+    UnitStatus.ASSIGNED,
+    UnitStatus.DELIVERED,
+    UnitStatus.LOST,
+    UnitStatus.DISPOSED,
+)
+
+
+def data_quality_summary(user):
+    """The Dashboard's "Data quality" panel — issues surfaced from data
+    that's already queryable elsewhere, never a new detection rule:
+    duplicate serials (duplicate_serial_values(), the same set the Assets
+    grid's "Duplicate serials only" filter already uses) and assets missing
+    a current_location despite a status that should always carry one.
+    """
+    assets = _scoped_assets(user)
+    return {
+        "duplicate_serial_count": duplicate_serial_values(assets).count(),
+        "unlocated_count": assets.filter(current_location__isnull=True)
+        .exclude(status__in=_STATUSES_WITHOUT_LOCATION)
+        .count(),
     }
