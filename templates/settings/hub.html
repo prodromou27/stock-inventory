@@ -58,9 +58,21 @@
         <span class="action-card__title">TLS certificate</span>
         <span class="action-card__desc">Upload a real certificate to replace the self-signed one.</span>
       </a>
+    </div>
+  {% endif %}
+
+  {% if user_is_administrator or "StockManager" in user_role_groups %}
+    <h2>Documents</h2>
+    <div class="card-grid">
       <a class="action-card" href="{% url 'documents:template_hub' %}">
         <span class="action-card__title">Document templates</span>
-        <span class="action-card__desc">Customize the assignment/delivery PDF layout and logo.</span>
+        <span class="action-card__desc">
+          {% if user_is_administrator %}
+            Customize the assignment/delivery/disposal PDF layout, columns, and branding.
+          {% else %}
+            Preview what the assignment/delivery/disposal PDF currently looks like.
+          {% endif %}
+        </span>
       </a>
     </div>
   {% endif %}

@@ -4,7 +4,13 @@
 <meta charset="utf-8">
 <title>{{ document_number }}</title>
 <style>
-  @page { size: A4; margin: __PAGE_MARGIN_CM__cm; }
+  @page {
+    size: {{ page_size }} {{ orientation }};
+    margin: __PAGE_MARGIN_CM__cm;
+    {% if header_text %}@top-center { content: "{{ header_text }}"; font-size: 8pt; color: #666; }{% endif %}
+    {% if footer_text %}@bottom-left { content: "{{ footer_text }}"; font-size: 8pt; color: #666; }{% endif %}
+    {% if show_page_numbers %}@bottom-right { content: "Page " counter(page) " of " counter(pages); font-size: 8pt; color: #666; }{% endif %}
+  }
   body { font-family: __FONT_STACK__; font-size: 10.5pt; color: #111; }
   h1 { font-size: 16pt; margin: 0; color: __ACCENT_COLOR__; }
   .letterhead {
@@ -21,9 +27,16 @@
   .letterhead__logo { max-height: 2.2cm; max-width: 6cm; }
   .meta p { margin: 0.15em 0; }
   table { width: 100%; border-collapse: collapse; margin-top: 1em; }
+  /* Multipage line-item tables: repeat the header row on every page and
+     never split a row across a page break — without these two rules a long
+     delivery/disposal's line items render fine on page 1 and then silently
+     lose their header (or slice a row in half) on every page after it. */
+  thead { display: table-header-group; }
+  tr { break-inside: avoid; }
   th, td { border: 1px solid #444; padding: 4px 6px; text-align: left; font-size: 9pt; vertical-align: top; }
   th { background: #eee; }
   .notes { margin-top: 1em; }
+  .terms { margin-top: 1em; font-size: 8.5pt; color: #333; }
   .disposal-certificate { margin-top: 1em; padding: 0.6em 0.8em; border: 1px solid #444; }
   .disposal-certificate p { margin: 0.2em 0; }
   .signatures { margin-top: 3em; width: 100%; }
@@ -50,27 +63,23 @@
   <table>
     <thead>
       <tr>
-        <th>Brand</th>
-        <th>Model</th>
-        <th>SKU</th>
-        <th>Type / Description</th>
-        <th>Serial</th>
-        <th>Qty</th>
-        <th>Condition</th>
-        <th>Accessories</th>
+        {% for key, label in report_columns %}<th>{{ label }}</th>{% endfor %}
       </tr>
     </thead>
     <tbody>
       {% for line in lines %}
         <tr>
-          <td>{{ line.brand }}</td>
-          <td>{{ line.model }}</td>
-          <td>{{ line.sku }}</td>
-          <td>{{ line.type }}{% if line.description %} — {{ line.description }}{% endif %}</td>
-          <td>{{ line.serial }}</td>
-          <td>{{ line.quantity }}</td>
-          <td>{{ line.condition }}</td>
-          <td>{{ line.accessories }}</td>
+          {% for key, label in report_columns %}
+            {% if key == "brand" %}<td>{{ line.brand }}</td>
+            {% elif key == "model" %}<td>{{ line.model }}</td>
+            {% elif key == "sku" %}<td>{{ line.sku }}</td>
+            {% elif key == "type" %}<td>{{ line.type }}{% if line.description %} — {{ line.description }}{% endif %}</td>
+            {% elif key == "serial" %}<td>{{ line.serial }}</td>
+            {% elif key == "quantity" %}<td>{{ line.quantity }}</td>
+            {% elif key == "condition" %}<td>{{ line.condition }}</td>
+            {% elif key == "accessories" %}<td>{{ line.accessories }}</td>
+            {% endif %}
+          {% endfor %}
         </tr>
       {% endfor %}
     </tbody>
@@ -88,19 +97,29 @@
     <div class="notes"><strong>Notes:</strong> {{ notes }}</div>
   {% endif %}
 
+  {% if notes_text %}
+    <div class="notes">{{ notes_text|linebreaksbr }}</div>
+  {% endif %}
+
   <p style="margin-top: 1.5em;">Prepared by: {{ prepared_by }}</p>
 
-  <table class="signatures">
-    <tr>
-      <td>
-        <div class="signature-line"></div>
-        <div class="signature-caption">{% if wipe_method_display %}Disposed by (signature){% else %}Delivered by (signature){% endif %} — Date: ______________</div>
-      </td>
-      <td>
-        <div class="signature-line"></div>
-        <div class="signature-caption">{% if wipe_method_display %}Witnessed by (signature){% else %}Received by (signature){% endif %} — Date: ______________</div>
-      </td>
-    </tr>
-  </table>
+  {% if show_signature_block %}
+    <table class="signatures">
+      <tr>
+        <td>
+          <div class="signature-line"></div>
+          <div class="signature-caption">{% if wipe_method_display %}Disposed by (signature){% else %}Delivered by (signature){% endif %} — Date: ______________</div>
+        </td>
+        <td>
+          <div class="signature-line"></div>
+          <div class="signature-caption">{% if wipe_method_display %}Witnessed by (signature){% else %}Received by (signature){% endif %} — Date: ______________</div>
+        </td>
+      </tr>
+    </table>
+  {% endif %}
+
+  {% if terms_text %}
+    <div class="terms">{{ terms_text|linebreaksbr }}</div>
+  {% endif %}
 </body>
 </html>

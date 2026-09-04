@@ -9,7 +9,8 @@
       <h1>Administrator correction</h1>
       <div class="page-header__subtitle">
         {{ asset.product }} ({{ asset.vendor_serial|default:"no serial" }}) — current status:
-        {{ asset.get_status_display }}, location: {{ asset.current_location|default:"—" }}
+        {{ asset.get_status_display }}, location: {{ asset.current_location|default:"—" }},
+        arrival date: {{ asset.arrival_date }}
       </div>
     </div>
   </div>

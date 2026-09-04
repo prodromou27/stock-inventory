@@ -11,7 +11,7 @@ from apps.inventory.models import InventoryTransaction
 
 from .forms import AttachmentUploadForm, DocumentTemplateStyleForm
 from .models import Attachment, DocumentType, GeneratedDocument
-from .pdf import render_styleable_source
+from .pdf import render_pdf, render_styleable_source, sample_document_context
 from .services import delete_attachment, generate_document, regenerate_document, upload_attachment
 from .template_services import get_template, render_preview_pdf, reset_template, update_template
 
@@ -138,7 +138,14 @@ class AttachmentDeleteView(LoginRequiredMixin, RoleRequiredMixin, View):
 
 
 class DocumentTemplateHubView(LoginRequiredMixin, RoleRequiredMixin, View):
-    allowed_roles = (ADMINISTRATOR,)
+    """Administrator-only Edit/Reset; Stock Manager gets read-only Preview
+    of whatever's currently live (the packaged default or an Administrator's
+    saved override) — never an in-progress, unsaved edit. Both roles already
+    generate real documents from these templates; this just lets a Stock
+    Manager see the same rendering before relying on it.
+    """
+
+    allowed_roles = (ADMINISTRATOR, STOCK_MANAGER)
 
     def get(self, request):
         rows = [
@@ -149,7 +156,27 @@ class DocumentTemplateHubView(LoginRequiredMixin, RoleRequiredMixin, View):
             }
             for value, label in DocumentType.choices
         ]
-        return render(request, "documents/template_hub.html", {"rows": rows})
+        return render(
+            request,
+            "documents/template_hub.html",
+            {"rows": rows, "can_edit": request.user.groups.filter(name=ADMINISTRATOR).exists()},
+        )
+
+
+class DocumentTemplateLivePreviewView(LoginRequiredMixin, RoleRequiredMixin, View):
+    """Renders whatever is *actually currently live* for this document type
+    (the packaged default, or an Administrator's saved override) against
+    sample data — never live transaction data, never an unsaved in-progress
+    edit (that's DocumentTemplatePreviewView, Administrator-only). Read-only
+    by construction: there is nothing here for a Stock Manager to change.
+    """
+
+    allowed_roles = (ADMINISTRATOR, STOCK_MANAGER)
+
+    def get(self, request, document_type):
+        _require_valid_document_type(document_type)
+        pdf_bytes = render_pdf(sample_document_context(), document_type=document_type)
+        return HttpResponse(pdf_bytes, content_type="application/pdf")
 
 
 def _require_valid_document_type(document_type):
@@ -198,6 +225,7 @@ class DocumentTemplateEditView(LoginRequiredMixin, RoleRequiredMixin, View):
                 accent_color=data["accent_color"],
                 font_choice=data["font_choice"],
                 page_margin=data["page_margin"],
+                layout_config=form.layout_config(),
             )
         except ValidationError as exc:
             form.add_error(None, "; ".join(exc.messages) if hasattr(exc, "messages") else str(exc))
@@ -215,6 +243,7 @@ class DocumentTemplateEditView(LoginRequiredMixin, RoleRequiredMixin, View):
             "accent_color": template_obj.accent_color,
             "font_choice": template_obj.font_choice,
             "page_margin": template_obj.page_margin,
+            **template_obj.layout_config,
         }
 
     def _render(self, request, document_type, form, template_obj):
@@ -250,7 +279,10 @@ class DocumentTemplatePreviewView(LoginRequiredMixin, RoleRequiredMixin, View):
         )
         try:
             pdf_bytes = render_preview_pdf(
-                document_type=document_type, html_source=html_source, logo_file=data.get("logo")
+                document_type=document_type,
+                html_source=html_source,
+                logo_file=data.get("logo"),
+                layout_config=form.layout_config(),
             )
         except ValidationError as exc:
             return HttpResponseBadRequest(

@@ -69,6 +69,19 @@ class TestUploadAndPreview:
         assert response.status_code == 200
         assert "Only .xlsx or .csv" in response.content.decode()
 
+    def test_preview_shows_resolved_arrival_date_for_a_blank_cell(
+        self, client, administrator, location_tree
+    ):
+        from django.utils import timezone
+
+        client.force_login(administrator)
+        upload = _csv_upload([_base_row(LOCATION="Room A")])  # no Arrival Date supplied
+        response = client.post(reverse("imports:upload"), {"file": upload})
+        detail_response = client.get(response.url)
+        body = detail_response.content.decode()
+        assert timezone.localdate().isoformat() in body
+        assert "defaulted to today" in body
+
 
 @pytest.mark.django_db
 class TestExecuteAndDownloads:

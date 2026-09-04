@@ -1,0 +1,110 @@
+{% load static ui_extras %}
+<div class="card">
+  <h2>Select quantity stock</h2>
+  {% if balances %}
+    <div class="inventory-grid is-hidden">
+      <div class="grid-toolbar">
+        <input type="search" class="grid-toolbar__search" id="balance-picker-search" placeholder="Search product, location…" aria-label="Search quantity stock">
+        <span id="balance-picker-selection-count" class="grid-selection-count" hidden></span>
+      </div>
+      <div id="balance-picker-grid" aria-label="Select quantity stock"></div>
+      <div id="balance-picker-hidden-input"></div>
+    </div>
+
+    <div id="balance-picker-fallback">
+      <p class="helptext">Selecting a quantity to take requires JavaScript.</p>
+      <div class="table-scroll">
+        <table id="balance-picker-table" class="dense-table">
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th>Location</th>
+              <th>Stock purpose</th>
+              <th>Available</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for balance in balances %}
+              <tr>
+                <td>{{ balance.product }}</td>
+                <td>{{ balance.location }}</td>
+                <td>{{ balance.get_stock_purpose_display }}</td>
+                <td>{{ balance.available_quantity_annotated }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <script src="{% static 'js/inventory_grid.js' %}" defer></script>
+    <script defer>
+      document.addEventListener("DOMContentLoaded", () => {
+        if (!window.InventoryGrid) return;
+        const G = window.InventoryGrid;
+        const hiddenInputContainer = document.getElementById("balance-picker-hidden-input");
+        const selectionCount = document.getElementById("balance-picker-selection-count");
+        const hiddenInput = document.createElement("input");
+        hiddenInput.type = "hidden";
+        hiddenInput.name = "quantity_lines_json";
+        hiddenInput.value = "[]";
+        hiddenInputContainer.appendChild(hiddenInput);
+
+        function quantityInputFormatter(cell) {
+          const row = cell.getRow();
+          const data = row.getData();
+          const input = document.createElement("input");
+          input.type = "number";
+          input.min = "0";
+          input.max = String(data.available);
+          input.step = "1";
+          input.className = "grid-quantity-input";
+          input.value = data.quantity || "";
+          input.addEventListener("click", (event) => event.stopPropagation());
+          input.addEventListener("input", () => {
+            const value = Math.max(0, Math.min(Number(input.value) || 0, data.available));
+            data.quantity = value;
+            if (value > 0 && !row.isSelected()) row.select();
+            else if (value === 0 && row.isSelected()) row.deselect();
+            else rebuildHiddenInput();
+          });
+          return input;
+        }
+
+        function rebuildHiddenInput(rows) {
+          const selected = rows || (table ? table.getSelectedData() : []);
+          const lines = selected
+            .map((row) => ({ balance_id: row.id, quantity: Number(row.quantity) || 0 }))
+            .filter((line) => line.quantity > 0);
+          hiddenInput.value = JSON.stringify(lines);
+          selectionCount.hidden = lines.length === 0;
+          selectionCount.textContent = lines.length === 1 ? "1 line" : `${lines.length} lines`;
+        }
+
+        const table = G.init({
+          containerSelector: "#balance-picker-grid",
+          fallbackSelector: "#balance-picker-fallback",
+          dataUrl: "{% url 'inventory:balance_picker_data' %}",
+          searchInputSelector: "#balance-picker-search",
+          storageKey: "balance-picker",
+          pageSize: 100,
+          rowSelectable: true,
+          extraFilters: () => ({
+            product: new URLSearchParams(window.location.search).get("product") || "",
+          }),
+          columns: [
+            { formatter: "rowSelection", titleFormatter: "rowSelection", hozAlign: "center", headerSort: false, width: 40, frozen: true },
+            { title: "Product", field: "product", headerFilter: "input", minWidth: 200 },
+            { title: "Location", field: "location", headerFilter: "input", width: 170 },
+            { title: "Purpose", field: "stock_purpose", width: 110, displayField: "stock_purpose_display", formatter: G.badgeFormatter },
+            { title: "Available", field: "available", width: 100, hozAlign: "right" },
+            { title: "Quantity to take", field: "quantity", width: 140, formatter: quantityInputFormatter, headerSort: false },
+          ],
+          onSelectionChange: (rows) => rebuildHiddenInput(rows),
+        });
+      });
+    </script>
+  {% else %}
+    <p class="empty-state">No available quantity stock found in your authorized scope.</p>
+  {% endif %}
+</div>

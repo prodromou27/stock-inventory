@@ -90,6 +90,7 @@
         <th>Serial</th>
         <th>Location</th>
         <th>Stock Purpose</th>
+        <th>Arrival Date</th>
         <th>Outcome</th>
         <th>Detail</th>
         {% if can_edit %}<th>Actions</th>{% endif %}
@@ -106,6 +107,10 @@
             {% if row.normalized_data.used_batch_default_location %}<span class="text-muted">(batch default)</span>{% endif %}
           </td>
           <td>{{ row.normalized_data.stock_purpose|default:"—"|capfirst }}</td>
+          <td>
+            {{ row.normalized_data.arrival_date|default:"—" }}
+            {% if row.normalized_data.used_default_arrival_date %}<span class="text-muted">(defaulted to today)</span>{% endif %}
+          </td>
           <td><span class="badge {{ row.outcome|badge_class }}">{{ row.get_outcome_display }}</span></td>
           <td>{{ row.outcome_detail }}</td>
           {% if can_edit %}

@@ -2,6 +2,7 @@ from django.contrib import admin
 
 from .models import (
     AssetStatusHistory,
+    Customer,
     InventoryTransaction,
     InventoryTransactionLine,
     StockBalance,
@@ -22,6 +23,18 @@ class ReadOnlyAdminMixin:
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+
+@admin.register(Customer)
+class CustomerAdmin(admin.ModelAdmin):
+    """Unlike every other model in this file, Customer isn't ledger/balance
+    data — it's a small, freely-editable lookup table (name + optional
+    reference), so ordinary admin add/change/delete applies normally.
+    """
+
+    list_display = ("name", "reference", "is_active")
+    search_fields = ("name", "reference")
+    list_filter = ("is_active",)
 
 
 @admin.register(UnitAsset)

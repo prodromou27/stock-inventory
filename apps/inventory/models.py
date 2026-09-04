@@ -86,6 +86,39 @@ class WipeMethod(models.TextChoices):
     NOT_APPLICABLE = "not_applicable", "No storage media"
 
 
+class Customer(UUIDPrimaryKeyModel, UserStampedModel):
+    """A minimal, deliberately non-CRM lookup used only for delivery
+    search/autofill — name plus an optional external reference, nothing
+    else. Spec §22 excludes customer/project master-data management and
+    customer addresses/contacts; this stays a convenience layer over what
+    already exists as free text on InventoryTransaction
+    (final_customer/project_reference), not a CRM record. `final_customer`
+    remains the historical name *snapshot* on every transaction — `customer`
+    is only the live reference back to this row, for search/autofill and
+    for finding every delivery to the same customer.
+    """
+
+    name = models.CharField(max_length=120)
+    reference = models.CharField(max_length=60, blank=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["reference"],
+                condition=~models.Q(reference=""),
+                name="customer_unique_reference_when_set",
+            ),
+        ]
+        indexes = [
+            GinIndex(fields=["name"], name="customer_name_trgm_idx", opclasses=["gin_trgm_ops"]),
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.reference})" if self.reference else self.name
+
+
 class UnitAsset(UUIDPrimaryKeyModel, UserStampedModel):
     """One row per physical serialized item. `status`/`current_location` are a
     same-transaction denormalization of the ledger, not an independent cache
@@ -299,6 +332,16 @@ class InventoryTransaction(UUIDPrimaryKeyModel, AppendOnlyModel):
     )
     project_reference = models.CharField(max_length=120, blank=True)
     final_customer = models.CharField(max_length=120, blank=True)
+    customer = models.ForeignKey(
+        "Customer",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="transactions",
+        help_text="Optional live reference to a Customer row, resolved via search/autofill "
+        "(apps.inventory.views.CustomerSearchDataView). final_customer stays the historical "
+        "name snapshot regardless of whether this is set.",
+    )
     employee_name = models.CharField(max_length=120, blank=True)
     recipient_reference = models.CharField(
         max_length=120,

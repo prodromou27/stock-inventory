@@ -9,7 +9,13 @@ from apps.inventory.access import require_transaction_access
 from apps.inventory.models import MovementType
 
 from .models import Attachment, GeneratedDocument
-from .pdf import CURRENT_TEMPLATE_VERSION, build_document_context, document_type_for, render_pdf
+from .pdf import (
+    CURRENT_TEMPLATE_VERSION,
+    active_template_for,
+    build_document_context,
+    document_type_for,
+    render_pdf,
+)
 
 # --- Document generation ---------------------------------------------------
 
@@ -46,14 +52,18 @@ def generate_document(*, txn, user, supersedes=None):
 
             document_number = next_document_number()
             document_type = document_type_for(txn)
+            template_obj = active_template_for(document_type)
             context = build_document_context(transaction=txn, document_number=document_number)
-            pdf_bytes = render_pdf(context, document_type=document_type)
+            pdf_bytes = render_pdf(context, document_type=document_type, template_obj=template_obj)
 
             document = GeneratedDocument(
                 transaction=txn,
                 document_number=document_number,
                 document_type=document_type,
-                template_version=CURRENT_TEMPLATE_VERSION,
+                template=template_obj,
+                template_version=(
+                    f"v{template_obj.version}" if template_obj else CURRENT_TEMPLATE_VERSION
+                ),
                 context_snapshot=context,
                 generated_by=user,
                 supersedes=supersedes,

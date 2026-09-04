@@ -26,6 +26,9 @@ urlpatterns = [
     ),
     path("assets/picker-data/", views.AssetPickerDataView.as_view(), name="asset_picker_data"),
     path(
+        "balances/picker-data/", views.BalancePickerDataView.as_view(), name="balance_picker_data"
+    ),
+    path(
         "grid-views/<str:grid_key>/",
         views.SavedGridViewListCreateView.as_view(),
         name="saved_grid_view_list_create",
@@ -71,6 +74,7 @@ urlpatterns = [
     ),
     path("assign/", views.AssignView.as_view(), name="assign"),
     path("deliver/", views.DeliverView.as_view(), name="deliver"),
+    path("customers/search/", views.CustomerSearchDataView.as_view(), name="customer_search_data"),
     path("assess-return/", views.AssessReturnView.as_view(), name="assess_return"),
     path("mark-damaged/", views.MarkDamagedView.as_view(), name="mark_damaged"),
     path("repair-damaged/", views.RepairDamagedView.as_view(), name="repair_damaged"),

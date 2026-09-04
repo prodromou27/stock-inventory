@@ -188,6 +188,35 @@ class TestStageRow:
         assert outcome == ImportRowOutcome.WARNING
         assert normalized["stock_purpose"] == StockPurpose.INTERNAL
 
+    def test_blank_arrival_date_resolves_to_todays_business_date_at_staging_time(
+        self, location_tree
+    ):
+        from django.utils import timezone
+
+        raw = _base_row(LOCATION="Room A")  # no "Arrival Date" key at all
+        normalized, outcome, detail = services._stage_row(raw)
+        assert normalized["arrival_date"] == timezone.localdate().isoformat()
+        assert normalized["used_default_arrival_date"] is True
+        # A blank cell is not a parse failure — no warning, unlike an
+        # unparseable non-blank value (which still warns, see below).
+        assert outcome == ImportRowOutcome.PENDING
+
+    def test_valid_supplied_arrival_date_is_preserved_not_defaulted(self, location_tree):
+        raw = _base_row(LOCATION="Room A", **{"Arrival Date": "2025-03-14"})
+        normalized, outcome, detail = services._stage_row(raw)
+        assert normalized["arrival_date"] == "2025-03-14"
+        assert normalized["used_default_arrival_date"] is False
+
+    def test_unparseable_arrival_date_warns_and_defaults(self, location_tree):
+        from django.utils import timezone
+
+        raw = _base_row(LOCATION="Room A", **{"Arrival Date": "not-a-date"})
+        normalized, outcome, detail = services._stage_row(raw)
+        assert outcome == ImportRowOutcome.WARNING
+        assert "could not be parsed" in detail
+        assert normalized["arrival_date"] == timezone.localdate().isoformat()
+        assert normalized["used_default_arrival_date"] is True
+
 
 @pytest.mark.django_db
 class TestCreateBatchFromUpload:

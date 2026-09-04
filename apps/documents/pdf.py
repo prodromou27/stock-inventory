@@ -15,7 +15,7 @@ from weasyprint import HTML
 
 from apps.inventory.models import MovementType
 
-from .models import FontChoice, PageMargin
+from .models import REPORT_COLUMNS, FontChoice, PageMargin, _default_layout_config
 
 CURRENT_TEMPLATE_VERSION = "form_v1"
 STYLEABLE_TEMPLATE_NAME = "documents/pdf/styleable_base.html"
@@ -217,7 +217,7 @@ def build_logo_data_uri(document_template):
         return file_to_data_uri(f)
 
 
-def _active_template(document_type):
+def active_template_for(document_type):
     from .models import DocumentTemplate
 
     return DocumentTemplate.objects.filter(document_type=document_type).first()
@@ -236,9 +236,43 @@ def render_pdf_from_source(html_source, context):
     return HTML(string=html_string).write_pdf()
 
 
-def render_pdf(context, *, document_type):
-    template_obj = _active_template(document_type)
-    context = {**context, "logo_data_uri": build_logo_data_uri(template_obj)}
+def visible_report_columns(hidden_columns):
+    """[(key, label), ...] from REPORT_COLUMNS with any key named in
+    `hidden_columns` removed — unrecognized keys are silently ignored
+    (never an arbitrary computed column; see REPORT_COLUMNS's docstring).
+    """
+    hidden = set(hidden_columns or [])
+    return [(key, label) for key, label in REPORT_COLUMNS if key not in hidden]
+
+
+def layout_context(template_obj):
+    """The DocumentTemplate.layout_config fields a rendered PDF needs in its
+    context, always present with sane defaults — form_v1.html (used when no
+    DocumentTemplate row exists at all) simply never references most of
+    these, so merging them in unconditionally is harmless there too.
+    """
+    config = {**_default_layout_config(), **(template_obj.layout_config if template_obj else {})}
+    return {
+        "page_size": config.get("page_size", "A4"),
+        "orientation": config.get("orientation", "portrait"),
+        "header_text": config.get("header_text", ""),
+        "footer_text": config.get("footer_text", ""),
+        "show_page_numbers": config.get("show_page_numbers", False),
+        "show_signature_block": config.get("show_signature_block", True),
+        "notes_text": config.get("notes_text", ""),
+        "terms_text": config.get("terms_text", ""),
+        "report_columns": visible_report_columns(config.get("hidden_columns")),
+    }
+
+
+def render_pdf(context, *, document_type, template_obj=None):
+    if template_obj is None:
+        template_obj = active_template_for(document_type)
+    context = {
+        **context,
+        "logo_data_uri": build_logo_data_uri(template_obj),
+        **layout_context(template_obj),
+    }
     if template_obj is not None:
         return render_pdf_from_source(template_obj.html_source, context)
     html_string = render_to_string(f"documents/pdf/{CURRENT_TEMPLATE_VERSION}.html", context)

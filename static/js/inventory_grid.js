@@ -192,8 +192,30 @@
       }
     });
 
-    if (options.rowSelectable !== false && options.onSelectionChange) {
-      table.on("rowSelectionChanged", (data) => options.onSelectionChange(data));
+    // Cross-page selection: Tabulator's own selection is tied to whatever
+    // rows are currently rendered, so with remote pagination a plain
+    // rowSelectionChanged handler only ever reports the *current page's*
+    // selected rows — paging forward and selecting more silently drops
+    // whatever was selected on earlier pages. selectedById is this table's
+    // full accumulated selection across every page visited so far;
+    // onSelectionChange is always called with that complete set, and
+    // dataLoaded re-applies selectRow() for any newly-rendered row whose id
+    // is already known, so the checkbox state stays correct when paging
+    // back too.
+    if (options.rowSelectable !== false) {
+      const selectedById = new Map();
+      table.on("rowSelectionChanged", () => {
+        table.getRows(true).forEach((row) => {
+          const data = row.getData();
+          if (row.isSelected()) selectedById.set(data.id, data);
+          else selectedById.delete(data.id);
+        });
+        if (options.onSelectionChange) options.onSelectionChange(Array.from(selectedById.values()));
+      });
+      table.on("dataLoaded", (data) => {
+        const idsOnPage = data.map((row) => row.id).filter((id) => selectedById.has(id));
+        if (idsOnPage.length) window.setTimeout(() => table.selectRow(idsOnPage), 0);
+      });
     }
 
     if (options.searchInputSelector) {

@@ -53,6 +53,44 @@
           </p>
         </div>
 
+        <div class="card">
+          <h2>Page layout</h2>
+          <p>
+            <label for="{{ form.page_size.id_for_label }}">{{ form.page_size.label }}</label>
+            {{ form.page_size }}
+          </p>
+          <p>
+            <label for="{{ form.orientation.id_for_label }}">{{ form.orientation.label }}</label>
+            {{ form.orientation }}
+          </p>
+          <p>
+            <label>{{ form.show_page_numbers }} {{ form.show_page_numbers.label }}</label>
+          </p>
+          <p>
+            <label>{{ form.show_signature_block }} {{ form.show_signature_block.label }}</label>
+          </p>
+          <p>
+            <label for="{{ form.header_text.id_for_label }}">{{ form.header_text.label }}</label>
+            {{ form.header_text }}
+          </p>
+          <p>
+            <label for="{{ form.footer_text.id_for_label }}">{{ form.footer_text.label }}</label>
+            {{ form.footer_text }}
+          </p>
+          <p>
+            <label for="{{ form.notes_text.id_for_label }}">{{ form.notes_text.label }}</label>
+            {{ form.notes_text }}
+          </p>
+          <p>
+            <label for="{{ form.terms_text.id_for_label }}">{{ form.terms_text.label }}</label>
+            {{ form.terms_text }}
+          </p>
+          <fieldset>
+            <legend>{{ form.hidden_columns.label }}</legend>
+            {{ form.hidden_columns }}
+          </fieldset>
+        </div>
+
         <div class="form-actions">
           <button type="submit" class="btn btn--primary">Save</button>
         </div>
@@ -93,6 +131,12 @@
           <li><strong>Accent color</strong> — used for the title and the rule under the header.</li>
           <li><strong>Font</strong> — applied to the whole document.</li>
           <li><strong>Page margins</strong> — how much blank space surrounds the page content.</li>
+          <li><strong>Page size / orientation</strong> — A4 or Letter, portrait or landscape.</li>
+          <li><strong>Page numbers / signature block</strong> — toggle either on or off.</li>
+          <li><strong>Header / footer text</strong> — a short line repeated on every page.</li>
+          <li><strong>Standing notes / terms</strong> — fixed text shown on every document, separate from that
+            delivery's own notes.</li>
+          <li><strong>Hidden columns</strong> — remove line-item columns you never need (e.g. SKU).</li>
         </ul>
         <p>Save validates the result by rendering a real sample PDF first — a problem would be reported here, never
           discovered the next time someone prints a real document. Use the live preview as often as you like before

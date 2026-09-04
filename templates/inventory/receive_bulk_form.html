@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 
-{% block title %}Receive Stock (Bulk) — Stock Inventory{% endblock %}
+{% block title %}Add Stock (Bulk) — Stock Inventory{% endblock %}
 
 {% block content %}
   <p><a href="{% url 'inventory:movements_hub' %}">&larr; Operations</a></p>
   <div class="page-header">
     <div>
-      <h1>Receive stock — multi-line</h1>
+      <h1>Add Stock — multi-line</h1>
       <div class="page-header__subtitle">
         Receive several products (serialized and/or quantity) in one batch. Set a default location and stock
         purpose below, or override either on an individual row. Nothing is saved until you submit — this whole
@@ -20,6 +20,18 @@
   {% endif %}
   {% if formset.non_form_errors %}
     <p class="messages__item messages__item--error">{{ formset.non_form_errors|join:" " }}</p>
+  {% endif %}
+
+  {% if show_duplicate_product_warning %}
+    <div class="messages__item messages__item--warning">
+      <p>One or more rows match an existing product's brand/model:</p>
+      <ul>
+        {% for match in duplicate_product_matches %}
+          <li><a href="{{ match.get_absolute_url }}">{{ match }}</a></li>
+        {% endfor %}
+      </ul>
+      <p>Submit again to confirm these are genuinely different products.</p>
+    </div>
   {% endif %}
 
   {% if show_duplicate_warning %}
@@ -53,11 +65,16 @@
       <table class="dense-table">
         <thead>
           <tr>
-            <th>Product</th>
+            <th>Brand</th>
+            <th>Model</th>
+            <th>SKU</th>
+            <th>Type</th>
+            <th>Tracking</th>
             <th>Serials (unit-tracked)</th>
             <th>Quantity (quantity-tracked)</th>
             <th>Location override</th>
             <th>Purpose override</th>
+            <th>Arrival date override</th>
             <th>Condition</th>
             <th>Accessories</th>
             <th>Notes</th>
@@ -68,8 +85,21 @@
             <tr>
               <td>
                 {{ form.id }}
-                {{ form.product }}
-                {% if form.product.errors %}<div class="errorlist">{{ form.product.errors|join:" " }}</div>{% endif %}
+                {{ form.brand_name }}
+                {% if form.brand_name.errors %}<div class="errorlist">{{ form.brand_name.errors|join:" " }}</div>{% endif %}
+              </td>
+              <td>
+                {{ form.model }}
+                {% if form.model.errors %}<div class="errorlist">{{ form.model.errors|join:" " }}</div>{% endif %}
+              </td>
+              <td>{{ form.sku }}</td>
+              <td>
+                {{ form.product_type_name }}
+                {% if form.product_type_name.errors %}<div class="errorlist">{{ form.product_type_name.errors|join:" " }}</div>{% endif %}
+              </td>
+              <td>
+                {{ form.tracking_method }}
+                {% if form.tracking_method.errors %}<div class="errorlist">{{ form.tracking_method.errors|join:" " }}</div>{% endif %}
               </td>
               <td>
                 {{ form.vendor_serials }}
@@ -79,8 +109,15 @@
                 {{ form.quantity }}
                 {% if form.quantity.errors %}<div class="errorlist">{{ form.quantity.errors|join:" " }}</div>{% endif %}
               </td>
-              <td>{{ form.location }}</td>
+              <td>
+                {{ form.location }}
+                {% if form.location.errors %}<div class="errorlist">{{ form.location.errors|join:" " }}</div>{% endif %}
+              </td>
               <td>{{ form.stock_purpose }}</td>
+              <td>
+                {{ form.arrival_date_override }}
+                {% if form.arrival_date_override.errors %}<div class="errorlist">{{ form.arrival_date_override.errors|join:" " }}</div>{% endif %}
+              </td>
               <td>{{ form.condition }}</td>
               <td>{{ form.accessories }}</td>
               <td>{{ form.notes }}</td>
@@ -89,6 +126,15 @@
         </tbody>
       </table>
     </div>
+
+    {% if show_duplicate_product_warning %}
+      <p>
+        <label>
+          <input type="checkbox" name="duplicate_acknowledged" value="true" checked>
+          I confirm every flagged row is a genuinely different product.
+        </label>
+      </p>
+    {% endif %}
 
     {% if show_duplicate_warning %}
       <p>
@@ -103,4 +149,11 @@
       <button type="submit" class="btn btn--primary">Receive all lines</button>
     </div>
   </form>
+
+  <datalist id="brand-options">
+    {% for name in brand_choices %}<option value="{{ name }}">{% endfor %}
+  </datalist>
+  <datalist id="product-type-options">
+    {% for name in product_type_choices %}<option value="{{ name }}">{% endfor %}
+  </datalist>
 {% endblock %}

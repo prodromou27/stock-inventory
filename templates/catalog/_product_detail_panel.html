@@ -14,7 +14,7 @@
 {% if user_is_administrator or "StockManager" in user_role_groups %}
   <div class="grid-panel__actions">
     <a class="btn btn--sm" href="{% url 'catalog:product_update' product.pk %}">Edit</a>
-    <a class="btn btn--sm" href="{% url 'inventory:receive_stock' %}?product={{ product.pk }}">Receive stock</a>
+    <a class="btn btn--sm" href="{% url 'inventory:receive_stock' %}?product={{ product.pk }}">Add Stock</a>
   </div>
 {% endif %}
 

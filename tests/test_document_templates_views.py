@@ -12,6 +12,8 @@ VALID_STYLE = {
     "accent_color": "#336699",
     "font_choice": "serif",
     "page_margin": "compact",
+    "page_size": "A4",
+    "orientation": "portrait",
 }
 
 
@@ -21,9 +23,13 @@ class TestPermissions:
         assert client.get(reverse("documents:template_hub")).status_code == 302
         assert client.get(reverse("documents:template_edit", args=["delivery"])).status_code == 302
 
-    def test_stock_manager_forbidden(self, client, stock_manager):
+    def test_stock_manager_can_view_hub_but_not_edit(self, client, stock_manager):
+        """Phase 9: a Stock Manager gets read-only preview access to
+        whatever's currently live — the hub itself is now open to them —
+        but editing/saving/resetting stays Administrator-only.
+        """
         client.force_login(stock_manager)
-        assert client.get(reverse("documents:template_hub")).status_code == 403
+        assert client.get(reverse("documents:template_hub")).status_code == 200
         assert client.get(reverse("documents:template_edit", args=["delivery"])).status_code == 403
 
     def test_read_only_forbidden(self, client, read_only_user):
@@ -54,7 +60,7 @@ class TestEditView:
         assert response.status_code == 200
         content = response.content.decode()
         assert "{{ document_number }}" not in content
-        assert "<textarea" not in content
+        assert 'name="html_source"' not in content
 
     def test_saves_valid_style_choices(self, client, administrator):
         client.force_login(administrator)
@@ -120,6 +126,37 @@ class TestPreviewView:
             reverse("documents:template_preview", args=["delivery"]), VALID_STYLE
         )
         assert response.status_code == 403
+
+
+@pytest.mark.django_db
+class TestLivePreviewView:
+    """apps.documents.views.DocumentTemplateLivePreviewView — renders
+    whatever's currently live against sample data. Administrator and Stock
+    Manager both get it (phase 9); Read-only does not.
+    """
+
+    def test_administrator_can_preview(self, client, administrator):
+        client.force_login(administrator)
+        response = client.get(reverse("documents:template_live_preview", args=["delivery"]))
+        assert response.status_code == 200
+        assert response["Content-Type"] == "application/pdf"
+        assert response.content[:4] == b"%PDF"
+
+    def test_stock_manager_can_preview(self, client, stock_manager):
+        client.force_login(stock_manager)
+        response = client.get(reverse("documents:template_live_preview", args=["delivery"]))
+        assert response.status_code == 200
+        assert response.content[:4] == b"%PDF"
+
+    def test_read_only_forbidden(self, client, read_only_user):
+        client.force_login(read_only_user)
+        response = client.get(reverse("documents:template_live_preview", args=["delivery"]))
+        assert response.status_code == 403
+
+    def test_unknown_document_type_404s(self, client, administrator):
+        client.force_login(administrator)
+        response = client.get(reverse("documents:template_live_preview", args=["not-a-real-type"]))
+        assert response.status_code == 404
 
 
 @pytest.mark.django_db

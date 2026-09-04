@@ -6,6 +6,7 @@ from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
+from django.db import transaction
 from django.db.models import Case, Count, F, IntegerField, Max, Q, Sum, When
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -17,7 +18,8 @@ from django.views.generic import DetailView, ListView
 from apps.audit.models import AuditEvent
 from apps.audit.services import record_event
 from apps.catalog.models import Product, TrackingMethod
-from apps.catalog.views import _filtered_products
+from apps.catalog.services import DuplicateProductError, resolve_or_create_product
+from apps.catalog.views import _catalog_choices, _filtered_products
 from apps.core.authorization import (
     ADMINISTRATOR,
     STOCK_MANAGER,
@@ -68,6 +70,7 @@ from .forms import (
     UnitPurposeReclassifyForm,
 )
 from .models import (
+    Customer,
     InventoryTransaction,
     InventoryTransactionLine,
     MovementType,
@@ -192,27 +195,109 @@ class MovementsHubView(LoginRequiredMixin, RoleRequiredMixin, View):
         )
 
 
+def _default_location_for(user):
+    """One fewer click on the common paths, never a hidden choice on the
+    uncommon one: if `user` only has access to a single location, that's
+    obviously where they're receiving into — pre-select it. Otherwise fall
+    back to the location they most recently received stock into (still
+    re-checked against their *current* access, so a since-revoked location
+    is never offered back). Returns None — no default, pick as before — when
+    neither applies.
+    """
+    accessible = accessible_locations(user).filter(is_active=True)
+    if accessible.count() == 1:
+        return accessible.first()
+
+    last_location_id = (
+        InventoryTransaction.objects.filter(
+            performed_by=user,
+            movement_type=MovementType.RECEIPT,
+            destination_location__isnull=False,
+        )
+        .order_by("-created_at")
+        .values_list("destination_location_id", flat=True)
+        .first()
+    )
+    if last_location_id:
+        return accessible.filter(pk=last_location_id).first()
+    return None
+
+
 class ReceiveStockView(LoginRequiredMixin, RoleRequiredMixin, View):
+    """Add Stock — no pre-existing Product required. resolve_or_create_product()
+    (apps.catalog.services) resolves the typed brand/model/sku/type into a
+    Product before receive_stock() ever runs: silent reuse on an exact match,
+    a DuplicateProductError warning + acknowledgement checkbox on a close
+    match (mirrors apps.catalog.views.ProductCreateView's own handling of the
+    same error), or a new Product created outright.
+    """
+
     allowed_roles = (ADMINISTRATOR, STOCK_MANAGER)
 
     def get(self, request):
-        initial = {}
+        initial = {"occurred_at": timezone.localdate()}
+        default_location = _default_location_for(request.user)
+        if default_location is not None:
+            initial["location"] = default_location.pk
         product_id = request.GET.get("product")
         if product_id:
-            initial["product"] = product_id
+            product = (
+                Product.objects.filter(pk=product_id)
+                .select_related("brand", "product_type")
+                .first()
+            )
+            if product is not None:
+                initial.update(
+                    brand_name=product.brand.name,
+                    model=product.model,
+                    sku=product.sku,
+                    product_type_name=product.product_type.name,
+                    tracking_method=product.tracking_method,
+                )
         form = ReceiveStockForm(user=request.user, initial=initial)
-        return render(request, "inventory/receive_stock_form.html", {"form": form})
+        return render(
+            request, "inventory/receive_stock_form.html", {"form": form, **_catalog_choices()}
+        )
 
     def post(self, request):
         form = ReceiveStockForm(request.POST, user=request.user)
         if not form.is_valid():
-            return render(request, "inventory/receive_stock_form.html", {"form": form})
+            return render(
+                request, "inventory/receive_stock_form.html", {"form": form, **_catalog_choices()}
+            )
 
         data = form.cleaned_data
         try:
+            product = resolve_or_create_product(
+                user=request.user,
+                brand_name=data["brand_name"],
+                model=data["model"],
+                sku=data["sku"],
+                product_type_name=data["product_type_name"],
+                tracking_method=data["tracking_method"],
+                duplicate_acknowledged=request.POST.get("duplicate_acknowledged") == "true",
+            )
+        except DuplicateProductError as exc:
+            return render(
+                request,
+                "inventory/receive_stock_form.html",
+                {
+                    "form": form,
+                    "duplicate_product_matches": exc.matches,
+                    "show_duplicate_product_warning": True,
+                    **_catalog_choices(),
+                },
+            )
+        except ValidationError as exc:
+            form.add_error(None, exc)
+            return render(
+                request, "inventory/receive_stock_form.html", {"form": form, **_catalog_choices()}
+            )
+
+        try:
             txn = receive_stock(
                 user=request.user,
-                product=data["product"],
+                product=product,
                 location=data["location"],
                 occurred_at=data["occurred_at"],
                 vendor_serial=data["vendor_serial"],
@@ -232,11 +317,18 @@ class ReceiveStockView(LoginRequiredMixin, RoleRequiredMixin, View):
             return render(
                 request,
                 "inventory/receive_stock_form.html",
-                {"form": form, "duplicate_matches": exc.matches, "show_duplicate_warning": True},
+                {
+                    "form": form,
+                    "duplicate_matches": exc.matches,
+                    "show_duplicate_warning": True,
+                    **_catalog_choices(),
+                },
             )
         except ValidationError as exc:
             form.add_error(None, exc)
-            return render(request, "inventory/receive_stock_form.html", {"form": form})
+            return render(
+                request, "inventory/receive_stock_form.html", {"form": form, **_catalog_choices()}
+            )
 
         messages.success(request, f"Received stock — transaction {txn.transaction_number}.")
         return redirect(txn.get_absolute_url())
@@ -255,13 +347,17 @@ class QuickReceiveView(LoginRequiredMixin, RoleRequiredMixin, View):
     template_name = "inventory/quick_receive_form.html"
 
     def get(self, request):
-        initial = {"occurred_at": None}
+        initial = {"occurred_at": timezone.localdate()}
         product_id = request.GET.get("product")
         if product_id:
             initial["product"] = product_id
         location_id = request.GET.get("location")
         if location_id:
             initial["location"] = location_id
+        else:
+            default_location = _default_location_for(request.user)
+            if default_location is not None:
+                initial["location"] = default_location.pk
         form = QuickReceiveForm(user=request.user, initial=initial)
         return render(request, self.template_name, {"form": form})
 
@@ -333,9 +429,17 @@ class ReceiveBulkView(LoginRequiredMixin, RoleRequiredMixin, View):
     template_name = "inventory/receive_bulk_form.html"
 
     def get(self, request):
-        batch_form = ReceiveBulkBatchForm(user=request.user)
+        initial = {"occurred_at": timezone.localdate()}
+        default_location = _default_location_for(request.user)
+        if default_location is not None:
+            initial["default_location"] = default_location.pk
+        batch_form = ReceiveBulkBatchForm(user=request.user, initial=initial)
         formset = ReceiveBulkFormSet(form_kwargs={"user": request.user})
-        return render(request, self.template_name, {"batch_form": batch_form, "formset": formset})
+        return render(
+            request,
+            self.template_name,
+            {"batch_form": batch_form, "formset": formset, **_catalog_choices()},
+        )
 
     def post(self, request):
         batch_form = ReceiveBulkBatchForm(request.POST, user=request.user)
@@ -344,14 +448,49 @@ class ReceiveBulkView(LoginRequiredMixin, RoleRequiredMixin, View):
         formset_valid = formset.is_valid()
         if not (batch_valid and formset_valid):
             return render(
-                request, self.template_name, {"batch_form": batch_form, "formset": formset}
+                request,
+                self.template_name,
+                {"batch_form": batch_form, "formset": formset, **_catalog_choices()},
+            )
+
+        rows = [
+            row
+            for row in formset.cleaned_data
+            if row and (row.get("brand_name") or row.get("model"))
+        ]
+        try:
+            with transaction.atomic():
+                resolved = [
+                    (
+                        row,
+                        resolve_or_create_product(
+                            user=request.user,
+                            brand_name=row["brand_name"],
+                            model=row["model"],
+                            sku=row.get("sku", ""),
+                            product_type_name=row["product_type_name"],
+                            tracking_method=row["tracking_method"],
+                            duplicate_acknowledged=request.POST.get("duplicate_acknowledged")
+                            == "true",
+                        ),
+                    )
+                    for row in rows
+                ]
+        except DuplicateProductError as exc:
+            return render(
+                request,
+                self.template_name,
+                {
+                    "batch_form": batch_form,
+                    "formset": formset,
+                    "duplicate_product_matches": exc.matches,
+                    "show_duplicate_product_warning": True,
+                    **_catalog_choices(),
+                },
             )
 
         line_rows = []
-        for row in formset.cleaned_data:
-            if not row or not row.get("product"):
-                continue
-            product = row["product"]
+        for row, product in resolved:
             entry = {
                 "product": product,
                 "location": row.get("location") or None,
@@ -362,6 +501,7 @@ class ReceiveBulkView(LoginRequiredMixin, RoleRequiredMixin, View):
                 entry["vendor_serials"] = row.get("parsed_serials", [])
                 entry["condition"] = row.get("condition")
                 entry["accessories"] = row.get("accessories", "")
+                entry["arrival_date"] = row.get("arrival_date_override") or None
             else:
                 entry["quantity"] = row.get("quantity")
             line_rows.append(entry)
@@ -369,7 +509,9 @@ class ReceiveBulkView(LoginRequiredMixin, RoleRequiredMixin, View):
         if not line_rows:
             batch_form.add_error(None, "Add at least one line to the receipt.")
             return render(
-                request, self.template_name, {"batch_form": batch_form, "formset": formset}
+                request,
+                self.template_name,
+                {"batch_form": batch_form, "formset": formset, **_catalog_choices()},
             )
 
         data = batch_form.cleaned_data
@@ -398,12 +540,15 @@ class ReceiveBulkView(LoginRequiredMixin, RoleRequiredMixin, View):
                     "duplicate_matches": exc.matches,
                     "duplicate_by_serial": exc.by_serial,
                     "show_duplicate_warning": True,
+                    **_catalog_choices(),
                 },
             )
         except ValidationError as exc:
             batch_form.add_error(None, exc)
             return render(
-                request, self.template_name, {"batch_form": batch_form, "formset": formset}
+                request,
+                self.template_name,
+                {"batch_form": batch_form, "formset": formset, **_catalog_choices()},
             )
 
         messages.success(
@@ -1391,6 +1536,85 @@ class AssetPickerDataView(LoginRequiredMixin, View):
         }
 
 
+def _eligible_balances(request):
+    """StockBalance rows with stock actually available to issue — the
+    quantity-tracked counterpart to _eligible_assets(). Zero-available rows
+    are excluded outright rather than shown-but-uncheckable: nothing useful
+    comes from letting an operator pick a row it's impossible to draw from.
+    """
+    queryset = scope_queryset(
+        request.user,
+        StockBalance.objects.select_related("product", "product__brand", "location"),
+        location_field="location",
+    )
+    queryset = queryset.annotate(
+        available_quantity_annotated=F("on_hand_quantity") - F("reserved_quantity")
+    ).filter(available_quantity_annotated__gt=0)
+    product_id = request.GET.get("product")
+    if product_id:
+        queryset = queryset.filter(product_id=product_id)
+    return queryset.order_by("product__brand__name", "product__model")
+
+
+BALANCE_PICKER_SORT_FIELDS = {
+    "brand": "product__brand__name",
+    "model": "product__model",
+    "location": "location__name",
+    "stock_purpose": "stock_purpose",
+    "available": "available_quantity_annotated",
+}
+
+
+class BalancePickerDataView(LoginRequiredMixin, View):
+    """JSON data source for the mass-selectable quantity-row grid embedded
+    in Assign/Deliver (templates/inventory/_balance_picker.html) — the
+    quantity-tracked counterpart to AssetPickerDataView. Each row is one
+    specific (product, location, stock_purpose) StockBalance with available
+    stock; picking a row (and entering how much to take from it) is how the
+    Stock Manager chooses what to issue, without ever seeing a separate
+    product/location/purpose dropdown — see AssignForm's docstring and
+    apps.inventory.views._quantity_lines_from_balance_picker().
+    """
+
+    MAX_PAGE_SIZE = 200
+
+    def get(self, request, *args, **kwargs):
+        queryset = filter_stock_balances(_eligible_balances(request), request.GET)
+        queryset = apply_multi_sort(
+            queryset,
+            BALANCE_PICKER_SORT_FIELDS,
+            parse_multi_sort(request.GET),
+            default_ordering=("product__brand__name", "product__model"),
+        )
+
+        page_number = _positive_int(request.GET.get("page"), default=1)
+        page_size = min(_positive_int(request.GET.get("size"), default=100), self.MAX_PAGE_SIZE)
+        paginator = Paginator(queryset, page_size)
+        page = paginator.get_page(page_number)
+
+        breadcrumbs = location_breadcrumb_map()
+        rows = [self._serialize(balance, breadcrumbs) for balance in page.object_list]
+        return JsonResponse(
+            {"data": rows, "last_page": paginator.num_pages, "total_count": paginator.count}
+        )
+
+    @staticmethod
+    def _serialize(balance, breadcrumbs):
+        breadcrumb = breadcrumbs.get(balance.location_id, {})
+        return {
+            "id": str(balance.pk),
+            "brand": balance.product.brand.name,
+            "model": balance.product.model,
+            "product": str(balance.product),
+            "location": str(balance.location),
+            "country": breadcrumb.get("country", ""),
+            "storage_room": breadcrumb.get("storage_room", ""),
+            "stock_purpose": balance.stock_purpose,
+            "stock_purpose_display": balance.get_stock_purpose_display(),
+            "available": balance.available_quantity_annotated,
+        }
+
+
 def _quantity_lines_from_form(data, *, location_field="quantity_location"):
     if not data.get("quantity_product"):
         return []
@@ -1402,6 +1626,64 @@ def _quantity_lines_from_form(data, *, location_field="quantity_location"):
             "stock_purpose": data.get("quantity_stock_purpose") or StockPurpose.INTERNAL,
         }
     ]
+
+
+def _quantity_lines_from_balance_picker(request, user):
+    """Assign/Deliver's quantity-tracked lines: templates/inventory/
+    _balance_picker.html (static/js/movement_forms.js's wireBalancePicker())
+    posts one JSON array in `quantity_lines_json`, each entry naming a
+    specific StockBalance row plus the quantity to take from it — so
+    product/location/stock_purpose are always implicit in *which row* the
+    Stock Manager picked, never a separate dropdown (per direct
+    instruction). Raises ValidationError (caught by the view exactly like
+    every other movement-form error) rather than trusting the client's
+    numbers past the row's own available_quantity.
+    """
+    raw = request.POST.get("quantity_lines_json", "")
+    if not raw:
+        return []
+    try:
+        entries = json.loads(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValidationError("Invalid quantity selection.") from exc
+    if not isinstance(entries, list):
+        raise ValidationError("Invalid quantity selection.")
+
+    balance_ids = [entry.get("balance_id") for entry in entries if entry.get("balance_id")]
+    balances = {
+        str(balance.pk): balance
+        for balance in StockBalance.objects.select_related("product", "location").filter(
+            pk__in=balance_ids
+        )
+    }
+
+    lines = []
+    for entry in entries:
+        balance = balances.get(str(entry.get("balance_id")))
+        if balance is None:
+            raise ValidationError("One or more selected quantity rows could not be found.")
+        try:
+            quantity = int(entry.get("quantity") or 0)
+        except (TypeError, ValueError):
+            quantity = 0
+        if quantity <= 0:
+            continue
+        require_location_access(user, balance.location)
+        if quantity > balance.available_quantity:
+            raise ValidationError(
+                f"Only {balance.available_quantity} available for {balance.product} at "
+                f"{balance.location} ({balance.get_stock_purpose_display()}) — "
+                f"{quantity} requested."
+            )
+        lines.append(
+            {
+                "product": balance.product,
+                "location": balance.location,
+                "quantity": quantity,
+                "stock_purpose": balance.stock_purpose,
+            }
+        )
+    return lines
 
 
 class TransferView(LoginRequiredMixin, RoleRequiredMixin, View):
@@ -1567,6 +1849,7 @@ class AssignView(LoginRequiredMixin, RoleRequiredMixin, View):
             {
                 "form": form,
                 "assets": assets,
+                "balances": _eligible_balances(request),
                 "preselected_ids": _preselected_ids(request),
                 "eligible_statuses": _status_param(eligible_statuses),
             },
@@ -1576,17 +1859,21 @@ class AssignView(LoginRequiredMixin, RoleRequiredMixin, View):
         form = AssignForm(request.POST, user=request.user)
         unit_asset_ids = request.POST.getlist("unit_asset_ids")
         assets = _eligible_assets(request, [UnitStatus.IN_STOCK, UnitStatus.RESERVED])
+        balances = _eligible_balances(request)
         if not form.is_valid():
-            return render(request, self.template_name, {"form": form, "assets": assets})
+            return render(
+                request, self.template_name, {"form": form, "assets": assets, "balances": balances}
+            )
 
         data = form.cleaned_data
         try:
+            quantity_lines = _quantity_lines_from_balance_picker(request, request.user)
             txn = assign_to_employee(
                 user=request.user,
                 employee_name=data["employee_name"],
                 occurred_at=data["occurred_at"],
                 unit_asset_ids=unit_asset_ids,
-                quantity_lines=_quantity_lines_from_form(data),
+                quantity_lines=quantity_lines,
                 project_reference=data["project_reference"],
                 recipient_reference=data["recipient_reference"],
                 is_temporary_assignment=data["is_temporary_assignment"],
@@ -1597,10 +1884,75 @@ class AssignView(LoginRequiredMixin, RoleRequiredMixin, View):
             )
         except ValidationError as exc:
             form.add_error(None, exc)
-            return render(request, self.template_name, {"form": form, "assets": assets})
+            return render(
+                request, self.template_name, {"form": form, "assets": assets, "balances": balances}
+            )
 
         messages.success(request, f"Assigned stock — transaction {txn.transaction_number}.")
         return redirect(txn.get_absolute_url())
+
+
+CUSTOMER_SEARCH_LIMIT = 20
+
+
+def _customer_search_results(user, query=""):
+    """Ranks real Customer rows first, then falls back to distinct historical
+    InventoryTransaction.final_customer text, so a customer that was only
+    ever typed as free text (never formally registered — spec §22 excludes
+    customer master-data management) stays findable. Shared by
+    CustomerSearchDataView (live search) and DeliverView (the datalist's
+    initial options at page load).
+    """
+    results = []
+    seen = set()
+
+    customers = Customer.objects.filter(is_active=True)
+    if query:
+        customers = customers.filter(Q(name__icontains=query) | Q(reference__icontains=query))
+    for customer in customers.order_by("name")[:CUSTOMER_SEARCH_LIMIT]:
+        key = customer.name.strip().lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        results.append(
+            {
+                "id": str(customer.pk),
+                "name": customer.name,
+                "reference": customer.reference,
+                "source": "customer",
+            }
+        )
+
+    if len(results) < CUSTOMER_SEARCH_LIMIT:
+        historical = scope_transaction_queryset(
+            user, InventoryTransaction.objects.exclude(final_customer="")
+        ).order_by()
+        if query:
+            historical = historical.filter(final_customer__icontains=query)
+        names = historical.values_list("final_customer", flat=True).distinct()[
+            : CUSTOMER_SEARCH_LIMIT * 2
+        ]
+        for name in names:
+            key = name.strip().lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            results.append({"id": "", "name": name, "reference": "", "source": "history"})
+            if len(results) >= CUSTOMER_SEARCH_LIMIT:
+                break
+
+    return results
+
+
+class CustomerSearchDataView(LoginRequiredMixin, View):
+    """JSON search backing DeliverForm's final_customer autocomplete (and,
+    per the plan, the future multi-item delivery grid). See
+    _customer_search_results() for the ranking/fallback rule.
+    """
+
+    def get(self, request, *args, **kwargs):
+        query = request.GET.get("q", "").strip()
+        return JsonResponse({"results": _customer_search_results(request.user, query)})
 
 
 class DeliverView(LoginRequiredMixin, RoleRequiredMixin, View):
@@ -1617,8 +1969,10 @@ class DeliverView(LoginRequiredMixin, RoleRequiredMixin, View):
             {
                 "form": form,
                 "assets": assets,
+                "balances": _eligible_balances(request),
                 "preselected_ids": _preselected_ids(request),
                 "eligible_statuses": _status_param(eligible_statuses),
+                "customer_choices": _customer_search_results(request.user),
             },
         )
 
@@ -1626,17 +1980,29 @@ class DeliverView(LoginRequiredMixin, RoleRequiredMixin, View):
         form = DeliverForm(request.POST, user=request.user)
         unit_asset_ids = request.POST.getlist("unit_asset_ids")
         assets = _eligible_assets(request, [UnitStatus.IN_STOCK, UnitStatus.RESERVED])
+        balances = _eligible_balances(request)
         if not form.is_valid():
-            return render(request, self.template_name, {"form": form, "assets": assets})
+            return render(
+                request,
+                self.template_name,
+                {
+                    "form": form,
+                    "assets": assets,
+                    "balances": balances,
+                    "customer_choices": _customer_search_results(request.user),
+                },
+            )
 
         data = form.cleaned_data
         try:
+            quantity_lines = _quantity_lines_from_balance_picker(request, request.user)
             txn = deliver_to_customer(
                 user=request.user,
                 final_customer=data["final_customer"],
+                customer=data["customer"],
                 occurred_at=data["occurred_at"],
                 unit_asset_ids=unit_asset_ids,
-                quantity_lines=_quantity_lines_from_form(data),
+                quantity_lines=quantity_lines,
                 project_reference=data["project_reference"],
                 recipient_reference=data["recipient_reference"],
                 condition=data["condition"] or None,
@@ -1645,7 +2011,16 @@ class DeliverView(LoginRequiredMixin, RoleRequiredMixin, View):
             )
         except ValidationError as exc:
             form.add_error(None, exc)
-            return render(request, self.template_name, {"form": form, "assets": assets})
+            return render(
+                request,
+                self.template_name,
+                {
+                    "form": form,
+                    "assets": assets,
+                    "balances": balances,
+                    "customer_choices": _customer_search_results(request.user),
+                },
+            )
 
         messages.success(request, f"Delivered stock — transaction {txn.transaction_number}.")
         return redirect(txn.get_absolute_url())
@@ -1969,6 +2344,7 @@ class AdminCorrectUnitView(LoginRequiredMixin, RoleRequiredMixin, View):
                 occurred_at=data["occurred_at"],
                 reason=data["reason"],
                 to_location=data["to_location"],
+                arrival_date=data["arrival_date"],
             )
         except ValidationError as exc:
             form.add_error(None, exc)

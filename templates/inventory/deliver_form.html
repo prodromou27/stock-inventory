@@ -17,6 +17,7 @@
 
     {% include "inventory/_movement_steps.html" with step=1 step_title="Select stock" %}
     {% include "inventory/_asset_picker.html" %}
+    {% include "inventory/_balance_picker.html" %}
 
     {% include "inventory/_movement_steps.html" with step=2 step_title="Enter details" %}
     <div class="card">
@@ -30,4 +31,10 @@
       <button type="submit" class="btn btn--primary">Deliver</button>
     </div>
   </form>
+
+  <datalist id="customer-options">
+    {% for choice in customer_choices %}
+      <option value="{{ choice.name }}" data-customer-id="{{ choice.id }}">
+    {% endfor %}
+  </datalist>
 {% endblock %}

@@ -291,3 +291,115 @@ class TestGenerateDocumentUsesOverride:
         content = document.pdf_file.open("rb").read()
         document.pdf_file.close()
         assert content[:4] == b"%PDF"
+
+    def test_template_and_version_recorded_with_a_custom_template(
+        self, administrator, delivery_txn
+    ):
+        template_obj = update_template(
+            user=administrator, document_type=DocumentType.DELIVERY, html_source=VALID_HTML
+        )
+        document = generate_document(txn=delivery_txn, user=administrator)
+        assert document.template_id == template_obj.pk
+        assert document.template_version == f"v{template_obj.version}"
+
+    def test_packaged_default_records_no_template_and_the_literal_version(
+        self, administrator, delivery_txn
+    ):
+        document = generate_document(txn=delivery_txn, user=administrator)
+        assert document.template_id is None
+        assert document.template_version == "form_v1"
+
+    def test_resetting_the_template_does_not_break_a_historical_document(
+        self, administrator, delivery_txn
+    ):
+        """GeneratedDocument.template is SET_NULL, not PROTECT — a later
+        reset must never be blocked by history that already has its own
+        frozen context_snapshot/pdf_file (doc 06's immutability guarantee
+        doesn't depend on this FK staying populated).
+        """
+        update_template(
+            user=administrator, document_type=DocumentType.DELIVERY, html_source=VALID_HTML
+        )
+        document = generate_document(txn=delivery_txn, user=administrator)
+        assert document.template_id is not None
+
+        reset_template(user=administrator, document_type=DocumentType.DELIVERY)
+
+        document.refresh_from_db()
+        assert document.template_id is None
+        assert document.template_version == "v1"  # unchanged — a frozen snapshot, not recomputed
+
+
+@pytest.mark.django_db
+class TestLayoutConfig:
+    """DocumentTemplate.layout_config (phase 9) — page layout, header/
+    footer, notes/terms, page numbers, signature block, and column
+    show/hide, composed into the rendered PDF via apps.documents.pdf.
+    layout_context() rather than baked into html_source.
+    """
+
+    def test_saved_layout_config_is_used_at_generation_time(self, administrator, delivery_txn):
+        update_template(
+            user=administrator,
+            document_type=DocumentType.DELIVERY,
+            html_source=(
+                "<html><body>{{ header_text }}/{{ footer_text }}"
+                "{% if show_page_numbers %}PAGENUMS{% endif %}</body></html>"
+            ),
+            layout_config={
+                "header_text": "ACME HQ",
+                "footer_text": "Confidential",
+                "show_page_numbers": True,
+            },
+        )
+        document = generate_document(txn=delivery_txn, user=administrator)
+        content = document.pdf_file.open("rb").read()
+        document.pdf_file.close()
+        assert content[:4] == b"%PDF"
+
+    def test_hidden_columns_rejects_unknown_keys(self, administrator):
+        template_obj = update_template(
+            user=administrator,
+            document_type=DocumentType.DELIVERY,
+            html_source=VALID_HTML,
+            layout_config={"hidden_columns": ["sku", "not_a_real_column"]},
+        )
+        assert template_obj.layout_config["hidden_columns"] == ["sku"]
+
+    def test_version_starts_at_one_and_increments_on_every_save(self, administrator):
+        first = update_template(
+            user=administrator, document_type=DocumentType.DELIVERY, html_source=VALID_HTML
+        )
+        assert first.version == 1
+        second = update_template(
+            user=administrator, document_type=DocumentType.DELIVERY, html_source=VALID_HTML
+        )
+        assert second.version == 2
+
+    def test_omitted_layout_config_keeps_previous_value(self, administrator):
+        update_template(
+            user=administrator,
+            document_type=DocumentType.DELIVERY,
+            html_source=VALID_HTML,
+            layout_config={"header_text": "Keep me"},
+        )
+        updated = update_template(
+            user=administrator, document_type=DocumentType.DELIVERY, html_source=VALID_HTML
+        )
+        assert updated.layout_config["header_text"] == "Keep me"
+
+
+@pytest.mark.django_db
+class TestVisibleReportColumns:
+    def test_hides_only_the_named_columns_in_the_fixed_order(self):
+        from apps.documents.pdf import visible_report_columns
+
+        columns = visible_report_columns(["sku", "accessories"])
+        keys = [key for key, _ in columns]
+        assert keys == ["brand", "model", "type", "serial", "quantity", "condition"]
+
+    def test_empty_hidden_list_returns_every_column(self):
+        from apps.documents.models import REPORT_COLUMNS
+        from apps.documents.pdf import visible_report_columns
+
+        assert visible_report_columns([]) == REPORT_COLUMNS

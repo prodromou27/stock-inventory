@@ -52,6 +52,48 @@ class PageMargin(models.TextChoices):
     SPACIOUS = "spacious", "Spacious"
 
 
+class PageSize(models.TextChoices):
+    A4 = "A4", "A4"
+    LETTER = "Letter", "Letter"
+
+
+class PageOrientation(models.TextChoices):
+    PORTRAIT = "portrait", "Portrait"
+    LANDSCAPE = "landscape", "Landscape"
+
+
+# The fixed line-item column set every packaged/styleable PDF skeleton
+# renders (apps.documents.pdf.build_document_context()'s "lines" shape) —
+# DocumentTemplate.layout_config's "hidden_columns" may only ever name one
+# of these keys (apps.documents.forms.LayoutConfigForm), never an arbitrary
+# computed column: rendering stays bounded and safe by construction, the
+# same trust model doc 06 already established for html_source itself.
+REPORT_COLUMNS = [
+    ("brand", "Brand"),
+    ("model", "Model"),
+    ("sku", "SKU"),
+    ("type", "Type / Description"),
+    ("serial", "Serial"),
+    ("quantity", "Qty"),
+    ("condition", "Condition"),
+    ("accessories", "Accessories"),
+]
+
+
+def _default_layout_config():
+    return {
+        "page_size": PageSize.A4,
+        "orientation": PageOrientation.PORTRAIT,
+        "header_text": "",
+        "footer_text": "",
+        "show_page_numbers": False,
+        "show_signature_block": True,
+        "notes_text": "",
+        "terms_text": "",
+        "hidden_columns": [],
+    }
+
+
 class GeneratedDocument(UUIDPrimaryKeyModel, AppendOnlyModel):
     """A PDF snapshot of a completed assignment/delivery transaction. Never
     updated in place — "regenerate" creates a new row with a fresh
@@ -65,7 +107,24 @@ class GeneratedDocument(UUIDPrimaryKeyModel, AppendOnlyModel):
     )
     document_number = models.CharField(max_length=20, unique=True, editable=False)
     document_type = models.CharField(max_length=20, choices=DocumentType.choices)
-    template_version = models.CharField(max_length=40)
+    template = models.ForeignKey(
+        "DocumentTemplate",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="generated_documents",
+        help_text="Which DocumentTemplate row (if any — the packaged default has none) actually "
+        "rendered this PDF. SET_NULL, not PROTECT: a later reset/reconfigure of that template "
+        "must never be blocked by history that already has its own frozen context_snapshot and "
+        "pdf_file — this FK is a convenience pointer, not the source of truth for what was "
+        "printed.",
+    )
+    template_version = models.CharField(
+        max_length=40,
+        help_text="A human-readable snapshot of the template's version at generation time — "
+        "'form_v1' for the packaged default, or 'v<N>' from DocumentTemplate.version when an "
+        "Administrator-configured template rendered this document.",
+    )
     context_snapshot = models.JSONField()
     pdf_file = models.FileField(upload_to=_document_upload_path)
     generated_by = models.ForeignKey(
@@ -158,6 +217,13 @@ class DocumentTemplate(UUIDPrimaryKeyModel, TimestampedModel):
     )
     page_margin = models.CharField(
         max_length=10, choices=PageMargin.choices, default=PageMargin.NORMAL
+    )
+    layout_config = models.JSONField(default=_default_layout_config)
+    version = models.PositiveIntegerField(
+        default=1,
+        help_text="Bumped on every save (apps.documents.template_services.update_template) — "
+        "the value snapshotted onto GeneratedDocument.template_version at generation time, so a "
+        "historical document can always name exactly which configuration produced it.",
     )
     updated_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+"

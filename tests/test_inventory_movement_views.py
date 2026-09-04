@@ -170,6 +170,59 @@ class TestTransferView:
         response = client.get(reverse("inventory:transfer"))
         assert response.status_code == 403
 
+    def test_manipulated_destination_location_outside_scope_rejected(
+        self,
+        client,
+        stock_manager_with_room_access,
+        administrator,
+        unit_product,
+        location_tree,
+        other_location_tree,
+    ):
+        """A tampered POST naming a real Location the operator has no
+        access to must be rejected, not silently honored — destination_location
+        is a ModelChoiceField whose queryset is already scoped
+        (apps.inventory.forms._apply_scoped_location), so Django's own
+        "not a valid choice" validation is the enforcement mechanism here.
+        """
+        from apps.locations.models import Location
+        from apps.locations.services import create_location
+
+        other_floor = create_location(
+            level=Location.Level.FLOOR,
+            name="Other Floor",
+            parent=other_location_tree["site"],
+            user=administrator,
+        )
+        other_room = create_location(
+            level=Location.Level.STORAGE_ROOM,
+            name="Other Room",
+            parent=other_floor,
+            user=administrator,
+        )
+        receive_stock(
+            user=stock_manager_with_room_access,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-TV-XCOUNTRY",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-TV-XCOUNTRY")
+
+        client.force_login(stock_manager_with_room_access)
+        response = client.post(
+            reverse("inventory:transfer"),
+            {
+                "destination_location": other_room.pk,
+                "occurred_at": date.today().isoformat(),
+                "unit_asset_ids": [str(asset.pk)],
+            },
+        )
+        assert response.status_code == 200
+        assert "valid choice" in response.content.decode()
+        asset.refresh_from_db()
+        assert asset.current_location == location_tree["room"]
+
 
 @pytest.mark.django_db
 class TestReserveAndReleaseViews:
@@ -302,6 +355,171 @@ class TestAssignAndDeliverViews:
         assert response.status_code == 302
         asset.refresh_from_db()
         assert asset.status == UnitStatus.DELIVERED
+
+    def test_deliver_quantity_via_balance_picker(
+        self, client, stock_manager_with_room_access, quantity_product, location_tree
+    ):
+        import json
+
+        receive_stock(
+            user=stock_manager_with_room_access,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=10,
+        )
+        balance = StockBalance.objects.get(product=quantity_product, location=location_tree["room"])
+
+        client.force_login(stock_manager_with_room_access)
+        response = client.post(
+            reverse("inventory:deliver"),
+            {
+                "final_customer": "Acme Balance Corp",
+                "occurred_at": date.today().isoformat(),
+                "quantity_lines_json": json.dumps([{"balance_id": str(balance.pk), "quantity": 4}]),
+            },
+        )
+        assert response.status_code == 302
+        balance.refresh_from_db()
+        assert balance.on_hand_quantity == 6
+
+    def test_deliver_quantity_capped_at_available(
+        self, client, stock_manager_with_room_access, quantity_product, location_tree
+    ):
+        import json
+
+        receive_stock(
+            user=stock_manager_with_room_access,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=5,
+        )
+        balance = StockBalance.objects.get(product=quantity_product, location=location_tree["room"])
+
+        client.force_login(stock_manager_with_room_access)
+        response = client.post(
+            reverse("inventory:deliver"),
+            {
+                "final_customer": "Acme Overdraw Corp",
+                "occurred_at": date.today().isoformat(),
+                "quantity_lines_json": json.dumps(
+                    [{"balance_id": str(balance.pk), "quantity": 999}]
+                ),
+            },
+        )
+        assert response.status_code == 200
+        assert "999" in response.content.decode() or "Only 5" in response.content.decode()
+        balance.refresh_from_db()
+        assert balance.on_hand_quantity == 5
+
+    def test_deliver_manipulated_balance_id_outside_scope_rejected(
+        self,
+        client,
+        stock_manager_with_room_access,
+        administrator,
+        quantity_product,
+        other_location_tree,
+    ):
+        """A tampered quantity_lines_json naming a real StockBalance the
+        operator has no location access to must be rejected server-side —
+        _quantity_lines_from_balance_picker() calls require_location_access()
+        on every resolved balance's location, independent of whatever the
+        picker grid itself would have offered.
+        """
+        import json
+
+        from apps.locations.models import Location
+        from apps.locations.services import create_location
+
+        other_floor = create_location(
+            level=Location.Level.FLOOR,
+            name="Other Deliver Floor",
+            parent=other_location_tree["site"],
+            user=administrator,
+        )
+        other_room = create_location(
+            level=Location.Level.STORAGE_ROOM,
+            name="Other Deliver Room",
+            parent=other_floor,
+            user=administrator,
+        )
+        receive_stock(
+            user=administrator,
+            product=quantity_product,
+            location=other_room,
+            occurred_at=date.today(),
+            quantity=10,
+        )
+        balance = StockBalance.objects.get(product=quantity_product, location=other_room)
+
+        client.force_login(stock_manager_with_room_access)
+        response = client.post(
+            reverse("inventory:deliver"),
+            {
+                "final_customer": "Acme XCountry Corp",
+                "occurred_at": date.today().isoformat(),
+                "quantity_lines_json": json.dumps([{"balance_id": str(balance.pk), "quantity": 3}]),
+            },
+        )
+        assert response.status_code == 403
+        balance.refresh_from_db()
+        assert balance.on_hand_quantity == 10
+
+    def test_deliver_no_location_or_purpose_field_is_exposed(
+        self, client, stock_manager_with_room_access
+    ):
+        """Per direct instruction: Assign/Deliver ask only for items, date,
+        and recipient — location and stock purpose are implicit in which
+        grid row was picked, never a separate dropdown.
+        """
+        client.force_login(stock_manager_with_room_access)
+        response = client.get(reverse("inventory:deliver"))
+        assert "quantity_location" not in response.content.decode()
+        assert 'name="quantity_stock_purpose"' not in response.content.decode()
+
+
+@pytest.mark.django_db
+class TestBalancePickerDataView:
+    def test_lists_eligible_balances(
+        self, client, stock_manager_with_room_access, quantity_product, location_tree
+    ):
+        receive_stock(
+            user=stock_manager_with_room_access,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=7,
+        )
+        client.force_login(stock_manager_with_room_access)
+        response = client.get(reverse("inventory:balance_picker_data"))
+        rows = response.json()["data"]
+        assert any(row["available"] == 7 for row in rows)
+
+    def test_zero_available_balance_excluded(
+        self, client, stock_manager_with_room_access, quantity_product, location_tree
+    ):
+        from apps.inventory.services.reservations import reserve_stock
+
+        receive_stock(
+            user=stock_manager_with_room_access,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=3,
+        )
+        reserve_stock(
+            user=stock_manager_with_room_access,
+            occurred_at=date.today(),
+            project_reference="Reserved for test",
+            quantity_lines=[
+                {"product": quantity_product, "location": location_tree["room"], "quantity": 3}
+            ],
+        )
+        client.force_login(stock_manager_with_room_access)
+        response = client.get(reverse("inventory:balance_picker_data"))
+        rows = response.json()["data"]
+        assert not any(row["id"] for row in rows if row.get("available", 1) == 0)
 
 
 @pytest.mark.django_db

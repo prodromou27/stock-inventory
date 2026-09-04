@@ -121,6 +121,14 @@ def update_location(*, location, name, code, user):
 
 @transaction.atomic
 def deactivate_location(*, location, user):
+    """Deactivating cascades to every descendant (a deactivated Country/Site/
+    Floor must not leave its rooms/shelves looking selectable — scope_queryset/
+    accessible_locations/location pickers only ever filter on a leaf row's own
+    is_active, never its ancestors', so without this cascade an inactive
+    Country's children silently stay fully selectable). Reactivation
+    deliberately does NOT cascade back (see reactivate_location's docstring)
+    — the two are not symmetric on purpose.
+    """
     require_role(user, ADMINISTRATOR, STOCK_MANAGER)
     if not can_manage_location(user, location):
         raise PermissionDenied("You cannot deactivate this location.")
@@ -129,19 +137,32 @@ def deactivate_location(*, location, user):
 
     location.is_active = False
     location.save(update_fields=["is_active", "updated_at"])
+    descendant_count = (
+        Location.objects.filter(path__descendant_or_self=location.path)
+        .exclude(pk=location.pk)
+        .exclude(is_active=False)
+        .update(is_active=False)
+    )
     record_event(
         actor=user,
         event_type=AuditEvent.EventType.RECORD_UPDATED,
         obj=location,
-        summary=f"Deactivated {location.get_level_display()} '{location.name}'",
+        summary=f"Deactivated {location.get_level_display()} '{location.name}'"
+        + (f" and {descendant_count} descendant location(s)" if descendant_count else ""),
         old_values={"is_active": True},
         new_values={"is_active": False},
+        metadata={"deactivated_descendant_count": descendant_count},
     )
     return location
 
 
 @transaction.atomic
 def reactivate_location(*, location, user):
+    """Deliberately single-row only — does NOT cascade to descendants. A room
+    deactivated independently (flooded, under renovation) for reasons unrelated
+    to its country/site being reactivated should not be silently resurrected;
+    each descendant that should come back must be reactivated on its own.
+    """
     require_role(user, ADMINISTRATOR, STOCK_MANAGER)
     if not can_manage_location(user, location):
         raise PermissionDenied("You cannot reactivate this location.")

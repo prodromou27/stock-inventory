@@ -5,13 +5,15 @@ from apps.audit.models import AuditEvent
 from apps.audit.services import record_event
 from apps.core.authorization import ADMINISTRATOR, require_role
 
-from .models import DocumentTemplate
+from .models import REPORT_COLUMNS, DocumentTemplate
 from .pdf import (
+    _default_layout_config,
     build_logo_data_uri,
     file_to_data_uri,
     render_pdf_from_source,
     sample_document_context,
     sniff_logo_content_type,
+    visible_report_columns,
 )
 
 MAX_LOGO_SIZE_BYTES = 2 * 1024 * 1024
@@ -39,6 +41,22 @@ def _validate_logo(logo_file):
         raise ValidationError("Logo must be a PNG or JPEG image.")
 
 
+_VALID_REPORT_COLUMN_KEYS = {key for key, _ in REPORT_COLUMNS}
+
+
+def _clean_layout_config(layout_config):
+    """Hard allow-list on hidden_columns, same "never an arbitrary computed
+    value" rule apps.documents.models.REPORT_COLUMNS documents — an unknown
+    key is dropped, never stored or interpolated anywhere.
+    """
+    hidden = [
+        key
+        for key in (layout_config.get("hidden_columns") or [])
+        if key in _VALID_REPORT_COLUMN_KEYS
+    ]
+    return {**layout_config, "hidden_columns": hidden}
+
+
 @transaction.atomic
 def update_template(
     *,
@@ -51,6 +69,7 @@ def update_template(
     accent_color=None,
     font_choice=None,
     page_margin=None,
+    layout_config=None,
 ):
     """`html_source` is always the final, already-composed template — the
     structured editor (apps.documents.views.DocumentTemplateEditView) builds
@@ -89,6 +108,9 @@ def update_template(
     elif remove_logo and template_obj.logo:
         template_obj.logo.delete(save=False)
         template_obj.logo = None
+    if layout_config is not None:
+        template_obj.layout_config = _clean_layout_config(layout_config)
+    template_obj.version = 1 if is_new else template_obj.version + 1
     template_obj.full_clean()
     template_obj.save()
 
@@ -129,12 +151,14 @@ def reset_template(*, user, document_type):
     template_obj.delete()
 
 
-def render_preview_pdf(*, document_type, html_source, logo_file=None):
+def render_preview_pdf(*, document_type, html_source, logo_file=None, layout_config=None):
     """Used by the settings screen's Preview button — renders the
     in-progress (not-yet-saved) template text against sample data. A newly
     chosen logo file takes precedence for this preview only; otherwise the
     already-saved logo (if any) is shown, so previewing doesn't require
-    re-uploading the logo on every attempt.
+    re-uploading the logo on every attempt. `layout_config`, likewise, is
+    whatever the Administrator currently has typed in the form — previewed
+    before it's saved, exactly like the logo.
 
     Always raises ValidationError on any rendering failure (never a raw
     TemplateSyntaxError/WeasyPrint exception) — the whole point of this
@@ -148,6 +172,19 @@ def render_preview_pdf(*, document_type, html_source, logo_file=None):
         context["logo_data_uri"] = file_to_data_uri(logo_file)
     else:
         context["logo_data_uri"] = build_logo_data_uri(get_template(document_type))
+
+    merged_layout = {**_default_layout_config(), **_clean_layout_config(layout_config or {})}
+    context.update(
+        page_size=merged_layout["page_size"],
+        orientation=merged_layout["orientation"],
+        header_text=merged_layout["header_text"],
+        footer_text=merged_layout["footer_text"],
+        show_page_numbers=merged_layout["show_page_numbers"],
+        show_signature_block=merged_layout["show_signature_block"],
+        notes_text=merged_layout["notes_text"],
+        terms_text=merged_layout["terms_text"],
+        report_columns=visible_report_columns(merged_layout["hidden_columns"]),
+    )
     try:
         return render_pdf_from_source(html_source, context)
     except ValidationError:

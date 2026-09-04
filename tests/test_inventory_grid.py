@@ -74,6 +74,50 @@ class TestUnitAssetGridDataView:
         serials = [row["serial"] for row in response.json()["data"]]
         assert "SN-GRID-OUT-OF-SCOPE" not in serials
 
+    def test_manipulated_location_param_outside_scope_returns_empty_not_leaked(
+        self,
+        client,
+        administrator,
+        stock_manager_with_room_access,
+        unit_product,
+        other_location_tree,
+    ):
+        """A tampered ?location= naming a real Location the operator has no
+        access to must yield zero rows, not the other country's data —
+        apps.inventory.filters._filter_by_location() only ever narrows the
+        already-scoped queryset (never a fresh, unscoped one), so this
+        should already hold by construction; this test proves it instead of
+        just assuming it.
+        """
+        from apps.locations.models import Location
+        from apps.locations.services import create_location
+
+        other_floor = create_location(
+            level=Location.Level.FLOOR,
+            name="Param Floor",
+            parent=other_location_tree["site"],
+            user=administrator,
+        )
+        other_room = create_location(
+            level=Location.Level.STORAGE_ROOM,
+            name="Param Room",
+            parent=other_floor,
+            user=administrator,
+        )
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=other_room,
+            occurred_at=date.today(),
+            vendor_serial="SN-GRID-PARAM-LEAK",
+        )
+        client.force_login(stock_manager_with_room_access)
+        response = client.get(
+            reverse("inventory:asset_grid_data"), {"location": str(other_room.pk)}
+        )
+        assert response.status_code == 200
+        assert response.json()["data"] == []
+
     def test_multi_column_sort(self, client, administrator, unit_product, location_tree):
         receive_stock(
             user=administrator,
@@ -794,3 +838,50 @@ class TestAssetGridStockPurposeAndAssignedTo:
 
         in_stock_row = rows_by_serial["SN-GRID-IN-STOCK"]
         assert in_stock_row["assigned_to"] is None
+
+    def test_assigned_to_block_has_the_same_shape_for_a_customer_delivery(
+        self, client, administrator, unit_product, location_tree
+    ):
+        """apps.inventory.views._assigned_to_block() must show a customer
+        delivery's custodian info with the exact same field set an employee
+        assignment gets (only "type"/"type_display"/"name" differ) — the
+        plan's phase 7 parity check.
+        """
+        from apps.inventory.services.assignments import deliver_to_customer
+
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-GRID-DELIVERED",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-GRID-DELIVERED")
+        deliver_to_customer(
+            user=administrator,
+            final_customer="Acme Corp",
+            recipient_reference="CUST-1",
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+        )
+        client.force_login(administrator)
+        response = client.get(reverse("inventory:asset_grid_data"), {"status": ""})
+        row = next(r for r in response.json()["data"] if r["serial"] == "SN-GRID-DELIVERED")
+
+        assert row["assigned_to"]["type"] == "customer"
+        assert row["assigned_to"]["type_display"] == "Customer"
+        assert row["assigned_to"]["name"] == "Acme Corp"
+        assert row["assigned_to"]["reference"] == "CUST-1"
+        assert set(row["assigned_to"].keys()) == {
+            "type",
+            "type_display",
+            "name",
+            "reference",
+            "project_reference",
+            "transaction_id",
+            "transaction_number",
+            "transaction_url",
+            "date",
+            "expected_return_date",
+            "notes",
+        }

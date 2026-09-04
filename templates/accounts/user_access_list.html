@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load ui_extras %}
 
 {% block title %}Manage Access — Stock Inventory{% endblock %}
 
@@ -6,6 +7,7 @@
   <div class="page-header">
     <h1>Manage Access</h1>
     <div class="page-header__actions">
+      <a class="btn" href="{% url 'accounts:create_user' %}">+ Create user</a>
       <a class="btn btn--primary" href="{% url 'accounts:grant_access' %}">+ Grant access</a>
     </div>
   </div>
@@ -14,6 +16,7 @@
     <thead>
       <tr>
         <th>User</th>
+        <th>Status</th>
         <th>Role</th>
         <th>Granted locations</th>
       </tr>
@@ -22,7 +25,35 @@
       {% for u in users %}
         <tr>
           <td>{{ u.username }}</td>
-          <td>{{ u.groups.all|join:", " }}</td>
+          <td>
+            <span class="badge {{ u.is_active|yesno:'active,inactive'|badge_class }}">
+              {{ u.is_active|yesno:"Active,Inactive" }}
+            </span>
+            {% if not u.is_superuser %}
+              <form method="post" action="{% url 'accounts:toggle_user_active' u.pk %}" class="inline-form">
+                {% csrf_token %}
+                <button type="submit" class="btn btn--sm btn--ghost">
+                  {{ u.is_active|yesno:"Deactivate,Reactivate" }}
+                </button>
+              </form>
+            {% endif %}
+          </td>
+          <td>
+            {% if u.is_superuser %}
+              <span>Superuser (implicit full access)</span>
+            {% else %}
+              <form method="post" action="{% url 'accounts:set_user_role' u.pk %}" class="inline-form">
+                {% csrf_token %}
+                <select name="role">
+                  {% for value, label in role_choices %}
+                    <option value="{{ value }}" {% if value == u.current_role %}selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+                <button type="submit" class="btn btn--sm">Update role</button>
+              </form>
+              <span class="text-muted">Current: {{ u.groups.all|join:", "|default:"none assigned" }}</span>
+            {% endif %}
+          </td>
           <td>
             {% for access in u.location_access_grants.all %}
               {{ access.location.name }}

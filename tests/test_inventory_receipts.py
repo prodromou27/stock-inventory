@@ -681,3 +681,87 @@ class TestReceiveStockBulk:
                 default_location=location_tree["room"],
                 lines=[],
             )
+
+
+@pytest.mark.django_db
+class TestReceiveBulkView:
+    """View-level coverage for ReceiveBulkView/ReceiveBulkLineForm — until
+    now only receive_stock_bulk() (the service) had tests; the phase 4
+    brand/model/type-free-text form refactor had no direct view test at all.
+    """
+
+    def test_full_flow_creates_product_and_receives_stock(
+        self, client, stock_manager_with_room_access, location_tree
+    ):
+        from django.urls import reverse
+
+        client.force_login(stock_manager_with_room_access)
+        response = client.post(
+            reverse("inventory:receive_bulk"),
+            {
+                "occurred_at": date.today().isoformat(),
+                "default_location": location_tree["room"].pk,
+                "default_stock_purpose": StockPurpose.INTERNAL,
+                "form-TOTAL_FORMS": "1",
+                "form-INITIAL_FORMS": "0",
+                "form-MIN_NUM_FORMS": "0",
+                "form-MAX_NUM_FORMS": "1000",
+                "form-0-brand_name": "BulkView Brand",
+                "form-0-model": "BulkView Model",
+                "form-0-product_type_name": "Router",
+                "form-0-tracking_method": "unit",
+                "form-0-vendor_serials": "SN-BULKVIEW-1",
+                "form-0-condition": "new",
+            },
+        )
+        assert response.status_code == 302
+        assert UnitAsset.objects.filter(vendor_serial="SN-BULKVIEW-1").exists()
+
+    def test_manipulated_row_location_outside_scope_rejected(
+        self,
+        client,
+        stock_manager_with_room_access,
+        administrator,
+        location_tree,
+        other_location_tree,
+    ):
+        from django.urls import reverse
+
+        from apps.locations.models import Location
+        from apps.locations.services import create_location
+
+        other_floor = create_location(
+            level=Location.Level.FLOOR,
+            name="Other Bulk Floor",
+            parent=other_location_tree["site"],
+            user=administrator,
+        )
+        other_room = create_location(
+            level=Location.Level.STORAGE_ROOM,
+            name="Other Bulk Room",
+            parent=other_floor,
+            user=administrator,
+        )
+
+        client.force_login(stock_manager_with_room_access)
+        response = client.post(
+            reverse("inventory:receive_bulk"),
+            {
+                "occurred_at": date.today().isoformat(),
+                "default_location": location_tree["room"].pk,
+                "default_stock_purpose": StockPurpose.INTERNAL,
+                "form-TOTAL_FORMS": "1",
+                "form-INITIAL_FORMS": "0",
+                "form-MIN_NUM_FORMS": "0",
+                "form-MAX_NUM_FORMS": "1000",
+                "form-0-brand_name": "BulkView Brand",
+                "form-0-model": "BulkView XCountry",
+                "form-0-product_type_name": "Router",
+                "form-0-tracking_method": "unit",
+                "form-0-vendor_serials": "SN-BULKVIEW-XCOUNTRY",
+                "form-0-condition": "new",
+                "form-0-location": other_room.pk,
+            },
+        )
+        assert response.status_code == 200
+        assert not UnitAsset.objects.filter(vendor_serial="SN-BULKVIEW-XCOUNTRY").exists()

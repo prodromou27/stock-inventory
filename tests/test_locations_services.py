@@ -133,3 +133,79 @@ class TestLocationDeactivation:
     def test_stock_manager_cannot_deactivate(self, stock_manager, location_tree):
         with pytest.raises(Exception):
             deactivate_location(location=location_tree["room"], user=stock_manager)
+
+    def test_deactivating_a_country_cascades_to_every_descendant(
+        self, administrator, location_tree
+    ):
+        country, site, floor, room = (
+            location_tree["country"],
+            location_tree["site"],
+            location_tree["floor"],
+            location_tree["room"],
+        )
+        deactivate_location(location=country, user=administrator)
+
+        for loc in (country, site, floor, room):
+            loc.refresh_from_db()
+            assert loc.is_active is False
+
+    def test_deactivating_a_country_records_descendant_count(self, administrator, location_tree):
+        country = location_tree["country"]
+        deactivate_location(location=country, user=administrator)
+
+        event = AuditEvent.objects.get(
+            object_id=str(country.pk),
+            event_type=AuditEvent.EventType.RECORD_UPDATED,
+            new_values={"is_active": False},
+        )
+        assert event.metadata["deactivated_descendant_count"] == 3  # site, floor, room
+
+    def test_deactivating_an_already_inactive_country_is_a_noop(self, administrator, location_tree):
+        country, room = location_tree["country"], location_tree["room"]
+        deactivate_location(location=country, user=administrator)
+        room.refresh_from_db()
+        assert room.is_active is False
+
+        # Reactivate just the room independently, then deactivate the country
+        # again — the already-inactive-country early-return must not silently
+        # skip re-cascading, but deactivating an already-inactive country is a
+        # no-op by design (mirrors the existing single-row no-op), so the
+        # independently-reactivated room should NOT be touched by this call.
+        reactivate_location(location=room, user=administrator)
+        room.refresh_from_db()
+        assert room.is_active is True
+
+        result = deactivate_location(location=country, user=administrator)
+        assert result.is_active is False
+        room.refresh_from_db()
+        assert room.is_active is True  # untouched — country was already inactive
+
+    def test_reactivating_a_country_does_not_cascade_to_descendants(
+        self, administrator, location_tree
+    ):
+        country, room = location_tree["country"], location_tree["room"]
+        deactivate_location(location=country, user=administrator)
+
+        reactivate_location(location=country, user=administrator)
+        country.refresh_from_db()
+        room.refresh_from_db()
+        assert country.is_active is True
+        assert room.is_active is False  # deliberately not resurrected
+
+    def test_new_child_created_under_an_active_parent_after_a_sibling_deactivation(
+        self, administrator, location_tree
+    ):
+        """A location created after its parent chain was already active again
+        is unaffected by an unrelated earlier deactivation elsewhere in the
+        tree — the parent-active check only cares about the direct parent's
+        current state, which the cascade now keeps consistent.
+        """
+        from apps.locations.services import create_location
+
+        new_room = create_location(
+            level=Location.Level.STORAGE_ROOM,
+            name="Room B",
+            parent=location_tree["floor"],
+            user=administrator,
+        )
+        assert new_room.is_active is True

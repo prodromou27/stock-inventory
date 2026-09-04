@@ -1,7 +1,8 @@
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 from django.urls import reverse
+from django.utils import timezone
 
 from apps.inventory.models import StockBalance, UnitAsset
 from apps.inventory.services.receipts import receive_stock
@@ -25,7 +26,11 @@ class TestReceiveStockView:
         response = client.post(
             reverse("inventory:receive_stock"),
             {
-                "product": unit_product.pk,
+                "brand_name": unit_product.brand.name,
+                "model": unit_product.model,
+                "sku": unit_product.sku,
+                "product_type_name": unit_product.product_type.name,
+                "tracking_method": unit_product.tracking_method,
                 "location": location_tree["room"].pk,
                 "occurred_at": date.today().isoformat(),
                 "vendor_serial": "SN-VIEW-1",
@@ -41,7 +46,11 @@ class TestReceiveStockView:
         response = client.post(
             reverse("inventory:receive_stock"),
             {
-                "product": quantity_product.pk,
+                "brand_name": quantity_product.brand.name,
+                "model": quantity_product.model,
+                "sku": quantity_product.sku,
+                "product_type_name": quantity_product.product_type.name,
+                "tracking_method": quantity_product.tracking_method,
                 "location": location_tree["room"].pk,
                 "occurred_at": date.today().isoformat(),
                 "quantity": 15,
@@ -60,6 +69,57 @@ class TestReceiveStockView:
         assert location_tree["room"] in location_choices
         assert other_location_tree["country"] not in location_choices
 
+    def test_location_defaults_to_the_single_accessible_location(
+        self, client, stock_manager_with_room_access, location_tree
+    ):
+        client.force_login(stock_manager_with_room_access)
+        response = client.get(reverse("inventory:receive_stock"))
+        assert response.context["form"]["location"].value() == location_tree["room"].pk
+
+    def test_location_defaults_to_most_recently_received_location(
+        self, client, administrator, location_tree
+    ):
+        from apps.locations.models import Location
+        from apps.locations.services import create_location
+
+        other_room = create_location(
+            level=Location.Level.STORAGE_ROOM,
+            name="Second Room",
+            parent=location_tree["floor"],
+            user=administrator,
+        )
+        product = self._unit_product(administrator)
+        receive_stock(
+            user=administrator,
+            product=product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-DEFAULT-LOC-1",
+        )
+        receive_stock(
+            user=administrator,
+            product=product,
+            location=other_room,
+            occurred_at=date.today(),
+            vendor_serial="SN-DEFAULT-LOC-2",
+        )
+        client.force_login(administrator)
+        response = client.get(reverse("inventory:receive_stock"))
+        assert response.context["form"]["location"].value() == other_room.pk
+
+    @staticmethod
+    def _unit_product(administrator):
+        from apps.catalog.models import TrackingMethod
+        from apps.catalog.services import create_product
+
+        return create_product(
+            user=administrator,
+            brand_name="DefaultLocBrand",
+            model="DefaultLocModel",
+            product_type_name="Router",
+            tracking_method=TrackingMethod.UNIT,
+        )
+
     def test_duplicate_serial_shows_warning_page(
         self, client, stock_manager_with_room_access, unit_product, location_tree
     ):
@@ -75,7 +135,11 @@ class TestReceiveStockView:
         response = client.post(
             reverse("inventory:receive_stock"),
             {
-                "product": unit_product.pk,
+                "brand_name": unit_product.brand.name,
+                "model": unit_product.model,
+                "sku": unit_product.sku,
+                "product_type_name": unit_product.product_type.name,
+                "tracking_method": unit_product.tracking_method,
                 "location": location_tree["room"].pk,
                 "occurred_at": date.today().isoformat(),
                 "vendor_serial": "SN-VIEW-DUP",
@@ -84,6 +148,85 @@ class TestReceiveStockView:
         assert response.status_code == 200
         assert response.context["show_duplicate_warning"] is True
         assert UnitAsset.objects.filter(vendor_serial="SN-VIEW-DUP").count() == 1
+
+    def test_arrival_date_defaults_to_todays_business_date(
+        self, client, stock_manager_with_room_access, location_tree
+    ):
+        client.force_login(stock_manager_with_room_access)
+        response = client.get(reverse("inventory:receive_stock"))
+        assert response.context["form"]["occurred_at"].value() == timezone.localdate()
+
+    def test_arrival_date_can_be_changed_to_a_historical_date_before_confirmation(
+        self, client, stock_manager_with_room_access, unit_product, location_tree
+    ):
+        historical_date = timezone.localdate() - timedelta(days=400)
+        client.force_login(stock_manager_with_room_access)
+        response = client.post(
+            reverse("inventory:receive_stock"),
+            {
+                "brand_name": unit_product.brand.name,
+                "model": unit_product.model,
+                "sku": unit_product.sku,
+                "product_type_name": unit_product.product_type.name,
+                "tracking_method": unit_product.tracking_method,
+                "location": location_tree["room"].pk,
+                "occurred_at": historical_date.isoformat(),
+                "vendor_serial": "SN-VIEW-HISTORICAL",
+            },
+        )
+        assert response.status_code == 302
+        asset = UnitAsset.objects.get(vendor_serial="SN-VIEW-HISTORICAL")
+        assert asset.arrival_date == historical_date
+
+    def test_future_arrival_date_rejected(
+        self, client, stock_manager_with_room_access, unit_product, location_tree
+    ):
+        future_date = timezone.localdate() + timedelta(days=1)
+        client.force_login(stock_manager_with_room_access)
+        response = client.post(
+            reverse("inventory:receive_stock"),
+            {
+                "brand_name": unit_product.brand.name,
+                "model": unit_product.model,
+                "sku": unit_product.sku,
+                "product_type_name": unit_product.product_type.name,
+                "tracking_method": unit_product.tracking_method,
+                "location": location_tree["room"].pk,
+                "occurred_at": future_date.isoformat(),
+                "vendor_serial": "SN-VIEW-FUTURE",
+            },
+        )
+        assert response.status_code == 200
+        assert "cannot be in the future" in str(response.context["form"].errors)
+        assert not UnitAsset.objects.filter(vendor_serial="SN-VIEW-FUTURE").exists()
+
+    def test_creation_audit_timestamp_and_arrival_date_are_distinct(
+        self, client, stock_manager_with_room_access, unit_product, location_tree
+    ):
+        """created_at (system audit timestamp) and arrival_date (business
+        date) must never be conflated — receiving historical stock today
+        should record today as created_at but the historical date as
+        arrival_date.
+        """
+        historical_date = timezone.localdate() - timedelta(days=30)
+        client.force_login(stock_manager_with_room_access)
+        client.post(
+            reverse("inventory:receive_stock"),
+            {
+                "brand_name": unit_product.brand.name,
+                "model": unit_product.model,
+                "sku": unit_product.sku,
+                "product_type_name": unit_product.product_type.name,
+                "tracking_method": unit_product.tracking_method,
+                "location": location_tree["room"].pk,
+                "occurred_at": historical_date.isoformat(),
+                "vendor_serial": "SN-VIEW-DISTINCT",
+            },
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-VIEW-DISTINCT")
+        assert asset.arrival_date == historical_date
+        assert asset.created_at.date() == timezone.localdate()
+        assert asset.created_by == stock_manager_with_room_access
 
 
 @pytest.mark.django_db
@@ -502,3 +645,118 @@ class TestUnitAssetListSort:
         content = response.content.decode()
         assert "status=in_stock" in content
         assert "sort=product" in content
+
+
+@pytest.mark.django_db
+class TestCustomerSearchDataView:
+    def test_anonymous_redirected_to_login(self, client):
+        response = client.get(reverse("inventory:customer_search_data"))
+        assert response.status_code == 302
+
+    def test_finds_a_registered_customer_by_name(self, client, administrator):
+        from apps.inventory.models import Customer
+
+        Customer.objects.create(name="Acme Corp", reference="ACME-01")
+        client.force_login(administrator)
+        response = client.get(reverse("inventory:customer_search_data"), {"q": "acme"})
+        results = response.json()["results"]
+        assert any(r["name"] == "Acme Corp" and r["source"] == "customer" for r in results)
+
+    def test_finds_a_historical_customer_never_formally_registered(
+        self, client, administrator, unit_product, location_tree
+    ):
+        from apps.inventory.services.assignments import deliver_to_customer
+        from apps.inventory.services.receipts import receive_stock
+
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-SEARCH-1",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-SEARCH-1")
+        deliver_to_customer(
+            user=administrator,
+            final_customer="Widgets Unlimited",
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+        )
+
+        client.force_login(administrator)
+        response = client.get(reverse("inventory:customer_search_data"), {"q": "widgets"})
+        results = response.json()["results"]
+        assert any(r["name"] == "Widgets Unlimited" and r["source"] == "history" for r in results)
+
+    def test_registered_customer_ranked_before_historical_duplicate(self, client, administrator):
+        from apps.inventory.models import Customer
+
+        Customer.objects.create(name="Acme Corp")
+        client.force_login(administrator)
+        response = client.get(reverse("inventory:customer_search_data"), {"q": "acme"})
+        results = response.json()["results"]
+        names = [r["name"] for r in results if r["name"] == "Acme Corp"]
+        assert len(names) == 1  # no duplicate between the Customer row and any historical text
+
+
+@pytest.mark.django_db
+class TestDeliverViewCustomerField:
+    def test_selecting_a_registered_customer_records_the_reference(
+        self, client, stock_manager_with_room_access, unit_product, location_tree
+    ):
+        from apps.inventory.models import Customer
+        from apps.inventory.services.receipts import receive_stock
+
+        customer = Customer.objects.create(name="Acme Corp", reference="ACME-01")
+        receive_stock(
+            user=stock_manager_with_room_access,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-DELIVER-1",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-DELIVER-1")
+
+        client.force_login(stock_manager_with_room_access)
+        response = client.post(
+            reverse("inventory:deliver"),
+            {
+                "final_customer": "Acme Corp",
+                "customer": customer.pk,
+                "occurred_at": date.today().isoformat(),
+                "unit_asset_ids": [str(asset.pk)],
+            },
+        )
+        assert response.status_code == 302
+        asset.refresh_from_db()
+        txn = asset.current_custody_transaction
+        assert txn.customer_id == customer.pk
+
+    def test_free_text_customer_without_a_registered_match_still_works(
+        self, client, stock_manager_with_room_access, unit_product, location_tree
+    ):
+        from apps.inventory.services.receipts import receive_stock
+
+        receive_stock(
+            user=stock_manager_with_room_access,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-DELIVER-2",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-DELIVER-2")
+
+        client.force_login(stock_manager_with_room_access)
+        response = client.post(
+            reverse("inventory:deliver"),
+            {
+                "final_customer": "Brand New Customer Inc",
+                "occurred_at": date.today().isoformat(),
+                "unit_asset_ids": [str(asset.pk)],
+            },
+        )
+        assert response.status_code == 302
+        asset.refresh_from_db()
+        txn = asset.current_custody_transaction
+        assert txn.customer_id is None
+        assert txn.final_customer == "Brand New Customer Inc"

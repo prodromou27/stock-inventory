@@ -234,6 +234,49 @@ class TestDeliverToCustomer:
                 unit_asset_ids=[],
             )
 
+    def test_customer_reference_is_recorded_alongside_the_name_snapshot(
+        self, administrator, unit_product, location_tree
+    ):
+        from apps.inventory.models import Customer
+
+        customer = Customer.objects.create(name="Acme Corp", reference="ACME-01")
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-D3",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-D3")
+
+        txn = deliver_to_customer(
+            user=administrator,
+            final_customer="Acme Corp",
+            customer=customer,
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+        )
+        assert txn.customer_id == customer.pk
+        assert txn.final_customer == "Acme Corp"
+
+    def test_customer_reference_is_optional(self, administrator, unit_product, location_tree):
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-D4",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-D4")
+
+        txn = deliver_to_customer(
+            user=administrator,
+            final_customer="Some Walk-in Customer",
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+        )
+        assert txn.customer_id is None
+
 
 @pytest.mark.django_db
 class TestCurrentCustodyTracking:

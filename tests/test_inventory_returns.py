@@ -94,6 +94,101 @@ class TestReturnStock:
         assert asset1.status == UnitStatus.RETURNED
         assert asset2.status == UnitStatus.ASSIGNED  # untouched
 
+    def test_multi_item_customer_delivery_then_partial_return(
+        self, administrator, unit_product, quantity_product, location_tree
+    ):
+        """Phase 6's multi-item delivery (several serialized items plus a
+        quantity line in one transaction) followed by returning only part
+        of it — the customer-delivery counterpart to
+        test_partial_return_leaves_other_lines_assigned above, plus a
+        quantity line neither of those covers.
+        """
+        from apps.inventory.services.assignments import deliver_to_customer
+
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-MULTI-1",
+        )
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-MULTI-2",
+        )
+        receive_stock(
+            user=administrator,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=10,
+        )
+        asset1 = UnitAsset.objects.get(vendor_serial="SN-MULTI-1")
+        asset2 = UnitAsset.objects.get(vendor_serial="SN-MULTI-2")
+
+        delivery = deliver_to_customer(
+            user=administrator,
+            final_customer="Acme Multi Corp",
+            occurred_at=date.today(),
+            unit_asset_ids=[asset1.pk, asset2.pk],
+            quantity_lines=[
+                {"product": quantity_product, "location": location_tree["room"], "quantity": 6}
+            ],
+        )
+
+        return_stock(
+            user=administrator,
+            original_transaction=delivery,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            unit_asset_ids=[asset1.pk],
+            quantity_lines=[{"product": quantity_product, "quantity": 2}],
+        )
+
+        asset1.refresh_from_db()
+        asset2.refresh_from_db()
+        balance = StockBalance.objects.get(product=quantity_product, location=location_tree["room"])
+        assert asset1.status == UnitStatus.RETURNED
+        assert asset2.status == UnitStatus.DELIVERED  # untouched
+        assert balance.on_hand_quantity == 6  # 10 - 6 delivered + 2 returned
+
+    def test_named_customer_return_clears_custody(self, administrator, unit_product, location_tree):
+        from apps.inventory.services.assignments import deliver_to_customer
+
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-NAMED-RETURN",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-NAMED-RETURN")
+        delivery = deliver_to_customer(
+            user=administrator,
+            final_customer="Named Customer Ltd",
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+        )
+        asset.refresh_from_db()
+        assert asset.current_custody_transaction_id == delivery.pk
+        assert asset.status == UnitStatus.DELIVERED
+
+        return_stock(
+            user=administrator,
+            original_transaction=delivery,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+        )
+
+        asset.refresh_from_db()
+        assert asset.status == UnitStatus.RETURNED
+        assert asset.current_custody_transaction_id is None
+        assert asset.current_location == location_tree["room"]
+
     def test_condition_and_accessories_captured_on_return(
         self, administrator, unit_product, location_tree
     ):

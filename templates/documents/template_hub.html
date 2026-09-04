@@ -30,7 +30,12 @@
             {% endif %}
           </td>
           <td>{{ row.template_obj.updated_at|default:"—" }}</td>
-          <td><a class="btn btn--sm" href="{% url 'documents:template_edit' row.document_type %}">Edit</a></td>
+          <td>
+            <a class="btn btn--sm" href="{% url 'documents:template_live_preview' row.document_type %}" target="_blank" rel="noopener">Preview</a>
+            {% if can_edit %}
+              <a class="btn btn--sm" href="{% url 'documents:template_edit' row.document_type %}">Edit</a>
+            {% endif %}
+          </td>
         </tr>
       {% endfor %}
     </tbody>

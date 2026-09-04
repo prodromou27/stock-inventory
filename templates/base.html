@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{{ site_name }}{% endblock %}</title>
   <meta name="theme-color" content="#2563eb">
+  <!-- The server's configured business date (settings.TIME_ZONE, via Django's
+       now template tag, which already renders in the active timezone) —
+       read by movement_forms.js's "Today" button so it sets an Arrival Date
+       field to the business date, not the browser's local date via JS Date. -->
+  <meta name="business-today" content="{% now "Y-m-d" %}">
   <!-- Synchronous and first, deliberately not deferred: sets data-theme
        before the stylesheet below paints anything, so a visitor who
        previously chose dark never sees a light flash on load. Mirrors

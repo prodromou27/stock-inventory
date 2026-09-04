@@ -10,6 +10,7 @@ from apps.catalog.services import (
     create_products_batch,
     get_or_create_brand,
     get_or_create_product_type,
+    resolve_or_create_product,
     update_product,
 )
 
@@ -376,3 +377,103 @@ class TestUpdateProductTrackingMethodLock:
         assert AuditEvent.objects.filter(
             object_id=str(unit_product.pk), event_type=AuditEvent.EventType.RECORD_UPDATED
         ).exists()
+
+
+@pytest.mark.django_db
+class TestResolveOrCreateProduct:
+    """apps.inventory's Add Stock / batch-receive rows / apps.imports all
+    resolve a product through this one function — "one stock-entry workflow
+    even if several internal records are created."
+    """
+
+    def test_creates_a_new_product_when_nothing_matches(self, administrator):
+        product = resolve_or_create_product(
+            user=administrator,
+            brand_name="NewBrand",
+            model="NewModel",
+            product_type_name="NewType",
+            tracking_method=TrackingMethod.UNIT,
+        )
+        assert product.pk is not None
+        assert Product.objects.filter(brand__name="NewBrand", model="NewModel").count() == 1
+
+    def test_silently_reuses_an_exact_brand_model_sku_match(self, administrator, unit_product):
+        resolved = resolve_or_create_product(
+            user=administrator,
+            brand_name=unit_product.brand.name,
+            model=unit_product.model,
+            product_type_name=unit_product.product_type.name,
+            tracking_method=unit_product.tracking_method,
+            sku=unit_product.sku,
+        )
+        assert resolved.pk == unit_product.pk
+        # No duplicate was created and no acknowledgement was required.
+        assert (
+            Product.objects.filter(brand=unit_product.brand, model=unit_product.model).count() == 1
+        )
+
+    def test_reuse_is_case_and_whitespace_insensitive(self, administrator, unit_product):
+        resolved = resolve_or_create_product(
+            user=administrator,
+            brand_name=f"  {unit_product.brand.name.upper()}  ",
+            model=f"  {unit_product.model.upper()}  ",
+            product_type_name=unit_product.product_type.name,
+            tracking_method=unit_product.tracking_method,
+        )
+        assert resolved.pk == unit_product.pk
+
+    def test_mismatched_tracking_method_on_an_otherwise_exact_match_is_rejected(
+        self, administrator, unit_product
+    ):
+        with pytest.raises(ValidationError, match="already exists as"):
+            resolve_or_create_product(
+                user=administrator,
+                brand_name=unit_product.brand.name,
+                model=unit_product.model,
+                product_type_name=unit_product.product_type.name,
+                tracking_method=TrackingMethod.QUANTITY,
+            )
+        # Nothing was created — the caller must resolve the conflict manually.
+        assert (
+            Product.objects.filter(brand=unit_product.brand, model=unit_product.model).count() == 1
+        )
+
+    def test_close_but_not_exact_match_requires_acknowledgement(self, administrator, unit_product):
+        """Same brand+model but a DIFFERENT sku than the existing product is
+        not an "exact" match — it must still surface as a duplicate warning,
+        not be silently created as a second product nor silently reused.
+        """
+        with pytest.raises(DuplicateProductError):
+            resolve_or_create_product(
+                user=administrator,
+                brand_name=unit_product.brand.name,
+                model=unit_product.model,
+                product_type_name=unit_product.product_type.name,
+                tracking_method=unit_product.tracking_method,
+                sku="SOME-DIFFERENT-SKU",
+            )
+
+    def test_acknowledged_duplicate_creates_a_new_product(self, administrator, unit_product):
+        created = resolve_or_create_product(
+            user=administrator,
+            brand_name=unit_product.brand.name,
+            model=unit_product.model,
+            product_type_name=unit_product.product_type.name,
+            tracking_method=unit_product.tracking_method,
+            sku="SOME-DIFFERENT-SKU",
+            duplicate_acknowledged=True,
+        )
+        assert created.pk != unit_product.pk
+        assert (
+            Product.objects.filter(brand=unit_product.brand, model=unit_product.model).count() == 2
+        )
+
+    def test_read_only_user_cannot_resolve_or_create(self, read_only_user):
+        with pytest.raises(Exception):
+            resolve_or_create_product(
+                user=read_only_user,
+                brand_name="X",
+                model="Y",
+                product_type_name="Z",
+                tracking_method=TrackingMethod.UNIT,
+            )

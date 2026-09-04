@@ -27,7 +27,13 @@
       {% if transaction.source_location %}<dt>Source location</dt><dd>{{ transaction.source_location }}</dd>{% endif %}
       {% if transaction.destination_location %}<dt>Destination location</dt><dd>{{ transaction.destination_location }}</dd>{% endif %}
       {% if transaction.project_reference %}<dt>Project reference</dt><dd>{{ transaction.project_reference }}</dd>{% endif %}
-      {% if transaction.final_customer %}<dt>Final customer</dt><dd>{{ transaction.final_customer }}</dd>{% endif %}
+      {% if transaction.final_customer %}
+        <dt>Final customer</dt>
+        <dd>
+          {{ transaction.final_customer }}
+          {% if transaction.customer.reference %}<span class="text-muted">({{ transaction.customer.reference }})</span>{% endif %}
+        </dd>
+      {% endif %}
       {% if transaction.notes %}<dt>Notes</dt><dd>{{ transaction.notes }}</dd>{% endif %}
       {% if transaction.related_transaction %}
         <dt>Related to</dt>

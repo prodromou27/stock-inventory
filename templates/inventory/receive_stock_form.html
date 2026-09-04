@@ -1,15 +1,27 @@
 {% extends "base.html" %}
 
-{% block title %}Receive Stock — Stock Inventory{% endblock %}
+{% block title %}Add Stock — Stock Inventory{% endblock %}
 
 {% block content %}
   <p><a href="{% url 'inventory:movements_hub' %}">&larr; Operations</a></p>
   <div class="page-header">
-    <h1>Receive stock</h1>
+    <h1>Add Stock</h1>
   </div>
 
   {% if form.non_field_errors %}
     <p class="messages__item messages__item--error">{{ form.non_field_errors|join:" " }}</p>
+  {% endif %}
+
+  {% if show_duplicate_product_warning %}
+    <div class="messages__item messages__item--warning">
+      <p>A product with a matching brand/model already exists:</p>
+      <ul>
+        {% for match in duplicate_product_matches %}
+          <li><a href="{{ match.get_absolute_url }}">{{ match }}</a></li>
+        {% endfor %}
+      </ul>
+      <p>Submit again to confirm this is a genuinely different product.</p>
+    </div>
   {% endif %}
 
   {% if show_duplicate_warning %}
@@ -32,6 +44,14 @@
     {% for field in form %}
       {% include "_form_field.html" with field=field %}
     {% endfor %}
+    {% if show_duplicate_product_warning %}
+      <p>
+        <label>
+          <input type="checkbox" name="duplicate_acknowledged" value="true" checked>
+          I confirm this is a genuinely different product.
+        </label>
+      </p>
+    {% endif %}
     {% if show_duplicate_warning %}
       <p>
         <label>
@@ -41,7 +61,14 @@
       </p>
     {% endif %}
     <div class="form-actions">
-      <button type="submit" class="btn btn--primary">Receive</button>
+      <button type="submit" class="btn btn--primary">Add Stock</button>
     </div>
   </form>
+
+  <datalist id="brand-options">
+    {% for name in brand_choices %}<option value="{{ name }}">{% endfor %}
+  </datalist>
+  <datalist id="product-type-options">
+    {% for name in product_type_choices %}<option value="{{ name }}">{% endfor %}
+  </datalist>
 {% endblock %}

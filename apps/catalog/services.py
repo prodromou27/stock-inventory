@@ -237,6 +237,64 @@ def create_product(
     return product
 
 
+def resolve_or_create_product(
+    *,
+    user,
+    brand_name,
+    model,
+    product_type_name,
+    tracking_method,
+    sku="",
+    duplicate_acknowledged=False,
+):
+    """The single product-resolution path for every "receive without a
+    pre-existing Product" entry point (Add Stock, batch receive rows, Excel
+    import) — reuses an exact, unambiguous match silently; otherwise behaves
+    exactly like create_product() (raises DuplicateProductError for a
+    close-but-not-exact match pending acknowledgement, or creates fresh when
+    there's no match at all). One shared function so Add Stock and the
+    import pipeline (apps.imports.services._get_or_create_import_product)
+    can never drift into two different notions of "the same product."
+
+    "Exact reuse" = brand + normalized_model + normalized_sku all match
+    (blank sku on both sides counts as a match) AND the tracking method
+    agrees — a mismatched tracking method on an otherwise-exact match is
+    never silently reused (receiving a serialized item against a
+    quantity-tracked product, or vice versa, would violate UnitAsset.clean()
+    downstream), so that case is surfaced as a clear error instead.
+    """
+    require_role(user, ADMINISTRATOR, STOCK_MANAGER)
+    brand = get_or_create_brand(brand_name, user=user)
+
+    normalized_model = normalize_whitespace(model).lower()
+    normalized_sku = normalize_whitespace(sku).lower()
+    exact_match = (
+        Product.objects.filter(
+            brand=brand, normalized_model=normalized_model, normalized_sku=normalized_sku
+        )
+        .select_related("brand", "product_type")
+        .first()
+    )
+    if exact_match is not None:
+        if exact_match.tracking_method != tracking_method:
+            raise ValidationError(
+                f"'{brand_name} {model}' already exists as "
+                f"{exact_match.get_tracking_method_display()}-tracked, but this receipt is "
+                f"{TrackingMethod(tracking_method).label}-tracked. Resolve the mismatch manually."
+            )
+        return exact_match
+
+    return create_product(
+        user=user,
+        brand_name=brand_name,
+        model=model,
+        product_type_name=product_type_name,
+        tracking_method=tracking_method,
+        sku=sku,
+        duplicate_acknowledged=duplicate_acknowledged,
+    )
+
+
 def create_products_batch(*, user, rows):
     """Quick Add (apps.catalog.views.QuickAddProductsView) — several products
     entered as one submission instead of one page load each. Calls

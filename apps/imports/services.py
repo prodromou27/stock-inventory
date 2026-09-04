@@ -10,9 +10,8 @@ from django.utils import timezone
 from apps.audit.models import AuditEvent
 from apps.audit.services import record_event
 from apps.catalog.models import Brand, Product, TrackingMethod
-from apps.catalog.services import check_duplicate_products, create_product
+from apps.catalog.services import check_duplicate_products, resolve_or_create_product
 from apps.core.authorization import ADMINISTRATOR, require_role
-from apps.core.text import normalize_whitespace
 from apps.inventory.models import StockPurpose
 from apps.inventory.services.receipts import receive_stock
 
@@ -169,6 +168,12 @@ def _stage_row(raw, *, default_location=None, default_stock_purpose=StockPurpose
             f"Arrival Date '{raw.get('Arrival Date')}' could not be parsed; "
             "today's date will be used."
         )
+    # Resolved and frozen here, at staging time — not deferred to execute
+    # time — so the batch-detail preview shows the exact date that will be
+    # written, even if the batch sits for days before being executed.
+    used_default_arrival_date = arrival_date is None
+    if arrival_date is None:
+        arrival_date = timezone.localdate()
 
     # apps.inventory.services.duplicates.check_duplicate_serial is scope-aware
     # and requires a real user; staging happens before we know which user will
@@ -219,7 +224,8 @@ def _stage_row(raw, *, default_location=None, default_stock_purpose=StockPurpose
         "stock_purpose": stock_purpose,
         "project_reference": normalize_text(raw.get("Project Ref. #")),
         "final_customer": normalize_text(raw.get("FINAL CUSTOMER")),
-        "arrival_date": arrival_date.isoformat() if arrival_date else None,
+        "arrival_date": arrival_date.isoformat(),
+        "used_default_arrival_date": used_default_arrival_date,
         "notes": notes,
         "duplicate_serial_ids": [str(pk) for pk in duplicate_serial_ids],
         "duplicate_product_ids": [str(pk) for pk in duplicate_product_ids],
@@ -470,6 +476,11 @@ def _execute_row(row, *, user):
             product_type_name=data["product_type_name"],
             tracking_method=data["tracking_method"],
         )
+        # _stage_row() always resolves and freezes a concrete arrival_date now
+        # (defaulting blank/unparseable cells to that day's business date at
+        # staging time, not here) — the `else` fallback only protects a batch
+        # staged under an older version of this code that's still sitting
+        # PREVIEWED when this runs.
         arrival_date = (
             datetime.date.fromisoformat(data["arrival_date"])
             if data.get("arrival_date")
@@ -514,22 +525,20 @@ def _execute_row(row, *, user):
 
 
 def _get_or_create_import_product(*, user, brand_name, model, product_type_name, tracking_method):
-    """create_product() always inserts a new Product row, even when
-    duplicate_acknowledged=True — that's correct for the interactive
-    "I know this looks like a duplicate but I mean it" flow, but wrong here:
-    every row in a batch that shares the same brand/model must resolve to
-    the *same* Product, not a fresh duplicate per row.
+    """Thin wrapper over the shared apps.catalog.services.resolve_or_create_product()
+    — every row in a batch that shares the same brand/model must resolve to
+    the *same* Product, not a fresh duplicate per row, and Add Stock's manual
+    entry point needs the identical reuse-or-create logic, so both go
+    through the one function rather than two independently-maintained copies
+    of "what counts as the same product."  duplicate_acknowledged=True
+    always: an import row that isn't an exact reuse creates a new product
+    outright rather than pausing for interactive confirmation (unlike Add
+    Stock's manual flow, an import batch has no per-row human in the loop at
+    execute time — the preview step is where that judgment call already
+    happened, per apps.imports.services._stage_row()'s duplicate-product
+    warning).
     """
-    normalized_model = normalize_whitespace(model).lower()
-    brand = Brand.objects.filter(name__iexact=brand_name).first()
-    if brand:
-        existing = Product.objects.filter(
-            brand=brand, normalized_model=normalized_model, sku=""
-        ).first()
-        if existing:
-            return existing
-
-    return create_product(
+    return resolve_or_create_product(
         user=user,
         brand_name=brand_name,
         model=model,

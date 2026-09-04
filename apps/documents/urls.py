@@ -32,6 +32,11 @@ urlpatterns = [
     ),
     path("templates/", views.DocumentTemplateHubView.as_view(), name="template_hub"),
     path(
+        "templates/<str:document_type>/live-preview/",
+        views.DocumentTemplateLivePreviewView.as_view(),
+        name="template_live_preview",
+    ),
+    path(
         "templates/<str:document_type>/",
         views.DocumentTemplateEditView.as_view(),
         name="template_edit",

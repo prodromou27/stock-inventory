@@ -26,11 +26,19 @@ from .ledger import (
 
 
 @transaction.atomic
-def correct_unit_status(*, user, unit_asset, to_status, occurred_at, reason, to_location=None):
+def correct_unit_status(
+    *, user, unit_asset, to_status, occurred_at, reason, to_location=None, arrival_date=None
+):
     """Administrator-only. Forces an asset to any status, bypassing the
     normal transition table (spec §8/§12, doc 03) — e.g. recovering a Lost
     asset, or Damaged -> In Stock after repair. Always audited with a reason;
     the original history is preserved, never rewritten.
+
+    `arrival_date`, when given, is the one path to change a UnitAsset's
+    Arrival Date after receipt — ordinary editing never touches it; this is
+    the audited correction. Independent of `occurred_at` (the date this
+    correction itself took effect) and of created_at/created_by (who/when the
+    row was inserted) — three distinct, never-conflated timestamps.
     """
     require_role(user, ADMINISTRATOR)
     if not reason:
@@ -39,6 +47,9 @@ def correct_unit_status(*, user, unit_asset, to_status, occurred_at, reason, to_
     asset = UnitAsset.objects.select_for_update().get(pk=unit_asset.pk)
     from_status = asset.status
     from_location = asset.current_location
+    from_arrival_date = asset.arrival_date
+    if arrival_date is not None:
+        asset.arrival_date = arrival_date
     resolved_location = to_location if to_location is not None else from_location
     requires_location = {UnitStatus.IN_STOCK, UnitStatus.RESERVED, UnitStatus.RETURNED}
     requires_no_location = {
@@ -70,19 +81,25 @@ def correct_unit_status(*, user, unit_asset, to_status, occurred_at, reason, to_
         notes=reason,
     )
 
+    old_values = {
+        "status": from_status,
+        "location": str(from_location) if from_location else None,
+    }
+    new_values = {
+        "status": to_status,
+        "location": str(resolved_location) if resolved_location else None,
+    }
+    if arrival_date is not None:
+        old_values["arrival_date"] = from_arrival_date.isoformat() if from_arrival_date else None
+        new_values["arrival_date"] = arrival_date.isoformat()
+
     record_event(
         actor=user,
         event_type=AuditEvent.EventType.ADMIN_CORRECTION,
         obj=txn,
         summary=f"Administrator correction: {asset} {from_status} -> {to_status} ({reason})",
-        old_values={
-            "status": from_status,
-            "location": str(from_location) if from_location else None,
-        },
-        new_values={
-            "status": to_status,
-            "location": str(resolved_location) if resolved_location else None,
-        },
+        old_values=old_values,
+        new_values=new_values,
     )
     return txn
 

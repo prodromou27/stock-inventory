@@ -12,7 +12,6 @@ from ..models import (
     Condition,
     InventoryTransactionLine,
     MovementType,
-    StockBalance,
     StockPurpose,
     UnitAsset,
     UnitStatus,
@@ -245,12 +244,9 @@ def _receive_quantity(
         notes=notes,
     )
 
-    balance, _ = StockBalance.objects.select_for_update().get_or_create(
-        product=product, location=location, stock_purpose=stock_purpose
+    balance = adjust_balance(
+        product=product, location=location, delta=quantity, stock_purpose=stock_purpose
     )
-    balance.on_hand_quantity += quantity
-    balance.full_clean()
-    balance.save()
 
     InventoryTransactionLine.objects.create(
         transaction=txn,
@@ -365,13 +361,16 @@ def receive_stock_bulk(
 
     `lines`: a list of dicts, each shaped either
         {"product": Product, "vendor_serials": [str, ...], "location"?: Location,
-         "stock_purpose"?: str, "condition"?: str, "accessories"?: str, "notes"?: str}
+         "stock_purpose"?: str, "arrival_date"?: date, "condition"?: str,
+         "accessories"?: str, "notes"?: str}
     for a unit-tracked product, or
         {"product": Product, "quantity": int, "location"?: Location,
          "stock_purpose"?: str, "notes"?: str}
-    for a quantity-tracked product. Per-line `location`/`stock_purpose` fall
-    back to `default_location`/`default_stock_purpose` when omitted — "apply
-    one location/purpose to the batch or override it for individual items".
+    for a quantity-tracked product. Per-line `location`/`stock_purpose`/
+    `arrival_date` fall back to `default_location`/`default_stock_purpose`/
+    `occurred_at` when omitted — "apply one location/purpose/date to the
+    batch or override it for individual items". Quantity lines have no
+    per-unit arrival date to override (StockBalance isn't per-unit).
     """
     require_role(user, ADMINISTRATOR, STOCK_MANAGER)
     if not lines:
@@ -411,6 +410,7 @@ def receive_stock_bulk(
                     "product": product,
                     "location": location,
                     "stock_purpose": stock_purpose,
+                    "arrival_date": raw_line.get("arrival_date") or occurred_at,
                     "serials": serials,
                     "condition": raw_line.get("condition") or Condition.USED,
                     "accessories": raw_line.get("accessories", ""),
@@ -468,7 +468,7 @@ def receive_stock_bulk(
                     final_customer=final_customer,
                     supplier=supplier,
                     invoice_number=invoice_number,
-                    arrival_date=occurred_at,
+                    arrival_date=resolved["arrival_date"],
                     condition=resolved["condition"],
                     accessories=resolved["accessories"],
                     notes=resolved["notes"],

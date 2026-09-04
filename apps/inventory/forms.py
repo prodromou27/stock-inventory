@@ -1,11 +1,22 @@
 from django import forms
 from django.forms import formset_factory
+from django.utils import timezone
 
 from apps.catalog.models import Product, TrackingMethod
 from apps.locations.models import Location
 from apps.locations.scoping import accessible_locations
 
-from .models import Condition, StockPurpose, UnitStatus, WipeMethod
+from .models import Condition, Customer, StockPurpose, UnitStatus, WipeMethod
+
+
+def validate_not_future_date(value):
+    """Arrival Date may be any date up to and including today (historical
+    stock is expected — old inventory being entered late), but never a date
+    that hasn't happened yet. Scoped to receiving's Arrival Date only, not
+    every movement form's occurred_at — see the plan's phase 3 note.
+    """
+    if value and value > timezone.localdate():
+        raise forms.ValidationError("Arrival date cannot be in the future.")
 
 
 def _scoped_location_queryset(user):
@@ -55,13 +66,51 @@ class TrackingMethodSelect(forms.Select):
         return option
 
 
+class TrackingChoiceSelect(forms.Select):
+    """A plain <select> of the two TrackingMethod values themselves, each
+    option carrying data-tracking-method equal to its own value — reuses
+    static/js/movement_forms.js's existing applyTrackingVisibility() (built
+    for TrackingMethodSelect above, which looks up an *external* product's
+    tracking method) for the Add Stock case, where there's no product yet to
+    look one up from: the operator picks the tracking method directly.
+    """
+
+    def create_option(self, name, value, label, selected, index, subindex=None, attrs=None):
+        option = super().create_option(name, value, label, selected, index, subindex, attrs)
+        if value not in (None, ""):
+            option["attrs"]["data-tracking-method"] = value
+        return option
+
+
 class ReceiveStockForm(forms.Form):
-    product = forms.ModelChoiceField(
-        queryset=Product.objects.filter(is_active=True).select_related("brand"),
-        widget=TrackingMethodSelect(attrs={"data-filterable": "true"}),
+    """No pre-existing Product is required — Brand/Model/Type are free text
+    with <datalist> autocomplete (the same pattern apps.catalog.forms.
+    ProductForm/QuickAddProductRowForm already use), resolved via
+    apps.catalog.services.resolve_or_create_product() in the view: reused
+    silently on an exact match, flagged for acknowledgement on a close
+    match, created outright otherwise. SKU stays optional end-to-end.
+    """
+
+    brand_name = forms.CharField(
+        max_length=120,
+        label="Brand",
+        widget=forms.TextInput(attrs={"list": "brand-options", "autocomplete": "off"}),
+    )
+    model = forms.CharField(max_length=120, label="Model")
+    sku = forms.CharField(max_length=60, required=False, label="SKU (optional)")
+    product_type_name = forms.CharField(
+        max_length=80,
+        label="Type",
+        widget=forms.TextInput(attrs={"list": "product-type-options", "autocomplete": "off"}),
+    )
+    tracking_method = forms.ChoiceField(
+        choices=TrackingMethod.choices, label="Tracking method", widget=TrackingChoiceSelect
     )
     location = forms.ModelChoiceField(queryset=Location.objects.none())
-    occurred_at = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
+    occurred_at = forms.DateField(
+        label="Arrival date",
+        widget=forms.DateInput(attrs={"type": "date", "data-arrival-date-field": "true"}),
+    )
     stock_purpose = forms.ChoiceField(
         choices=StockPurpose.choices,
         required=False,
@@ -95,15 +144,18 @@ class ReceiveStockForm(forms.Form):
         super().__init__(*args, **kwargs)
         _apply_scoped_location(self.fields["location"], user)
 
+    def clean_occurred_at(self):
+        value = self.cleaned_data["occurred_at"]
+        validate_not_future_date(value)
+        return value
+
     def clean(self):
         cleaned = super().clean()
-        product = cleaned.get("product")
-        if (
-            product
-            and product.tracking_method == TrackingMethod.QUANTITY
-            and not cleaned.get("quantity")
-        ):
+        tracking_method = cleaned.get("tracking_method")
+        if tracking_method == TrackingMethod.QUANTITY and not cleaned.get("quantity"):
             self.add_error("quantity", "Quantity is required for quantity-tracked products.")
+        if tracking_method == TrackingMethod.UNIT and not cleaned.get("vendor_serial"):
+            self.add_error("vendor_serial", "Vendor serial is required for unit-tracked products.")
         cleaned["stock_purpose"] = cleaned.get("stock_purpose") or StockPurpose.INTERNAL
         if cleaned["stock_purpose"] == StockPurpose.CUSTOMER and not cleaned.get("final_customer"):
             self.add_error("final_customer", "Final customer is required for Customer stock.")
@@ -124,7 +176,8 @@ class QuickReceiveForm(forms.Form):
     )
     location = forms.ModelChoiceField(queryset=Location.objects.none())
     occurred_at = forms.DateField(
-        widget=forms.DateInput(attrs={"type": "date"}), label="Arrival date"
+        widget=forms.DateInput(attrs={"type": "date", "data-arrival-date-field": "true"}),
+        label="Arrival date",
     )
     stock_purpose = forms.ChoiceField(
         choices=StockPurpose.choices,
@@ -160,6 +213,11 @@ class QuickReceiveForm(forms.Form):
         if not any(line.strip() for line in lines):
             raise forms.ValidationError("Enter at least one serial.")
         return lines
+
+    def clean_occurred_at(self):
+        value = self.cleaned_data["occurred_at"]
+        validate_not_future_date(value)
+        return value
 
     def clean(self):
         cleaned = super().clean()
@@ -270,7 +328,15 @@ class ReserveForm(_QuantityLocationMixin, _BaseMovementForm):
     final_customer = forms.CharField(max_length=120, required=False)
 
 
-class AssignForm(_QuantityLocationMixin, _BaseMovementForm):
+class AssignForm(_BaseMovementForm):
+    """Deliberately not _QuantityLocationMixin — per direct instruction, the
+    Stock Manager picks specific items (unit assets from _asset_picker.html,
+    quantity rows from _balance_picker.html) and enters only the date and
+    the employee's name/reference; location, stock purpose, and product are
+    all implicit in *which item/row was selected*, never a separate
+    dropdown. See views._quantity_lines_from_balance_picker().
+    """
+
     employee_name = forms.CharField(max_length=120, label="Employee name")
     recipient_reference = forms.CharField(
         max_length=120, required=False, label="Employee reference (optional)"
@@ -283,15 +349,43 @@ class AssignForm(_QuantityLocationMixin, _BaseMovementForm):
     condition = forms.ChoiceField(choices=Condition.choices, required=False, initial=Condition.USED)
     accessories = forms.CharField(required=False, widget=forms.Textarea)
 
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, user=user, **kwargs)
+        del self.fields["quantity_product"]
+        del self.fields["quantity_amount"]
 
-class DeliverForm(_QuantityLocationMixin, _BaseMovementForm):
-    final_customer = forms.CharField(max_length=120, label="Final customer")
+
+class DeliverForm(_BaseMovementForm):
+    """final_customer stays the historical name snapshot recorded on the
+    transaction and remains fully free text (spec §22: never a hard,
+    required lookup) — customer is an optional live reference to a matching
+    Customer row, set by static/js/movement_forms.js when the typed text
+    exactly matches a name/reference the customer search datalist offered.
+    """
+
+    final_customer = forms.CharField(
+        max_length=120,
+        label="Final customer",
+        widget=forms.TextInput(
+            attrs={"list": "customer-options", "autocomplete": "off", "data-customer-field": "true"}
+        ),
+    )
+    customer = forms.ModelChoiceField(
+        queryset=Customer.objects.filter(is_active=True),
+        required=False,
+        widget=forms.HiddenInput(attrs={"data-customer-id-field": "true"}),
+    )
     recipient_reference = forms.CharField(
         max_length=120, required=False, label="Customer reference (optional)"
     )
     project_reference = forms.CharField(max_length=120, required=False)
     condition = forms.ChoiceField(choices=Condition.choices, required=False, initial=Condition.USED)
     accessories = forms.CharField(required=False, widget=forms.Textarea)
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, user=user, **kwargs)
+        del self.fields["quantity_product"]
+        del self.fields["quantity_amount"]
 
 
 class ReturnForm(forms.Form):
@@ -375,10 +469,21 @@ class RepairDamagedForm(forms.Form):
 
 
 class AdminCorrectUnitForm(forms.Form):
+    """Also the only path to change arrival_date after receipt — ordinary
+    editing must never touch it (spec-adjacent request), so it's exposed
+    here, optional, alongside the existing status/location correction,
+    rather than as a second separate correction screen.
+    """
+
     STATUS_CHOICES = UnitStatus.choices
 
     to_status = forms.ChoiceField(choices=STATUS_CHOICES)
     to_location = forms.ModelChoiceField(queryset=Location.objects.none(), required=False)
+    arrival_date = forms.DateField(
+        required=False,
+        label="Correct arrival date (optional)",
+        widget=forms.DateInput(attrs={"type": "date"}),
+    )
     occurred_at = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
     reason = forms.CharField(widget=forms.Textarea)
 
@@ -387,6 +492,11 @@ class AdminCorrectUnitForm(forms.Form):
         self.fields["to_location"].queryset = Location.objects.filter(is_active=True).order_by(
             "level", "name"
         )
+
+    def clean_arrival_date(self):
+        value = self.cleaned_data["arrival_date"]
+        validate_not_future_date(value)
+        return value
 
 
 class AdminCorrectBalanceForm(forms.Form):
@@ -443,7 +553,8 @@ class ReceiveBulkBatchForm(forms.Form):
     """
 
     occurred_at = forms.DateField(
-        widget=forms.DateInput(attrs={"type": "date"}), label="Arrival date"
+        widget=forms.DateInput(attrs={"type": "date", "data-arrival-date-field": "true"}),
+        label="Arrival date",
     )
     default_location = forms.ModelChoiceField(
         queryset=Location.objects.none(), label="Default location"
@@ -463,6 +574,11 @@ class ReceiveBulkBatchForm(forms.Form):
         super().__init__(*args, **kwargs)
         _apply_scoped_location(self.fields["default_location"], user)
 
+    def clean_occurred_at(self):
+        value = self.cleaned_data["occurred_at"]
+        validate_not_future_date(value)
+        return value
+
     def clean(self):
         cleaned = super().clean()
         if cleaned.get("default_stock_purpose") == StockPurpose.CUSTOMER and not cleaned.get(
@@ -481,10 +597,25 @@ class ReceiveBulkLineForm(forms.Form):
     apps.catalog.forms.QuickAddProductFormSet's convention.
     """
 
-    product = forms.ModelChoiceField(
-        queryset=Product.objects.filter(is_active=True).select_related("brand"),
+    brand_name = forms.CharField(
+        max_length=120,
         required=False,
-        widget=TrackingMethodSelect(attrs={"data-filterable": "true"}),
+        label="Brand",
+        widget=forms.TextInput(attrs={"list": "brand-options", "autocomplete": "off"}),
+    )
+    model = forms.CharField(max_length=120, required=False, label="Model")
+    sku = forms.CharField(max_length=60, required=False, label="SKU (optional)")
+    product_type_name = forms.CharField(
+        max_length=80,
+        required=False,
+        label="Type",
+        widget=forms.TextInput(attrs={"list": "product-type-options", "autocomplete": "off"}),
+    )
+    tracking_method = forms.ChoiceField(
+        choices=TrackingMethod.choices,
+        required=False,
+        label="Tracking method",
+        widget=TrackingChoiceSelect,
     )
     vendor_serials = forms.CharField(
         required=False,
@@ -498,6 +629,11 @@ class ReceiveBulkLineForm(forms.Form):
     stock_purpose = forms.ChoiceField(
         choices=StockPurpose.choices, required=False, label="Stock purpose override"
     )
+    arrival_date_override = forms.DateField(
+        required=False,
+        label="Arrival date override",
+        widget=forms.DateInput(attrs={"type": "date"}),
+    )
     condition = forms.ChoiceField(choices=Condition.choices, required=False, initial=Condition.NEW)
     accessories = forms.CharField(required=False, widget=forms.Textarea)
     notes = forms.CharField(required=False, widget=forms.Textarea)
@@ -506,19 +642,27 @@ class ReceiveBulkLineForm(forms.Form):
         super().__init__(*args, **kwargs)
         _apply_scoped_location(self.fields["location"], user)
 
+    def clean_arrival_date_override(self):
+        value = self.cleaned_data["arrival_date_override"]
+        validate_not_future_date(value)
+        return value
+
     def clean(self):
         cleaned = super().clean()
-        product = cleaned.get("product")
-        if not product:
+        if not cleaned.get("brand_name") and not cleaned.get("model"):
             return cleaned  # blank row — silently skipped, not an error
-        if product.tracking_method == TrackingMethod.UNIT:
+        for field_name in ("brand_name", "model", "product_type_name", "tracking_method"):
+            if not cleaned.get(field_name):
+                self.add_error(field_name, "This field is required.")
+        tracking_method = cleaned.get("tracking_method")
+        if tracking_method == TrackingMethod.UNIT:
             serials = [
                 s.strip() for s in (cleaned.get("vendor_serials") or "").splitlines() if s.strip()
             ]
             if not serials:
                 self.add_error("vendor_serials", "Enter at least one serial for this product.")
             cleaned["parsed_serials"] = serials
-        elif not cleaned.get("quantity"):
+        elif tracking_method == TrackingMethod.QUANTITY and not cleaned.get("quantity"):
             self.add_error("quantity", "Quantity is required for quantity-tracked products.")
         return cleaned
 

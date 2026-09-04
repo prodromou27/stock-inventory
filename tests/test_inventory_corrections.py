@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 from django.core.exceptions import ValidationError
@@ -130,6 +130,61 @@ class TestCorrectUnitStatus:
         assert event.old_values["status"] == UnitStatus.IN_STOCK
         assert event.new_values["status"] == UnitStatus.DAMAGED
 
+    def test_administrator_can_correct_arrival_date(
+        self, administrator, unit_product, location_tree
+    ):
+        original_date = date.today()
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=original_date,
+            vendor_serial="SN-ARRIVAL-CORRECT",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-ARRIVAL-CORRECT")
+        corrected_date = original_date - timedelta(days=10)
+
+        correct_unit_status(
+            user=administrator,
+            unit_asset=asset,
+            to_status=asset.status,
+            occurred_at=date.today(),
+            reason="Arrival date was mis-entered",
+            to_location=asset.current_location,
+            arrival_date=corrected_date,
+        )
+        asset.refresh_from_db()
+        assert asset.arrival_date == corrected_date
+
+        event = AuditEvent.objects.filter(event_type=AuditEvent.EventType.ADMIN_CORRECTION).latest(
+            "occurred_at"
+        )
+        assert event.old_values["arrival_date"] == original_date.isoformat()
+        assert event.new_values["arrival_date"] == corrected_date.isoformat()
+
+    def test_arrival_date_unaffected_when_correction_omits_it(
+        self, administrator, unit_product, location_tree
+    ):
+        original_date = date.today()
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=original_date,
+            vendor_serial="SN-ARRIVAL-UNCHANGED",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-ARRIVAL-UNCHANGED")
+
+        correct_unit_status(
+            user=administrator,
+            unit_asset=asset,
+            to_status=UnitStatus.DAMAGED,
+            occurred_at=date.today(),
+            reason="Found damaged",
+        )
+        asset.refresh_from_db()
+        assert asset.arrival_date == original_date
+
 
 @pytest.mark.django_db
 class TestCorrectBalance:
@@ -236,6 +291,117 @@ class TestReverseTransaction:
         )
         balance = StockBalance.objects.get(product=quantity_product, location=location_tree["room"])
         assert balance.on_hand_quantity == 0
+
+    def test_reverses_purpose_change(self, administrator, quantity_product, location_tree):
+        """A PURPOSE_CHANGE transaction has no dedicated branch in
+        reverse_transaction() — it falls through to the generic quantity-line
+        branch, which must still restore both buckets correctly since each
+        line snapshots its own stock_purpose.
+        """
+        from apps.inventory.models import StockPurpose
+        from apps.inventory.services.purpose import reclassify_quantity_purpose
+
+        receive_stock(
+            user=administrator,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=10,
+        )
+        reclassify_txn = reclassify_quantity_purpose(
+            user=administrator,
+            product=quantity_product,
+            location=location_tree["room"],
+            from_purpose=StockPurpose.INTERNAL,
+            to_purpose=StockPurpose.CUSTOMER,
+            quantity=4,
+            occurred_at=date.today(),
+            reason="Reserved for customer order",
+        )
+
+        reverse_transaction(
+            user=administrator,
+            original_transaction=reclassify_txn,
+            occurred_at=date.today(),
+            reason="Reclassified in error",
+        )
+
+        internal = StockBalance.objects.get(
+            product=quantity_product,
+            location=location_tree["room"],
+            stock_purpose=StockPurpose.INTERNAL,
+        )
+        customer = StockBalance.objects.get(
+            product=quantity_product,
+            location=location_tree["room"],
+            stock_purpose=StockPurpose.CUSTOMER,
+        )
+        assert internal.on_hand_quantity == 10
+        assert customer.on_hand_quantity == 0
+
+    def test_reverses_a_customer_purpose_transfer(
+        self, administrator, quantity_product, location_tree, other_location_tree
+    ):
+        """Confirms StockPurpose isn't just correctly reversed for the new
+        PURPOSE_CHANGE type — an ordinary transfer done under Customer
+        purpose must also reverse into the same (not Internal) bucket.
+        """
+        from apps.inventory.models import StockPurpose
+        from apps.locations.models import Location
+        from apps.locations.services import create_location
+
+        other_floor = create_location(
+            level=Location.Level.FLOOR,
+            name="Reversal Floor",
+            parent=other_location_tree["site"],
+            user=administrator,
+        )
+        other_room = create_location(
+            level=Location.Level.STORAGE_ROOM,
+            name="Reversal Room",
+            parent=other_floor,
+            user=administrator,
+        )
+        receive_stock(
+            user=administrator,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=10,
+            stock_purpose=StockPurpose.CUSTOMER,
+            final_customer="Acme Co",
+        )
+        transfer_txn = bulk_transfer(
+            user=administrator,
+            destination_location=other_room,
+            occurred_at=date.today(),
+            quantity_lines=[
+                {
+                    "product": quantity_product,
+                    "source_location": location_tree["room"],
+                    "quantity": 6,
+                    "stock_purpose": StockPurpose.CUSTOMER,
+                }
+            ],
+        )
+
+        reverse_transaction(
+            user=administrator,
+            original_transaction=transfer_txn,
+            occurred_at=date.today(),
+            reason="Wrong destination",
+        )
+
+        source = StockBalance.objects.get(
+            product=quantity_product,
+            location=location_tree["room"],
+            stock_purpose=StockPurpose.CUSTOMER,
+        )
+        dest = StockBalance.objects.get(
+            product=quantity_product, location=other_room, stock_purpose=StockPurpose.CUSTOMER
+        )
+        assert source.on_hand_quantity == 10
+        assert dest.on_hand_quantity == 0
 
     def test_cannot_reverse_twice(self, administrator, unit_product, location_tree):
         receive_stock(
