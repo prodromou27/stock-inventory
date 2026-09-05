@@ -9,7 +9,7 @@ from datetime import date
 import pytest
 from django.urls import reverse
 
-from apps.catalog.models import Brand, Product, ProductType, TrackingMethod
+from apps.catalog.models import Brand, ItemCategory, Product, ProductType, TrackingMethod
 from apps.inventory.models import UnitAsset, UnitStatus
 
 
@@ -23,6 +23,7 @@ def bulk_assets(administrator, location_tree):
         normalized_model="perf model",
         product_type=product_type,
         tracking_method=TrackingMethod.UNIT,
+        category=ItemCategory.SERIALIZED_ASSET,
         created_by=administrator,
         updated_by=administrator,
     )

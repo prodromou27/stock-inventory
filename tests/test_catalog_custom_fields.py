@@ -3,7 +3,7 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.urls import reverse
 
 from apps.catalog.forms import ProductForm, custom_field_key
-from apps.catalog.models import ProductCustomFieldDefinition, ProductCustomFieldType
+from apps.catalog.models import ItemCategory, ProductCustomFieldDefinition, ProductCustomFieldType
 from apps.catalog.services import (
     create_custom_field_definition,
     create_product,
@@ -100,7 +100,7 @@ class TestCustomFieldValuesOnProduct:
             brand_name="Fortinet",
             model="FG-100F",
             product_type_name="Firewall",
-            tracking_method="unit",
+            category=ItemCategory.SERIALIZED_ASSET,
             custom_field_values={str(notes_field.pk): "Handle with care"},
         )
         assert product.custom_field_values == {str(notes_field.pk): "Handle with care"}
@@ -111,7 +111,7 @@ class TestCustomFieldValuesOnProduct:
             brand_name="Fortinet",
             model="FG-100F",
             product_type_name="Firewall",
-            tracking_method="unit",
+            category=ItemCategory.SERIALIZED_ASSET,
             custom_field_values={str(notes_field.pk): "Updated note"},
         )
         assert updated.custom_field_values == {str(notes_field.pk): "Updated note"}
@@ -124,7 +124,7 @@ class TestCustomFieldValuesOnProduct:
             brand_name="Fortinet",
             model="FG-100F",
             product_type_name="Firewall",
-            tracking_method="unit",
+            category=ItemCategory.SERIALIZED_ASSET,
             custom_field_values={str(warranty_field.pk): datetime.date(2027, 6, 1)},
         )
         assert product.custom_field_values == {str(warranty_field.pk): "2027-06-01"}
@@ -135,7 +135,7 @@ class TestCustomFieldValuesOnProduct:
             brand_name="Fortinet",
             model="FG-100F",
             product_type_name="Firewall",
-            tracking_method="unit",
+            category=ItemCategory.SERIALIZED_ASSET,
             custom_field_values={"not-a-real-definition-id": "whatever"},
         )
         assert product.custom_field_values == {}
@@ -146,7 +146,7 @@ class TestCustomFieldValuesOnProduct:
             brand_name="Fortinet",
             model="FG-100F",
             product_type_name="Firewall",
-            tracking_method="unit",
+            category=ItemCategory.SERIALIZED_ASSET,
             custom_field_values={str(notes_field.pk): ""},
         )
         assert product.custom_field_values == {}
@@ -159,7 +159,7 @@ class TestCustomFieldValuesOnProduct:
             brand_name="Fortinet",
             model="FG-100F",
             product_type_name="Firewall",
-            tracking_method="unit",
+            category=ItemCategory.SERIALIZED_ASSET,
             custom_field_values={str(notes_field.pk): "Keep me"},
         )
         set_custom_field_definition_active(
@@ -172,7 +172,7 @@ class TestCustomFieldValuesOnProduct:
             brand_name="Fortinet",
             model="FG-100G",
             product_type_name="Firewall",
-            tracking_method="unit",
+            category=ItemCategory.SERIALIZED_ASSET,
             custom_field_values={},
         )
         assert updated.custom_field_values == {str(notes_field.pk): "Keep me"}
@@ -216,7 +216,7 @@ class TestCustomFieldDefinitionViews:
                 "brand_name": "Fortinet",
                 "model": "FG-100F",
                 "product_type_name": "Firewall",
-                "tracking_method": "unit",
+                "category": "serialized_asset",
                 custom_field_key(notes_field.pk): "Fragile",
             },
         )
@@ -235,7 +235,7 @@ class TestCustomFieldDefinitionViews:
             brand_name=unit_product.brand.name,
             model=unit_product.model,
             product_type_name=unit_product.product_type.name,
-            tracking_method=unit_product.tracking_method,
+            category=unit_product.category,
             custom_field_values={str(notes_field.pk): "Existing value"},
         )
         client.force_login(administrator)

@@ -24,6 +24,7 @@
   <dt>Brand</dt><dd>{{ product.brand.name }}</dd>
   <dt>SKU</dt><dd>{{ product.sku|default:"—" }}</dd>
   <dt>Type</dt><dd>{{ product.product_type.name }}</dd>
+  {% if product.category %}<dt>Category</dt><dd>{{ product.get_category_display }}</dd>{% endif %}
   <dt>Tracking method</dt><dd>{{ product.get_tracking_method_display }}</dd>
   {% if product.supplier %}<dt>Supplier</dt><dd>{{ product.supplier }}</dd>{% endif %}
   {% if product.low_stock_threshold %}<dt>Low-stock threshold</dt><dd>{{ product.low_stock_threshold }}</dd>{% endif %}

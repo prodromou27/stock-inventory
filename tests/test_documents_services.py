@@ -164,7 +164,7 @@ class TestGenerateDocument:
             brand_name=unit_product.brand.name,
             model="RENAMED-AFTER-DOC",
             product_type_name=unit_product.product_type.name,
-            tracking_method=unit_product.tracking_method,
+            category=unit_product.category,
         )
 
         document.refresh_from_db()
@@ -183,7 +183,7 @@ class TestGenerateDocument:
             brand_name=unit_product.brand.name,
             model="RENAMED-AGAIN",
             product_type_name=unit_product.product_type.name,
-            tracking_method=unit_product.tracking_method,
+            category=unit_product.category,
         )
 
         document.refresh_from_db()

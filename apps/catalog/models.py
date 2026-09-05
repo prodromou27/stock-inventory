@@ -49,6 +49,36 @@ class TrackingMethod(models.TextChoices):
     QUANTITY = "quantity", "Quantity"
 
 
+class ItemCategory(models.TextChoices):
+    """How an item is physically tracked and used — orthogonal to
+    inventory.StockPurpose (internal/customer, "who it's for") and
+    inventory.UnitStatus ("where it is right now"), the same way that pair
+    is already documented as orthogonal to each other. Category is the one
+    of the three an operator actually thinks in terms of when receiving
+    stock; TrackingMethod stays a real stored column underneath it (see
+    CATEGORY_TRACKING_METHOD) since ~40 existing call sites already branch
+    on tracking_method and category maps onto exactly those same two values.
+    """
+
+    SERIALIZED_ASSET = "serialized_asset", "Serialized Asset"
+    QUANTITY_STOCK = "quantity_stock", "Quantity Stock"
+    CONSUMABLE = "consumable", "Consumable"
+    REUSABLE_ACCESSORY = "reusable_accessory", "Reusable Accessory"
+    COMPONENT = "component", "Component"
+
+
+# Fixed, enforced derivation — never a free user choice independent of
+# category (apps.catalog.services.create_product() is the single place that
+# reads this to set Product.tracking_method from Product.category).
+CATEGORY_TRACKING_METHOD = {
+    ItemCategory.SERIALIZED_ASSET: TrackingMethod.UNIT,
+    ItemCategory.REUSABLE_ACCESSORY: TrackingMethod.UNIT,
+    ItemCategory.COMPONENT: TrackingMethod.UNIT,
+    ItemCategory.QUANTITY_STOCK: TrackingMethod.QUANTITY,
+    ItemCategory.CONSUMABLE: TrackingMethod.QUANTITY,
+}
+
+
 class ProductCustomFieldType(models.TextChoices):
     TEXT = "text", "Text"
     NUMBER = "number", "Number"
@@ -97,6 +127,7 @@ class Product(UUIDPrimaryKeyModel, UserStampedModel):
     normalized_sku = models.CharField(max_length=60, editable=False, blank=True)
     product_type = models.ForeignKey(ProductType, on_delete=models.PROTECT, related_name="products")
     description = models.TextField(blank=True)
+    category = models.CharField(max_length=20, choices=ItemCategory.choices)
     tracking_method = models.CharField(max_length=10, choices=TrackingMethod.choices)
     supplier = models.CharField(max_length=120, blank=True)
     default_notes = models.TextField(blank=True)
@@ -124,6 +155,35 @@ class Product(UUIDPrimaryKeyModel, UserStampedModel):
                     | models.Q(low_stock_threshold__isnull=True)
                 ),
                 name="product_low_stock_threshold_unit_null",
+            ),
+            # CATEGORY_TRACKING_METHOD's mapping enforced at the DB layer too —
+            # category is nullable only during the migration-0004/0005/0006
+            # backfill window (see those migrations); every row written by
+            # the service layer from here on always has both set in agreement.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(category__isnull=True)
+                    | (
+                        models.Q(
+                            category__in=[
+                                ItemCategory.SERIALIZED_ASSET,
+                                ItemCategory.REUSABLE_ACCESSORY,
+                                ItemCategory.COMPONENT,
+                            ]
+                        )
+                        & models.Q(tracking_method=TrackingMethod.UNIT)
+                    )
+                    | (
+                        models.Q(
+                            category__in=[
+                                ItemCategory.QUANTITY_STOCK,
+                                ItemCategory.CONSUMABLE,
+                            ]
+                        )
+                        & models.Q(tracking_method=TrackingMethod.QUANTITY)
+                    )
+                ),
+                name="product_category_tracking_method_agree",
             ),
         ]
 

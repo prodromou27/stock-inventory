@@ -58,6 +58,8 @@ class MovementType(models.TextChoices):
     CORRECTION = "correction", "Administrator correction"
     REVERSAL = "reversal", "Reversal"
     PURPOSE_CHANGE = "purpose_change", "Stock purpose reclassification"
+    INSTALL_COMPONENT = "install_component", "Install component"
+    REMOVE_COMPONENT = "remove_component", "Remove component"
 
 
 class StockPurpose(models.TextChoices):
@@ -163,6 +165,17 @@ class UnitAsset(UUIDPrimaryKeyModel, UserStampedModel):
     accessories = models.TextField(blank=True)
     notes = models.TextField(blank=True)
     last_removal_date = models.DateField(null=True, blank=True)
+    installed_in = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="installed_components",
+        help_text="The parent asset this Component-category item is currently installed in, if "
+        "any — set/cleared only by apps.inventory.services.components.install_component()/"
+        "remove_component(), never a plain field edit. Applies to Component-category items only; "
+        "always null for every other category.",
+    )
 
     class Meta:
         indexes = [

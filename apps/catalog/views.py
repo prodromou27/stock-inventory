@@ -18,7 +18,13 @@ from .forms import (
     QuickAddProductFormSet,
     custom_field_key,
 )
-from .models import Brand, Product, ProductCustomFieldDefinition, ProductType
+from .models import (
+    CATEGORY_TRACKING_METHOD,
+    Brand,
+    Product,
+    ProductCustomFieldDefinition,
+    ProductType,
+)
 from .services import (
     DuplicateProductError,
     create_custom_field_definition,
@@ -76,7 +82,16 @@ class ProductListView(LoginRequiredMixin, CSVExportMixin, SortableListMixin, Lis
     context_object_name = "products"
     paginate_by = 50
     csv_filename = "products.csv"
-    csv_headers = ["Brand", "Model", "SKU", "Type", "Tracking method", "Supplier", "Status"]
+    csv_headers = [
+        "Brand",
+        "Model",
+        "SKU",
+        "Type",
+        "Category",
+        "Tracking method",
+        "Supplier",
+        "Status",
+    ]
 
     sort_fields = {
         "brand": "brand__name",
@@ -97,6 +112,7 @@ class ProductListView(LoginRequiredMixin, CSVExportMixin, SortableListMixin, Lis
                 product.model,
                 product.sku,
                 product.product_type.name,
+                product.get_category_display() if product.category else "",
                 product.get_tracking_method_display(),
                 product.supplier,
                 "Active" if product.is_active else "Inactive",
@@ -163,7 +179,7 @@ class ProductCreateView(LoginRequiredMixin, RoleRequiredMixin, View):
                 sku=data["sku"],
                 product_type_name=data["product_type_name"],
                 description=data["description"],
-                tracking_method=data["tracking_method"],
+                category=data["category"],
                 supplier=data["supplier"],
                 default_notes=data["default_notes"],
                 low_stock_threshold=data["low_stock_threshold"],
@@ -265,7 +281,7 @@ class ProductGridView(LoginRequiredMixin, RoleRequiredMixin, View):
                 "model": product.model,
                 "sku": product.sku,
                 "product_type_name": product.product_type.name,
-                "tracking_method": product.tracking_method,
+                "category": product.category,
                 "supplier": product.supplier,
                 "is_active": product.is_active,
             }
@@ -314,19 +330,21 @@ class ProductGridView(LoginRequiredMixin, RoleRequiredMixin, View):
             and product.model == row["model"]
             and product.sku == row["sku"]
             and product.product_type.name == row["product_type_name"]
-            and product.tracking_method == row["tracking_method"]
+            and product.category == row["category"]
             and product.supplier == row["supplier"]
             and product.is_active == row["is_active"]
         )
         if unchanged:
             return {"label": label, "status": "unchanged"}
 
-        if row["tracking_method"] != product.tracking_method and product.has_movements():
+        new_tracking_method = CATEGORY_TRACKING_METHOD[row["category"]]
+        if new_tracking_method != product.tracking_method and product.has_movements():
             return {
                 "label": label,
                 "status": "locked",
                 "detail": (
-                    "Tracking method can't change — this product already has recorded movements."
+                    "Category can't change to a different tracking method — this product "
+                    "already has recorded movements."
                 ),
             }
 
@@ -339,7 +357,7 @@ class ProductGridView(LoginRequiredMixin, RoleRequiredMixin, View):
                 sku=row["sku"],
                 product_type_name=row["product_type_name"],
                 description=product.description,
-                tracking_method=row["tracking_method"],
+                category=row["category"],
                 supplier=row["supplier"],
                 default_notes=product.default_notes,
                 low_stock_threshold=product.low_stock_threshold,
@@ -367,7 +385,7 @@ class ProductUpdateView(LoginRequiredMixin, RoleRequiredMixin, View):
                 "sku": product.sku,
                 "product_type_name": product.product_type.name,
                 "description": product.description,
-                "tracking_method": product.tracking_method,
+                "category": product.category,
                 "supplier": product.supplier,
                 "default_notes": product.default_notes,
                 "low_stock_threshold": product.low_stock_threshold,
@@ -414,7 +432,7 @@ class ProductUpdateView(LoginRequiredMixin, RoleRequiredMixin, View):
                 sku=data["sku"],
                 product_type_name=data["product_type_name"],
                 description=data["description"],
-                tracking_method=data["tracking_method"],
+                category=data["category"],
                 supplier=data["supplier"],
                 default_notes=data["default_notes"],
                 low_stock_threshold=data["low_stock_threshold"],

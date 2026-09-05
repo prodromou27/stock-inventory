@@ -23,7 +23,9 @@
 
   {% if locked %}
     <p class="messages__item messages__item--warning">
-      Tracking method is locked — this product already has recorded movements.
+      This product already has recorded movements — its category can still be changed to
+      another category with the same tracking method (e.g. Serialized Asset ↔ Reusable
+      Accessory ↔ Component), but not to one that would change how it's tracked.
     </p>
   {% endif %}
 

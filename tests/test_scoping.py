@@ -144,7 +144,7 @@ class TestAccessibleLocations:
 
 
 def _make_unit_product(administrator):
-    from apps.catalog.models import TrackingMethod
+    from apps.catalog.models import ItemCategory
     from apps.catalog.services import create_product
 
     return create_product(
@@ -152,7 +152,7 @@ def _make_unit_product(administrator):
         brand_name="ScopeTest",
         model="Widget",
         product_type_name="Gadget",
-        tracking_method=TrackingMethod.UNIT,
+        category=ItemCategory.SERIALIZED_ASSET,
     )
 
 

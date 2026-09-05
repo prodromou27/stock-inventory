@@ -709,7 +709,7 @@ class TestReceiveBulkView:
                 "form-0-brand_name": "BulkView Brand",
                 "form-0-model": "BulkView Model",
                 "form-0-product_type_name": "Router",
-                "form-0-tracking_method": "unit",
+                "form-0-category": "serialized_asset",
                 "form-0-vendor_serials": "SN-BULKVIEW-1",
                 "form-0-condition": "new",
             },

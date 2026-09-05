@@ -338,6 +338,55 @@ def receive_stock_batch(*, user, product, location, occurred_at, vendor_serials,
 
 
 @transaction.atomic
+def receive_stock_units_atomic(
+    *, user, product, location, occurred_at, vendor_serials, **shared_fields
+):
+    """Add Stock's multi-unit path (apps.inventory.views.ReceiveStockView) —
+    unlike receive_stock_batch() above (Quick Receive's deliberately
+    partial-tolerant per-serial loop, kept exactly as-is for that existing
+    page), this is genuinely all-or-nothing: every entry in `vendor_serials`
+    must succeed or none of them are created, matching Add Stock's "one
+    confirmation, roll back everything on any failure" requirement.
+
+    Each entry may be blank — a blank line still receives its own
+    individually-tracked UnitAsset with no serial (never a fake generated
+    one), distinguished only by its own database id; blank entries are
+    never deduplicated against each other, only repeated non-blank serials
+    within the same submission are rejected. Raises DuplicateSerialError
+    (matches from whichever serial triggered it) or ValidationError on the
+    first problem — the caller re-renders the same acknowledgement flow
+    apps.inventory.views.ReceiveStockView already uses for a single item.
+    """
+    require_role(user, ADMINISTRATOR, STOCK_MANAGER)
+    require_location_access(user, location)
+    if not product.is_active:
+        raise ValidationError("Cannot receive stock for an inactive product.")
+    if product.tracking_method != TrackingMethod.UNIT:
+        raise ValidationError("This entry point is for individually-tracked items only.")
+
+    seen = set()
+    transactions = []
+    for raw_serial in vendor_serials:
+        serial = raw_serial.strip()
+        if serial:
+            normalized = " ".join(serial.split()).upper()
+            if normalized in seen:
+                raise ValidationError(f"Serial '{serial}' is repeated within this batch.")
+            seen.add(normalized)
+        transactions.append(
+            receive_stock(
+                user=user,
+                product=product,
+                location=location,
+                occurred_at=occurred_at,
+                vendor_serial=serial,
+                **shared_fields,
+            )
+        )
+    return transactions
+
+
+@transaction.atomic
 def receive_stock_bulk(
     *,
     user,

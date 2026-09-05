@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}Stock Added — Stock Inventory{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <h1>Stock added</h1>
+  </div>
+
+  <div class="card">
+    <dl class="definition-list">
+      <dt>Item</dt>
+      <dd><a href="{{ product.get_absolute_url }}">{{ product }}</a></dd>
+      <dt>Quantity added</dt>
+      <dd>{{ received_quantity }}</dd>
+      {% if serials %}
+        <dt>Serial number(s)</dt>
+        <dd>{{ serials|join:", " }}</dd>
+      {% endif %}
+      <dt>Location</dt>
+      <dd>{{ location }}</dd>
+      <dt>Available quantity now at this location</dt>
+      <dd>{{ available_quantity }}</dd>
+      <dt>Receipt transaction{{ transactions|length|pluralize }}</dt>
+      <dd>
+        {% for txn in transactions %}
+          <a href="{{ txn.get_absolute_url }}">{{ txn.transaction_number }}</a>{% if not forloop.last %}, {% endif %}
+        {% endfor %}
+      </dd>
+    </dl>
+  </div>
+
+  <div class="form-actions">
+    <a href="{% url 'inventory:asset_list' %}?product={{ product.pk }}" class="btn btn--ghost">View inventory</a>
+    <a href="{% url 'inventory:receive_stock' %}?product={{ product.pk }}" class="btn btn--primary">Add another item</a>
+  </div>
+{% endblock %}

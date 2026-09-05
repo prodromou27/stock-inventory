@@ -32,6 +32,6 @@ class ProductTypeAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
 
 @admin.register(Product)
 class ProductAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
-    list_display = ("__str__", "brand", "product_type", "tracking_method", "is_active")
-    list_filter = ("tracking_method", "is_active", "product_type")
+    list_display = ("__str__", "brand", "product_type", "category", "tracking_method", "is_active")
+    list_filter = ("category", "tracking_method", "is_active", "product_type")
     search_fields = ("model", "sku", "brand__name")

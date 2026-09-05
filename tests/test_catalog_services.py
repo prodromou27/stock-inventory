@@ -2,7 +2,7 @@ import pytest
 from django.core.exceptions import ValidationError
 
 from apps.audit.models import AuditEvent
-from apps.catalog.models import Brand, Product, ProductType, TrackingMethod
+from apps.catalog.models import Brand, ItemCategory, Product, ProductType, TrackingMethod
 from apps.catalog.services import (
     DuplicateProductError,
     check_duplicate_products,
@@ -47,7 +47,7 @@ class TestCreateProduct:
             brand_name="Fortinet",
             model="FG-100F",
             product_type_name="Firewall",
-            tracking_method=TrackingMethod.UNIT,
+            category=ItemCategory.SERIALIZED_ASSET,
         )
 
         assert product.tracking_method == TrackingMethod.UNIT
@@ -59,7 +59,7 @@ class TestCreateProduct:
             brand_name="HP",
             model="26A",
             product_type_name="Toner",
-            tracking_method=TrackingMethod.QUANTITY,
+            category=ItemCategory.QUANTITY_STOCK,
             low_stock_threshold=5,
         )
 
@@ -71,7 +71,7 @@ class TestCreateProduct:
             brand_name="Fortinet",
             model="FG-101F",
             product_type_name="Firewall",
-            tracking_method=TrackingMethod.UNIT,
+            category=ItemCategory.SERIALIZED_ASSET,
             low_stock_threshold=10,
         )
 
@@ -83,7 +83,7 @@ class TestCreateProduct:
             brand_name="Fortinet",
             model="FG-100F",
             product_type_name="Firewall",
-            tracking_method=TrackingMethod.UNIT,
+            category=ItemCategory.SERIALIZED_ASSET,
         )
 
         with pytest.raises(DuplicateProductError) as exc_info:
@@ -92,7 +92,7 @@ class TestCreateProduct:
                 brand_name="fortinet",
                 model="fg-100f",
                 product_type_name="Firewall",
-                tracking_method=TrackingMethod.UNIT,
+                category=ItemCategory.SERIALIZED_ASSET,
             )
         assert len(exc_info.value.matches) == 1
 
@@ -102,7 +102,7 @@ class TestCreateProduct:
             brand_name="Fortinet",
             model="FG-100F",
             product_type_name="Firewall",
-            tracking_method=TrackingMethod.UNIT,
+            category=ItemCategory.SERIALIZED_ASSET,
         )
 
         second = create_product(
@@ -110,7 +110,7 @@ class TestCreateProduct:
             brand_name="Fortinet",
             model="FG-100F",
             product_type_name="Firewall",
-            tracking_method=TrackingMethod.UNIT,
+            category=ItemCategory.SERIALIZED_ASSET,
             duplicate_acknowledged=True,
         )
 
@@ -127,7 +127,7 @@ class TestCreateProduct:
             model="FG-100F",
             sku="SKU-A",
             product_type_name="Firewall",
-            tracking_method=TrackingMethod.UNIT,
+            category=ItemCategory.SERIALIZED_ASSET,
         )
 
         with pytest.raises(DuplicateProductError):
@@ -137,7 +137,7 @@ class TestCreateProduct:
                 model="FG-100F",
                 sku="SKU-B",
                 product_type_name="Firewall",
-                tracking_method=TrackingMethod.UNIT,
+                category=ItemCategory.SERIALIZED_ASSET,
             )
 
     def test_read_only_user_cannot_create_product(self, read_only_user):
@@ -147,7 +147,7 @@ class TestCreateProduct:
                 brand_name="Fortinet",
                 model="FG-100F",
                 product_type_name="Firewall",
-                tracking_method=TrackingMethod.UNIT,
+                category=ItemCategory.SERIALIZED_ASSET,
             )
 
     def test_create_product_is_audited(self, administrator):
@@ -156,7 +156,7 @@ class TestCreateProduct:
             brand_name="Fortinet",
             model="FG-102F",
             product_type_name="Firewall",
-            tracking_method=TrackingMethod.UNIT,
+            category=ItemCategory.SERIALIZED_ASSET,
         )
 
         assert AuditEvent.objects.filter(
@@ -181,7 +181,7 @@ class TestCreateProductsBatch:
                     "model": "FG-100F",
                     "sku": "",
                     "product_type_name": "Firewall",
-                    "tracking_method": TrackingMethod.UNIT,
+                    "category": ItemCategory.SERIALIZED_ASSET,
                     "supplier": "",
                 },
                 {
@@ -189,7 +189,7 @@ class TestCreateProductsBatch:
                     "model": "26A",
                     "sku": "",
                     "product_type_name": "Toner",
-                    "tracking_method": TrackingMethod.QUANTITY,
+                    "category": ItemCategory.QUANTITY_STOCK,
                     "supplier": "",
                 },
             ],
@@ -204,7 +204,7 @@ class TestCreateProductsBatch:
             brand_name="Fortinet",
             model="FG-100F",
             product_type_name="Firewall",
-            tracking_method=TrackingMethod.UNIT,
+            category=ItemCategory.SERIALIZED_ASSET,
         )
 
         results = create_products_batch(
@@ -215,7 +215,7 @@ class TestCreateProductsBatch:
                     "model": product.model,
                     "sku": "",
                     "product_type_name": product.product_type.name,
-                    "tracking_method": TrackingMethod.UNIT,
+                    "category": ItemCategory.SERIALIZED_ASSET,
                     "supplier": "",
                 }
             ],
@@ -230,7 +230,7 @@ class TestCreateProductsBatch:
             brand_name="Fortinet",
             model="FG-100F",
             product_type_name="Firewall",
-            tracking_method=TrackingMethod.UNIT,
+            category=ItemCategory.SERIALIZED_ASSET,
         )
 
         results = create_products_batch(
@@ -241,7 +241,7 @@ class TestCreateProductsBatch:
                     "model": "RV340",
                     "sku": "",
                     "product_type_name": "Router",
-                    "tracking_method": TrackingMethod.UNIT,
+                    "category": ItemCategory.SERIALIZED_ASSET,
                     "supplier": "",
                 },
                 {
@@ -249,7 +249,7 @@ class TestCreateProductsBatch:
                     "model": product.model,
                     "sku": "",
                     "product_type_name": product.product_type.name,
-                    "tracking_method": TrackingMethod.UNIT,
+                    "category": ItemCategory.SERIALIZED_ASSET,
                     "supplier": "",
                 },
                 {
@@ -257,7 +257,7 @@ class TestCreateProductsBatch:
                     "model": "RV345",
                     "sku": "",
                     "product_type_name": "Router",
-                    "tracking_method": TrackingMethod.UNIT,
+                    "category": ItemCategory.SERIALIZED_ASSET,
                     "supplier": "",
                 },
             ],
@@ -276,7 +276,7 @@ class TestCreateProductsBatch:
                         "model": "FG-100F",
                         "sku": "",
                         "product_type_name": "Firewall",
-                        "tracking_method": TrackingMethod.UNIT,
+                        "category": ItemCategory.SERIALIZED_ASSET,
                         "supplier": "",
                     }
                 ],
@@ -292,7 +292,7 @@ class TestCheckDuplicateProducts:
             brand_name="Fortinet",
             model="FG-100F",
             product_type_name="Firewall",
-            tracking_method=TrackingMethod.UNIT,
+            category=ItemCategory.SERIALIZED_ASSET,
         )
 
         matches = check_duplicate_products(brand=brand, model="FG-200F")
@@ -308,7 +308,7 @@ class TestUpdateProductTrackingMethodLock:
             brand_name=unit_product.brand.name,
             model=unit_product.model,
             product_type_name=unit_product.product_type.name,
-            tracking_method=TrackingMethod.QUANTITY,
+            category=ItemCategory.QUANTITY_STOCK,
         )
         assert updated.tracking_method == TrackingMethod.QUANTITY
 
@@ -334,7 +334,7 @@ class TestUpdateProductTrackingMethodLock:
                 brand_name=unit_product.brand.name,
                 model=unit_product.model,
                 product_type_name=unit_product.product_type.name,
-                tracking_method=TrackingMethod.QUANTITY,
+                category=ItemCategory.QUANTITY_STOCK,
             )
 
     def test_non_tracking_fields_still_editable_after_movement(
@@ -358,7 +358,7 @@ class TestUpdateProductTrackingMethodLock:
             brand_name=unit_product.brand.name,
             model=unit_product.model,
             product_type_name=unit_product.product_type.name,
-            tracking_method=unit_product.tracking_method,
+            category=unit_product.category,
             description="Updated description",
         )
         assert updated.description == "Updated description"
@@ -370,7 +370,7 @@ class TestUpdateProductTrackingMethodLock:
             brand_name=unit_product.brand.name,
             model=unit_product.model,
             product_type_name=unit_product.product_type.name,
-            tracking_method=unit_product.tracking_method,
+            category=unit_product.category,
             description="New description",
         )
 
@@ -392,7 +392,7 @@ class TestResolveOrCreateProduct:
             brand_name="NewBrand",
             model="NewModel",
             product_type_name="NewType",
-            tracking_method=TrackingMethod.UNIT,
+            category=ItemCategory.SERIALIZED_ASSET,
         )
         assert product.pk is not None
         assert Product.objects.filter(brand__name="NewBrand", model="NewModel").count() == 1
@@ -403,7 +403,7 @@ class TestResolveOrCreateProduct:
             brand_name=unit_product.brand.name,
             model=unit_product.model,
             product_type_name=unit_product.product_type.name,
-            tracking_method=unit_product.tracking_method,
+            category=unit_product.category,
             sku=unit_product.sku,
         )
         assert resolved.pk == unit_product.pk
@@ -418,7 +418,7 @@ class TestResolveOrCreateProduct:
             brand_name=f"  {unit_product.brand.name.upper()}  ",
             model=f"  {unit_product.model.upper()}  ",
             product_type_name=unit_product.product_type.name,
-            tracking_method=unit_product.tracking_method,
+            category=unit_product.category,
         )
         assert resolved.pk == unit_product.pk
 
@@ -431,7 +431,7 @@ class TestResolveOrCreateProduct:
                 brand_name=unit_product.brand.name,
                 model=unit_product.model,
                 product_type_name=unit_product.product_type.name,
-                tracking_method=TrackingMethod.QUANTITY,
+                category=ItemCategory.QUANTITY_STOCK,
             )
         # Nothing was created — the caller must resolve the conflict manually.
         assert (
@@ -449,7 +449,7 @@ class TestResolveOrCreateProduct:
                 brand_name=unit_product.brand.name,
                 model=unit_product.model,
                 product_type_name=unit_product.product_type.name,
-                tracking_method=unit_product.tracking_method,
+                category=unit_product.category,
                 sku="SOME-DIFFERENT-SKU",
             )
 
@@ -459,7 +459,7 @@ class TestResolveOrCreateProduct:
             brand_name=unit_product.brand.name,
             model=unit_product.model,
             product_type_name=unit_product.product_type.name,
-            tracking_method=unit_product.tracking_method,
+            category=unit_product.category,
             sku="SOME-DIFFERENT-SKU",
             duplicate_acknowledged=True,
         )
@@ -475,5 +475,5 @@ class TestResolveOrCreateProduct:
                 brand_name="X",
                 model="Y",
                 product_type_name="Z",
-                tracking_method=TrackingMethod.UNIT,
+                category=ItemCategory.SERIALIZED_ASSET,
             )

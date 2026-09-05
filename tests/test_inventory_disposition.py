@@ -214,7 +214,7 @@ class TestDispose:
         assert txn.witness_name == ""
 
     def test_disposed_hdd_remains_searchable(self, administrator, location_tree):
-        from apps.catalog.models import TrackingMethod
+        from apps.catalog.models import ItemCategory
         from apps.catalog.services import create_product
 
         hdd = create_product(
@@ -222,7 +222,7 @@ class TestDispose:
             brand_name="Seagate",
             model="ST1000",
             product_type_name="HDD",
-            tracking_method=TrackingMethod.UNIT,
+            category=ItemCategory.SERIALIZED_ASSET,
         )
         receive_stock(
             user=administrator,

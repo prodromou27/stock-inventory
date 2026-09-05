@@ -9,7 +9,7 @@ from django.utils import timezone
 
 from apps.audit.models import AuditEvent
 from apps.audit.services import record_event
-from apps.catalog.models import Brand, Product, TrackingMethod
+from apps.catalog.models import Brand, ItemCategory, Product, TrackingMethod
 from apps.catalog.services import check_duplicate_products, resolve_or_create_product
 from apps.core.authorization import ADMINISTRATOR, require_role
 from apps.inventory.models import StockPurpose
@@ -524,6 +524,20 @@ def _execute_row(row, *, user):
     )
 
 
+#  Import rows have no explicit Category column (neither request that asked
+#  for one), so the same signal that already infers tracking_method (whether
+#  the row has a serial) picks the corresponding default category — exactly
+#  the same default the catalog.0005 data migration used to classify
+#  pre-existing products. Reusing/creating a product that already carries a
+#  more specific category (Reusable Accessory, Component, Consumable) still
+#  works: resolve_or_create_product() only compares tracking_method on an
+#  exact match, never overwrites an existing product's own category.
+_IMPORT_DEFAULT_CATEGORY = {
+    TrackingMethod.UNIT: ItemCategory.SERIALIZED_ASSET,
+    TrackingMethod.QUANTITY: ItemCategory.QUANTITY_STOCK,
+}
+
+
 def _get_or_create_import_product(*, user, brand_name, model, product_type_name, tracking_method):
     """Thin wrapper over the shared apps.catalog.services.resolve_or_create_product()
     — every row in a batch that shares the same brand/model must resolve to
@@ -543,7 +557,7 @@ def _get_or_create_import_product(*, user, brand_name, model, product_type_name,
         brand_name=brand_name,
         model=model,
         product_type_name=product_type_name,
-        tracking_method=tracking_method,
+        category=_IMPORT_DEFAULT_CATEGORY[tracking_method],
         duplicate_acknowledged=True,
     )
 

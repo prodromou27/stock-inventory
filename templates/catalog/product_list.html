@@ -69,6 +69,7 @@
             {% sort_th "model" "Model" %}
             {% sort_th "sku" "SKU" %}
             {% sort_th "type" "Type" %}
+            <th>Category</th>
             <th>Tracking</th>
             {% sort_th "status" "Status" %}
           </tr>
@@ -80,6 +81,7 @@
               <td>{{ product.model }}</td>
               <td>{{ product.sku|default:"—" }}</td>
               <td>{{ product.product_type.name }}</td>
+              <td>{% if product.category %}{{ product.get_category_display }}{% else %}—{% endif %}</td>
               <td>{{ product.get_tracking_method_display }}</td>
               <td>
                 {% if product.is_active %}
@@ -158,7 +160,8 @@
           { title: "Model", field: "model", headerFilter: "input", minWidth: 160 },
           { title: "SKU", field: "sku", headerFilter: "input", width: 120 },
           { title: "Type", field: "product_type", headerFilter: "input", width: 140 },
-          { title: "Tracking", field: "tracking_method", width: 150, formatter: (cell) => cell.getData().tracking_method_display },
+          { title: "Category", field: "category", width: 160, formatter: (cell) => cell.getData().category_display || "—" },
+          { title: "Tracking", field: "tracking_method", width: 150, visible: false, formatter: (cell) => cell.getData().tracking_method_display },
           { title: "Supplier", field: "supplier", headerFilter: "input", width: 140, visible: false },
           { title: "Low-stock threshold", field: "low_stock_threshold", width: 150, visible: false, hozAlign: "right" },
           { title: "Availability", field: "available", width: 190, headerSort: false, formatter: lowStockFormatter },

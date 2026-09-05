@@ -3,7 +3,7 @@ from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
-from apps.catalog.models import Brand, Product, ProductType, TrackingMethod
+from apps.catalog.models import Brand, ItemCategory, Product, ProductType, TrackingMethod
 from apps.inventory.models import StockBalance, UnitAsset, UnitStatus
 from apps.locations.models import Location
 
@@ -53,6 +53,7 @@ class Command(BaseCommand):
                 "model": "Bulk Test Model",
                 "product_type": product_type,
                 "tracking_method": TrackingMethod.UNIT,
+                "category": ItemCategory.SERIALIZED_ASSET,
                 "created_by": admin,
                 "updated_by": admin,
             },
@@ -97,6 +98,7 @@ class Command(BaseCommand):
                 "model": "Bulk Test Consumable",
                 "product_type": product_type,
                 "tracking_method": TrackingMethod.QUANTITY,
+                "category": ItemCategory.QUANTITY_STOCK,
                 "created_by": admin,
                 "updated_by": admin,
             },

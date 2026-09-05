@@ -8,7 +8,9 @@ from apps.core.authorization import ADMINISTRATOR, STOCK_MANAGER, require_role
 from apps.core.text import normalize_whitespace
 
 from .models import (
+    CATEGORY_TRACKING_METHOD,
     Brand,
+    ItemCategory,
     Product,
     ProductCustomFieldDefinition,
     ProductCustomFieldType,
@@ -173,7 +175,7 @@ def create_product(
     brand_name,
     model,
     product_type_name,
-    tracking_method,
+    category,
     sku="",
     description="",
     supplier="",
@@ -183,6 +185,10 @@ def create_product(
     custom_field_values=None,
 ):
     require_role(user, ADMINISTRATOR, STOCK_MANAGER)
+
+    if category not in ItemCategory.values:
+        raise ValidationError("Unknown category.")
+    tracking_method = CATEGORY_TRACKING_METHOD[category]
 
     brand = get_or_create_brand(brand_name, user=user)
     product_type = get_or_create_product_type(product_type_name, user=user)
@@ -199,6 +205,7 @@ def create_product(
         model=model,
         sku=sku,
         product_type=product_type,
+        category=category,
         tracking_method=tracking_method,
         description=description,
         supplier=supplier,
@@ -231,6 +238,7 @@ def create_product(
             "brand": brand.name,
             "model": product.model,
             "sku": product.sku,
+            "category": product.category,
             "tracking_method": product.tracking_method,
         },
     )
@@ -243,7 +251,7 @@ def resolve_or_create_product(
     brand_name,
     model,
     product_type_name,
-    tracking_method,
+    category,
     sku="",
     duplicate_acknowledged=False,
 ):
@@ -258,12 +266,21 @@ def resolve_or_create_product(
 
     "Exact reuse" = brand + normalized_model + normalized_sku all match
     (blank sku on both sides counts as a match) AND the tracking method
-    agrees — a mismatched tracking method on an otherwise-exact match is
-    never silently reused (receiving a serialized item against a
-    quantity-tracked product, or vice versa, would violate UnitAsset.clean()
-    downstream), so that case is surfaced as a clear error instead.
+    (derived from `category` via CATEGORY_TRACKING_METHOD) agrees — a
+    mismatched tracking method on an otherwise-exact match is never
+    silently reused (receiving a serialized item against a quantity-tracked
+    product, or vice versa, would violate UnitAsset.clean() downstream), so
+    that case is surfaced as a clear error instead. A category mismatch
+    that still agrees on tracking method (e.g. this receipt says Reusable
+    Accessory, the existing exact match is categorized Serialized Asset —
+    both unit-tracked) is *not* treated as a conflict: the product's
+    category is a property of the product, decided once, not re-litigated
+    on every later receipt — the existing row's category is left as-is.
     """
     require_role(user, ADMINISTRATOR, STOCK_MANAGER)
+    if category not in ItemCategory.values:
+        raise ValidationError("Unknown category.")
+    tracking_method = CATEGORY_TRACKING_METHOD[category]
     brand = get_or_create_brand(brand_name, user=user)
 
     normalized_model = normalize_whitespace(model).lower()
@@ -289,7 +306,7 @@ def resolve_or_create_product(
         brand_name=brand_name,
         model=model,
         product_type_name=product_type_name,
-        tracking_method=tracking_method,
+        category=category,
         sku=sku,
         duplicate_acknowledged=duplicate_acknowledged,
     )
@@ -356,7 +373,7 @@ def update_product(
     brand_name,
     model,
     product_type_name,
-    tracking_method,
+    category,
     sku="",
     description="",
     supplier="",
@@ -367,16 +384,23 @@ def update_product(
 ):
     require_role(user, ADMINISTRATOR, STOCK_MANAGER)
 
+    if category not in ItemCategory.values:
+        raise ValidationError("Unknown category.")
+    tracking_method = CATEGORY_TRACKING_METHOD[category]
+
     if tracking_method != product.tracking_method and product.has_movements():
         raise ValidationError(
-            "Tracking method cannot be changed once movements exist for this product. "
-            "This requires an Administrator migration operation, which is not yet implemented."
+            "This reclassification would change how the product is tracked (unit vs. "
+            "quantity), which cannot happen once movements exist for this product. A "
+            "category change that keeps the same tracking method (e.g. Serialized Asset "
+            "↔ Reusable Accessory ↔ Component) remains allowed at any time."
         )
 
     old_values = {
         "brand": product.brand.name,
         "model": product.model,
         "sku": product.sku,
+        "category": product.category,
         "tracking_method": product.tracking_method,
         "is_active": product.is_active,
     }
@@ -402,6 +426,7 @@ def update_product(
     product.product_type = get_or_create_product_type(product_type_name, user=user)
     product.model = model
     product.sku = sku
+    product.category = category
     product.tracking_method = tracking_method
     product.description = description
     product.supplier = supplier
@@ -423,6 +448,7 @@ def update_product(
             "brand": product.brand.name,
             "model": product.model,
             "sku": product.sku,
+            "category": product.category,
             "tracking_method": product.tracking_method,
             "is_active": product.is_active,
         },

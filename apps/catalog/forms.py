@@ -1,7 +1,13 @@
 from django import forms
 from django.forms import formset_factory
 
-from .models import ProductCustomFieldDefinition, ProductCustomFieldType, TrackingMethod
+from .models import (
+    CATEGORY_TRACKING_METHOD,
+    ItemCategory,
+    ProductCustomFieldDefinition,
+    ProductCustomFieldType,
+    TrackingMethod,
+)
 
 CUSTOM_FIELD_PREFIX = "custom_field_"
 
@@ -48,7 +54,12 @@ class ProductForm(forms.Form):
         widget=forms.TextInput(attrs={"list": "product-type-options", "autocomplete": "off"}),
     )
     description = forms.CharField(required=False, widget=forms.Textarea)
-    tracking_method = forms.ChoiceField(choices=TrackingMethod.choices)
+    category = forms.ChoiceField(
+        choices=ItemCategory.choices,
+        label="Category",
+        help_text="Determines whether this item is tracked individually (serial-based) or "
+        "as a quantity balance per location.",
+    )
     supplier = forms.CharField(max_length=120, required=False)
     default_notes = forms.CharField(required=False, widget=forms.Textarea)
     low_stock_threshold = forms.IntegerField(required=False, min_value=0)
@@ -64,7 +75,8 @@ class ProductForm(forms.Form):
 
     def clean(self):
         cleaned = super().clean()
-        if cleaned.get("tracking_method") != TrackingMethod.QUANTITY:
+        category = cleaned.get("category")
+        if category and CATEGORY_TRACKING_METHOD.get(category) != TrackingMethod.QUANTITY:
             cleaned["low_stock_threshold"] = None
         return cleaned
 
@@ -93,10 +105,10 @@ class QuickAddProductRowForm(forms.Form):
 
     "Blank" is judged from brand_name/model/product_type_name specifically
     (see clean() below), not Django's own has_changed()-based
-    empty_permitted skip — tracking_method is a <select> that always
-    submits *some* value once rendered, which made has_changed() report a
-    change (hence "blank" fields as validation errors) for rows the
-    operator never actually touched.
+    empty_permitted skip — category is a <select> that always submits
+    *some* value once rendered, which made has_changed() report a change
+    (hence "blank" fields as validation errors) for rows the operator never
+    actually touched.
     """
 
     brand_name = forms.CharField(
@@ -113,7 +125,7 @@ class QuickAddProductRowForm(forms.Form):
         label="Type",
         widget=forms.TextInput(attrs={"list": "product-type-options", "autocomplete": "off"}),
     )
-    tracking_method = forms.ChoiceField(choices=TrackingMethod.choices, required=False)
+    category = forms.ChoiceField(choices=ItemCategory.choices, required=False, label="Category")
     supplier = forms.CharField(max_length=120, required=False)
 
     def clean(self):
@@ -128,8 +140,8 @@ class QuickAddProductRowForm(forms.Form):
         for field in ("brand_name", "model", "product_type_name"):
             if not cleaned.get(field):
                 self.add_error(field, "Required.")
-        if not cleaned.get("tracking_method"):
-            cleaned["tracking_method"] = TrackingMethod.UNIT
+        if not cleaned.get("category"):
+            cleaned["category"] = ItemCategory.SERIALIZED_ASSET
         return cleaned
 
 
@@ -161,7 +173,7 @@ class ProductGridRowForm(forms.Form):
         label="Type",
         widget=forms.TextInput(attrs={"list": "product-type-options", "autocomplete": "off"}),
     )
-    tracking_method = forms.ChoiceField(choices=TrackingMethod.choices)
+    category = forms.ChoiceField(choices=ItemCategory.choices, label="Category")
     supplier = forms.CharField(max_length=120, required=False)
     is_active = forms.BooleanField(required=False)
 

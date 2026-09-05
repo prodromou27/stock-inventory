@@ -106,7 +106,7 @@ def stock_manager_with_room_access(stock_manager, administrator, location_tree):
 
 @pytest.fixture
 def unit_product(administrator):
-    from apps.catalog.models import TrackingMethod
+    from apps.catalog.models import ItemCategory
     from apps.catalog.services import create_product
 
     return create_product(
@@ -114,13 +114,13 @@ def unit_product(administrator):
         brand_name="Fortinet",
         model="FG-100F",
         product_type_name="Firewall",
-        tracking_method=TrackingMethod.UNIT,
+        category=ItemCategory.SERIALIZED_ASSET,
     )
 
 
 @pytest.fixture
 def quantity_product(administrator):
-    from apps.catalog.models import TrackingMethod
+    from apps.catalog.models import ItemCategory
     from apps.catalog.services import create_product
 
     return create_product(
@@ -128,6 +128,6 @@ def quantity_product(administrator):
         brand_name="HP",
         model="26A",
         product_type_name="Toner",
-        tracking_method=TrackingMethod.QUANTITY,
+        category=ItemCategory.QUANTITY_STOCK,
         low_stock_threshold=5,
     )

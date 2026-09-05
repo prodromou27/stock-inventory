@@ -24,6 +24,16 @@ urlpatterns = [
         views.UnitPurposeReclassifyView.as_view(),
         name="asset_reclassify_purpose",
     ),
+    path(
+        "assets/<uuid:pk>/install-component/",
+        views.InstallComponentView.as_view(),
+        name="install_component",
+    ),
+    path(
+        "assets/<uuid:pk>/remove-component/",
+        views.RemoveComponentView.as_view(),
+        name="remove_component",
+    ),
     path("assets/picker-data/", views.AssetPickerDataView.as_view(), name="asset_picker_data"),
     path(
         "balances/picker-data/", views.BalancePickerDataView.as_view(), name="balance_picker_data"

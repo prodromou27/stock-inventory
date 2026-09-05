@@ -22,7 +22,7 @@ def rack(administrator, location_tree):
 @pytest.mark.django_db
 class TestAssetListFilters:
     def test_brand_filter(self, client, administrator, location_tree):
-        from apps.catalog.models import TrackingMethod
+        from apps.catalog.models import ItemCategory
         from apps.catalog.services import create_product
 
         fortinet = create_product(
@@ -30,14 +30,14 @@ class TestAssetListFilters:
             brand_name="Fortinet",
             model="F1",
             product_type_name="Firewall",
-            tracking_method=TrackingMethod.UNIT,
+            category=ItemCategory.SERIALIZED_ASSET,
         )
         cisco = create_product(
             user=administrator,
             brand_name="Cisco",
             model="C1",
             product_type_name="Switch",
-            tracking_method=TrackingMethod.UNIT,
+            category=ItemCategory.SERIALIZED_ASSET,
         )
         receive_stock(
             user=administrator,

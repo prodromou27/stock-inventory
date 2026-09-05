@@ -23,6 +23,45 @@
   </dl>
 </div>
 
+{% if asset.product.category == "component" or installed_components %}
+  <div class="card">
+    <h2>Component</h2>
+    <dl class="definition-list">
+      {% if asset.product.category == "component" %}
+        <dt>Installed in</dt>
+        <dd>
+          {% if asset.installed_in %}
+            <a href="{{ asset.installed_in.get_absolute_url }}">{{ asset.installed_in.product }} ({{ asset.installed_in.vendor_serial|default:"no serial" }})</a>
+            {% if user_is_administrator or "StockManager" in user_role_groups %}
+              <a class="btn btn--sm btn--ghost" href="{% url 'inventory:remove_component' asset.pk %}">Remove</a>
+            {% endif %}
+          {% else %}
+            <span class="empty-state">Not installed</span>
+            {% if can_install_component %}
+              <a class="btn btn--sm" href="{% url 'inventory:install_component' asset.pk %}">Install into…</a>
+            {% endif %}
+          {% endif %}
+        </dd>
+      {% endif %}
+      {% if installed_components %}
+        <dt>Installed components</dt>
+        <dd>
+          <ul>
+            {% for component in installed_components %}
+              <li>
+                <a href="{{ component.get_absolute_url }}">{{ component.product }} ({{ component.vendor_serial|default:"no serial" }})</a>
+                {% if user_is_administrator or "StockManager" in user_role_groups %}
+                  <a class="btn btn--sm btn--ghost" href="{% url 'inventory:remove_component' component.pk %}">Remove</a>
+                {% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        </dd>
+      {% endif %}
+    </dl>
+  </div>
+{% endif %}
+
 {% if assigned_to %}
   <div class="card">
     <h2>Current assignment/delivery</h2>

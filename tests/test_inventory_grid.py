@@ -492,7 +492,7 @@ class TestStockBalanceGridDataView:
     def test_sort_by_available_quantity(
         self, client, administrator, quantity_product, location_tree
     ):
-        from apps.catalog.models import TrackingMethod
+        from apps.catalog.models import ItemCategory
         from apps.catalog.services import create_product
 
         other_product = create_product(
@@ -500,7 +500,7 @@ class TestStockBalanceGridDataView:
             brand_name="Zeta",
             model="Z-9",
             product_type_name="Widget",
-            tracking_method=TrackingMethod.QUANTITY,
+            category=ItemCategory.QUANTITY_STOCK,
         )
         receive_stock(
             user=administrator,

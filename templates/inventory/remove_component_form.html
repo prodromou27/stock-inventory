@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}Remove Component — Stock Inventory{% endblock %}
+
+{% block content %}
+  <p><a href="{{ component.get_absolute_url }}">&larr; {{ component.product }} ({{ component.vendor_serial|default:"no serial" }})</a></p>
+  <div class="page-header">
+    <div>
+      <h1>Remove component</h1>
+      <div class="page-header__subtitle">
+        Remove {{ component.product }} ({{ component.vendor_serial|default:"no serial" }}) from
+        {% if component.installed_in %}{{ component.installed_in.product }} ({{ component.installed_in.vendor_serial|default:"no serial" }}){% else %}its parent asset{% endif %}.
+        It goes back to being tracked as its own In Stock item.
+      </div>
+    </div>
+  </div>
+
+  {% if form.non_field_errors %}
+    <p class="messages__item messages__item--error">{{ form.non_field_errors|join:" " }}</p>
+  {% endif %}
+
+  <form method="post" class="card">
+    {% csrf_token %}
+    {% for field in form %}
+      {% include "_form_field.html" with field=field %}
+    {% endfor %}
+    <div class="form-actions">
+      <button type="submit" class="btn btn--primary">Remove</button>
+    </div>
+  </form>
+{% endblock %}

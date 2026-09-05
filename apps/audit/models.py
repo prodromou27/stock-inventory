@@ -37,6 +37,10 @@ class AuditEvent(UUIDPrimaryKeyModel, AppendOnlyModel):
         ADMIN_CORRECTION = "admin_correction", "Administrator correction"
         ADMIN_REVERSAL = "admin_reversal", "Administrator reversal"
         STOCK_PURPOSE_CHANGED = "stock_purpose_changed", "Stock purpose changed"
+        COMPONENT_ASSOCIATION_CHANGED = (
+            "component_association_changed",
+            "Component association changed",
+        )
 
     occurred_at = models.DateTimeField(auto_now_add=True)
     actor = models.ForeignKey(

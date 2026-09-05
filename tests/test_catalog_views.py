@@ -43,7 +43,7 @@ class TestProductListView:
         assert response.status_code == 200
         assert response["Content-Type"] == "text/csv"
         body = response.content.decode()
-        assert "Brand,Model,SKU,Type,Tracking method,Supplier,Status" in body
+        assert "Brand,Model,SKU,Type,Category,Tracking method,Supplier,Status" in body
         assert unit_product.model in body
 
 
@@ -76,7 +76,7 @@ class TestProductCreateView:
                 "brand_name": "Fortinet",
                 "model": "FG-100F",
                 "product_type_name": "Firewall",
-                "tracking_method": "unit",
+                "category": "serialized_asset",
             },
         )
         assert response.status_code == 403
@@ -90,7 +90,7 @@ class TestProductCreateView:
                 "brand_name": "Fortinet",
                 "model": "FG-100F",
                 "product_type_name": "Firewall",
-                "tracking_method": "unit",
+                "category": "serialized_asset",
             },
         )
         assert response.status_code == 302
@@ -104,7 +104,7 @@ class TestProductCreateView:
                 "brand_name": unit_product.brand.name,
                 "model": unit_product.model,
                 "product_type_name": unit_product.product_type.name,
-                "tracking_method": "unit",
+                "category": "serialized_asset",
             },
         )
         assert response.status_code == 200
@@ -121,7 +121,7 @@ class TestProductCreateView:
                 "brand_name": unit_product.brand.name,
                 "model": unit_product.model,
                 "product_type_name": unit_product.product_type.name,
-                "tracking_method": "unit",
+                "category": "serialized_asset",
                 "duplicate_acknowledged": "true",
             },
         )
@@ -176,7 +176,7 @@ class TestBrandTypeAutocomplete:
                 "brand_name": "Brand New Co",
                 "model": "X1",
                 "product_type_name": "Widget",
-                "tracking_method": "unit",
+                "category": "serialized_asset",
             },
         )
         assert response.status_code == 302
@@ -198,7 +198,7 @@ def _quick_add_row(index, **fields):
         f"form-{index}-model": "",
         f"form-{index}-sku": "",
         f"form-{index}-product_type_name": "",
-        f"form-{index}-tracking_method": "",
+        f"form-{index}-category": "",
         f"form-{index}-supplier": "",
     }
     row.update({f"form-{index}-{key}": value for key, value in fields.items()})
@@ -225,7 +225,7 @@ class TestQuickAddProductsView:
                 brand_name="Cisco",
                 model="RV340",
                 product_type_name="Router",
-                tracking_method="unit",
+                category="serialized_asset",
             )
         )
         data.update(
@@ -234,7 +234,7 @@ class TestQuickAddProductsView:
                 brand_name="Cisco",
                 model="RV345",
                 product_type_name="Router",
-                tracking_method="unit",
+                category="serialized_asset",
             )
         )
         response = client.post(reverse("catalog:quick_add"), data)
@@ -286,7 +286,7 @@ class TestQuickAddProductsView:
                 brand_name=unit_product.brand.name,
                 model=unit_product.model,
                 product_type_name=unit_product.product_type.name,
-                tracking_method="unit",
+                category="serialized_asset",
             )
         )
         data.update(
@@ -295,7 +295,7 @@ class TestQuickAddProductsView:
                 brand_name="Cisco",
                 model="RV340",
                 product_type_name="Router",
-                tracking_method="unit",
+                category="serialized_asset",
             )
         )
         response = client.post(reverse("catalog:quick_add"), data)
@@ -321,7 +321,7 @@ def _grid_row(index, product, **overrides):
         f"form-{index}-model": product.model,
         f"form-{index}-sku": product.sku,
         f"form-{index}-product_type_name": product.product_type.name,
-        f"form-{index}-tracking_method": product.tracking_method,
+        f"form-{index}-category": product.category,
         f"form-{index}-supplier": product.supplier,
     }
     if is_active:
@@ -383,7 +383,7 @@ class TestProductGridView:
         )
         client.force_login(stock_manager)
         data = _grid_management_form(1)
-        data.update(_grid_row(0, unit_product, tracking_method="quantity"))
+        data.update(_grid_row(0, unit_product, category="quantity_stock"))
         response = client.post(reverse("catalog:product_grid"), data)
         assert response.status_code == 200
         results = response.context["results"]
@@ -404,6 +404,7 @@ class TestProductGridView:
                     brand=brand,
                     model=f"BULK-{i:03d}",
                     product_type=product_type,
+                    category="serialized_asset",
                     tracking_method="unit",
                     created_by=stock_manager,
                     updated_by=stock_manager,
@@ -428,7 +429,7 @@ class TestProductUpdateView:
                 "brand_name": unit_product.brand.name,
                 "model": unit_product.model,
                 "product_type_name": unit_product.product_type.name,
-                "tracking_method": unit_product.tracking_method,
+                "category": unit_product.category,
                 "description": "hacked",
             },
         )
@@ -444,7 +445,7 @@ class TestProductUpdateView:
                 "brand_name": unit_product.brand.name,
                 "model": unit_product.model,
                 "product_type_name": unit_product.product_type.name,
-                "tracking_method": unit_product.tracking_method,
+                "category": unit_product.category,
                 "description": "updated",
             },
         )

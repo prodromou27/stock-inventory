@@ -30,13 +30,14 @@ class TestReceiveStockView:
                 "model": unit_product.model,
                 "sku": unit_product.sku,
                 "product_type_name": unit_product.product_type.name,
-                "tracking_method": unit_product.tracking_method,
+                "category": unit_product.category,
+                "confirmed": "true",
                 "location": location_tree["room"].pk,
                 "occurred_at": date.today().isoformat(),
-                "vendor_serial": "SN-VIEW-1",
+                "vendor_serials": "SN-VIEW-1",
             },
         )
-        assert response.status_code == 302
+        assert response.status_code == 200
         assert UnitAsset.objects.filter(vendor_serial="SN-VIEW-1").exists()
 
     def test_stock_manager_can_receive_quantity_stock(
@@ -50,13 +51,14 @@ class TestReceiveStockView:
                 "model": quantity_product.model,
                 "sku": quantity_product.sku,
                 "product_type_name": quantity_product.product_type.name,
-                "tracking_method": quantity_product.tracking_method,
+                "category": quantity_product.category,
+                "confirmed": "true",
                 "location": location_tree["room"].pk,
                 "occurred_at": date.today().isoformat(),
                 "quantity": 15,
             },
         )
-        assert response.status_code == 302
+        assert response.status_code == 200
         balance = StockBalance.objects.get(product=quantity_product, location=location_tree["room"])
         assert balance.on_hand_quantity == 15
 
@@ -109,7 +111,7 @@ class TestReceiveStockView:
 
     @staticmethod
     def _unit_product(administrator):
-        from apps.catalog.models import TrackingMethod
+        from apps.catalog.models import ItemCategory
         from apps.catalog.services import create_product
 
         return create_product(
@@ -117,7 +119,7 @@ class TestReceiveStockView:
             brand_name="DefaultLocBrand",
             model="DefaultLocModel",
             product_type_name="Router",
-            tracking_method=TrackingMethod.UNIT,
+            category=ItemCategory.SERIALIZED_ASSET,
         )
 
     def test_duplicate_serial_shows_warning_page(
@@ -139,10 +141,11 @@ class TestReceiveStockView:
                 "model": unit_product.model,
                 "sku": unit_product.sku,
                 "product_type_name": unit_product.product_type.name,
-                "tracking_method": unit_product.tracking_method,
+                "category": unit_product.category,
+                "confirmed": "true",
                 "location": location_tree["room"].pk,
                 "occurred_at": date.today().isoformat(),
-                "vendor_serial": "SN-VIEW-DUP",
+                "vendor_serials": "SN-VIEW-DUP",
             },
         )
         assert response.status_code == 200
@@ -168,13 +171,14 @@ class TestReceiveStockView:
                 "model": unit_product.model,
                 "sku": unit_product.sku,
                 "product_type_name": unit_product.product_type.name,
-                "tracking_method": unit_product.tracking_method,
+                "category": unit_product.category,
+                "confirmed": "true",
                 "location": location_tree["room"].pk,
                 "occurred_at": historical_date.isoformat(),
-                "vendor_serial": "SN-VIEW-HISTORICAL",
+                "vendor_serials": "SN-VIEW-HISTORICAL",
             },
         )
-        assert response.status_code == 302
+        assert response.status_code == 200
         asset = UnitAsset.objects.get(vendor_serial="SN-VIEW-HISTORICAL")
         assert asset.arrival_date == historical_date
 
@@ -190,10 +194,11 @@ class TestReceiveStockView:
                 "model": unit_product.model,
                 "sku": unit_product.sku,
                 "product_type_name": unit_product.product_type.name,
-                "tracking_method": unit_product.tracking_method,
+                "category": unit_product.category,
+                "confirmed": "true",
                 "location": location_tree["room"].pk,
                 "occurred_at": future_date.isoformat(),
-                "vendor_serial": "SN-VIEW-FUTURE",
+                "vendor_serials": "SN-VIEW-FUTURE",
             },
         )
         assert response.status_code == 200
@@ -217,10 +222,11 @@ class TestReceiveStockView:
                 "model": unit_product.model,
                 "sku": unit_product.sku,
                 "product_type_name": unit_product.product_type.name,
-                "tracking_method": unit_product.tracking_method,
+                "category": unit_product.category,
+                "confirmed": "true",
                 "location": location_tree["room"].pk,
                 "occurred_at": historical_date.isoformat(),
-                "vendor_serial": "SN-VIEW-DISTINCT",
+                "vendor_serials": "SN-VIEW-DISTINCT",
             },
         )
         asset = UnitAsset.objects.get(vendor_serial="SN-VIEW-DISTINCT")
@@ -440,7 +446,7 @@ class TestStockBalanceListAndDetail:
     def test_sort_by_on_hand_descending(
         self, client, administrator, quantity_product, unit_product, location_tree
     ):
-        from apps.catalog.models import TrackingMethod
+        from apps.catalog.models import ItemCategory
         from apps.catalog.services import create_product
 
         other_product = create_product(
@@ -448,7 +454,7 @@ class TestStockBalanceListAndDetail:
             brand_name="Zebra",
             model="Z-1",
             product_type_name="Widget",
-            tracking_method=TrackingMethod.QUANTITY,
+            category=ItemCategory.QUANTITY_STOCK,
         )
         receive_stock(
             user=administrator,
@@ -585,7 +591,7 @@ class TestUnitAssetListSort:
 
     @pytest.fixture
     def two_products_in_room(self, administrator, unit_product, location_tree):
-        from apps.catalog.models import TrackingMethod
+        from apps.catalog.models import ItemCategory
         from apps.catalog.services import create_product
 
         other_product = create_product(
@@ -593,7 +599,7 @@ class TestUnitAssetListSort:
             brand_name="Aruba",
             model="AP-100",
             product_type_name="Access Point",
-            tracking_method=TrackingMethod.UNIT,
+            category=ItemCategory.SERIALIZED_ASSET,
         )
         receive_stock(
             user=administrator,

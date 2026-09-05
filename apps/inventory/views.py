@@ -17,7 +17,7 @@ from django.views.generic import DetailView, ListView
 
 from apps.audit.models import AuditEvent
 from apps.audit.services import record_event
-from apps.catalog.models import Product, TrackingMethod
+from apps.catalog.models import CATEGORY_TRACKING_METHOD, ItemCategory, Product, TrackingMethod
 from apps.catalog.services import DuplicateProductError, resolve_or_create_product
 from apps.catalog.views import _catalog_choices, _filtered_products
 from apps.core.authorization import (
@@ -28,6 +28,7 @@ from apps.core.authorization import (
     require_role,
 )
 from apps.core.csv_export import CSVExportMixin
+from apps.core.idempotency import claim_submission_token, new_submission_token
 from apps.core.recently_viewed import record_recently_viewed
 from apps.core.sorting import (
     SortableListMixin,
@@ -57,11 +58,13 @@ from .forms import (
     DeliverForm,
     DisposeForm,
     DispositionForm,
+    InstallComponentForm,
     QuantityPurposeReclassifyForm,
     QuickReceiveForm,
     ReceiveBulkBatchForm,
     ReceiveBulkFormSet,
     ReceiveStockForm,
+    RemoveComponentForm,
     RepairDamagedForm,
     ReserveForm,
     ReturnAssessmentForm,
@@ -70,6 +73,7 @@ from .forms import (
     UnitPurposeReclassifyForm,
 )
 from .models import (
+    Condition,
     Customer,
     InventoryTransaction,
     InventoryTransactionLine,
@@ -83,6 +87,7 @@ from .models import (
     UnitStatus,
 )
 from .services.assignments import assign_to_employee, deliver_to_customer
+from .services.components import install_component, remove_component
 from .services.corrections import correct_balance, correct_unit_status, reverse_transaction
 from .services.disposition import dispose, mark_damaged, mark_lost, return_repaired_to_stock
 from .services.grid_views import (
@@ -96,6 +101,7 @@ from .services.receipts import (
     receive_stock,
     receive_stock_batch,
     receive_stock_bulk,
+    receive_stock_units_atomic,
 )
 from .services.reservations import release_reservation, reserve_stock
 from .services.returns import assess_return, return_stock
@@ -133,7 +139,7 @@ def _frequently_used_for_hub(user, limit=5):
     across two FK columns on what's normally a small (30-day, scoped) row
     set — not worth a second query or a UNION.
     """
-    since = timezone.now().date() - timedelta(days=30)
+    since = timezone.localdate() - timedelta(days=30)
     lines = scope_transaction_line_queryset(
         user, InventoryTransactionLine.objects.filter(transaction__occurred_at__gte=since)
     )
@@ -235,7 +241,10 @@ class ReceiveStockView(LoginRequiredMixin, RoleRequiredMixin, View):
     allowed_roles = (ADMINISTRATOR, STOCK_MANAGER)
 
     def get(self, request):
-        initial = {"occurred_at": timezone.localdate()}
+        initial = {
+            "occurred_at": timezone.localdate(),
+            "submission_token": new_submission_token(),
+        }
         default_location = _default_location_for(request.user)
         if default_location is not None:
             initial["location"] = default_location.pk
@@ -252,7 +261,7 @@ class ReceiveStockView(LoginRequiredMixin, RoleRequiredMixin, View):
                     model=product.model,
                     sku=product.sku,
                     product_type_name=product.product_type.name,
-                    tracking_method=product.tracking_method,
+                    category=product.category,
                 )
         form = ReceiveStockForm(user=request.user, initial=initial)
         return render(
@@ -266,6 +275,37 @@ class ReceiveStockView(LoginRequiredMixin, RoleRequiredMixin, View):
                 request, "inventory/receive_stock_form.html", {"form": form, **_catalog_choices()}
             )
 
+        # Step 1 of 2: show exactly what will be created and let the Stock
+        # Manager confirm before anything is written — a plain re-POST of
+        # every submitted field plus confirmed=true, not a second form, so
+        # nothing entered can be lost or re-typed between the two steps.
+        if request.POST.get("confirmed") != "true":
+            data = form.cleaned_data
+            return render(
+                request,
+                "inventory/receive_stock_review.html",
+                {
+                    "data": data,
+                    "tracking_method": CATEGORY_TRACKING_METHOD[data["category"]],
+                    "category_label": ItemCategory(data["category"]).label,
+                    "stock_purpose_label": StockPurpose(data["stock_purpose"]).label,
+                    "condition_label": (
+                        Condition(data["condition"]).label if data["condition"] else ""
+                    ),
+                    "hidden_fields": [
+                        (key, value)
+                        for key, value in request.POST.items()
+                        if key != "csrfmiddlewaretoken"
+                    ],
+                },
+            )
+
+        if not claim_submission_token(request.POST.get("submission_token")):
+            messages.info(
+                request, "This receipt was already submitted — no duplicate stock was created."
+            )
+            return redirect("inventory:movements_hub")
+
         data = form.cleaned_data
         try:
             product = resolve_or_create_product(
@@ -274,7 +314,7 @@ class ReceiveStockView(LoginRequiredMixin, RoleRequiredMixin, View):
                 model=data["model"],
                 sku=data["sku"],
                 product_type_name=data["product_type_name"],
-                tracking_method=data["tracking_method"],
+                category=data["category"],
                 duplicate_acknowledged=request.POST.get("duplicate_acknowledged") == "true",
             )
         except DuplicateProductError as exc:
@@ -294,25 +334,51 @@ class ReceiveStockView(LoginRequiredMixin, RoleRequiredMixin, View):
                 request, "inventory/receive_stock_form.html", {"form": form, **_catalog_choices()}
             )
 
+        tracking_method = CATEGORY_TRACKING_METHOD[data["category"]]
+        common_fields = dict(
+            location=data["location"],
+            occurred_at=data["occurred_at"],
+            stock_purpose=data["stock_purpose"],
+            project_reference=data["project_reference"],
+            final_customer=data["final_customer"],
+            supplier=data["supplier"],
+            invoice_number=data["invoice_number"],
+            condition=data["condition"],
+            accessories=data["accessories"],
+            notes=data["notes"],
+        )
+        duplicate_serial_acknowledged = request.POST.get("duplicate_serial_acknowledged") == "true"
         try:
-            txn = receive_stock(
-                user=request.user,
-                product=product,
-                location=data["location"],
-                occurred_at=data["occurred_at"],
-                vendor_serial=data["vendor_serial"],
-                quantity=data["quantity"],
-                stock_purpose=data["stock_purpose"],
-                project_reference=data["project_reference"],
-                final_customer=data["final_customer"],
-                supplier=data["supplier"],
-                invoice_number=data["invoice_number"],
-                condition=data["condition"],
-                accessories=data["accessories"],
-                notes=data["notes"],
-                duplicate_serial_acknowledged=request.POST.get("duplicate_serial_acknowledged")
-                == "true",
-            )
+            if tracking_method == TrackingMethod.QUANTITY:
+                txn = receive_stock(
+                    user=request.user, product=product, quantity=data["quantity"], **common_fields
+                )
+                transactions = [txn]
+                created_serials = []
+            else:
+                serials = data["parsed_serials"]
+                unit_count = data["unit_count"]
+                if unit_count <= 1:
+                    vendor_serial = serials[0] if serials else ""
+                    txn = receive_stock(
+                        user=request.user,
+                        product=product,
+                        vendor_serial=vendor_serial,
+                        duplicate_serial_acknowledged=duplicate_serial_acknowledged,
+                        **common_fields,
+                    )
+                    transactions = [txn]
+                    created_serials = [vendor_serial] if vendor_serial else []
+                else:
+                    vendor_serials_list = serials if serials else [""] * unit_count
+                    transactions = receive_stock_units_atomic(
+                        user=request.user,
+                        product=product,
+                        vendor_serials=vendor_serials_list,
+                        duplicate_serial_acknowledged=duplicate_serial_acknowledged,
+                        **common_fields,
+                    )
+                    created_serials = [s for s in vendor_serials_list if s]
         except DuplicateSerialError as exc:
             return render(
                 request,
@@ -330,8 +396,37 @@ class ReceiveStockView(LoginRequiredMixin, RoleRequiredMixin, View):
                 request, "inventory/receive_stock_form.html", {"form": form, **_catalog_choices()}
             )
 
-        messages.success(request, f"Received stock — transaction {txn.transaction_number}.")
-        return redirect(txn.get_absolute_url())
+        if tracking_method == TrackingMethod.QUANTITY:
+            balance = StockBalance.objects.filter(
+                product=product, location=data["location"], stock_purpose=data["stock_purpose"]
+            ).first()
+            available_quantity = balance.available_quantity if balance else data["quantity"]
+            received_quantity = data["quantity"]
+        else:
+            available_quantity = UnitAsset.objects.filter(
+                product=product, current_location=data["location"], status=UnitStatus.IN_STOCK
+            ).count()
+            received_quantity = len(transactions)
+
+        messages.success(
+            request,
+            f"Received {received_quantity} × {product} — "
+            f"transaction {transactions[0].transaction_number}"
+            + (f" (+{len(transactions) - 1} more)" if len(transactions) > 1 else "")
+            + ".",
+        )
+        return render(
+            request,
+            "inventory/receive_stock_summary.html",
+            {
+                "product": product,
+                "location": data["location"],
+                "received_quantity": received_quantity,
+                "serials": created_serials,
+                "available_quantity": available_quantity,
+                "transactions": transactions,
+            },
+        )
 
 
 class QuickReceiveView(LoginRequiredMixin, RoleRequiredMixin, View):
@@ -469,7 +564,7 @@ class ReceiveBulkView(LoginRequiredMixin, RoleRequiredMixin, View):
                             model=row["model"],
                             sku=row.get("sku", ""),
                             product_type_name=row["product_type_name"],
-                            tracking_method=row["tracking_method"],
+                            category=row["category"],
                             duplicate_acknowledged=request.POST.get("duplicate_acknowledged")
                             == "true",
                         ),
@@ -987,7 +1082,13 @@ class UnitAssetDetailView(LoginRequiredMixin, DetailView):
     def get_object(self, queryset=None):
         obj = get_object_or_404(
             UnitAsset.objects.select_related(
-                "product", "product__brand", "current_location", "current_custody_transaction"
+                "product",
+                "product__brand",
+                "current_location",
+                "current_custody_transaction",
+                "installed_in",
+                "installed_in__product",
+                "installed_in__product__brand",
             ),
             pk=self.kwargs["pk"],
         )
@@ -1019,7 +1120,112 @@ class UnitAssetDetailView(LoginRequiredMixin, DetailView):
             if self.object.stock_purpose == StockPurpose.INTERNAL
             else StockPurpose.INTERNAL
         )
+        # Component install/remove — only Component-category items can be
+        # installed into a parent, but any asset can host components, so
+        # "installed_components" is always computed (cheap: at most a
+        # handful of rows), not gated on this asset's own category.
+        context["can_install_component"] = (
+            self.object.product.category == ItemCategory.COMPONENT
+            and self.object.installed_in_id is None
+            and self.object.status == UnitStatus.IN_STOCK
+        )
+        context["installed_components"] = self.object.installed_components.select_related(
+            "product", "product__brand"
+        ).order_by("product__brand__name", "product__model")
         return context
+
+
+class InstallComponentView(LoginRequiredMixin, RoleRequiredMixin, View):
+    """Reached from a Component-category asset's own detail page — install
+    it into a parent asset the operator picks. See
+    apps.inventory.services.components for the eligibility rules.
+    """
+
+    allowed_roles = (ADMINISTRATOR, STOCK_MANAGER)
+    template_name = "inventory/install_component_form.html"
+
+    def _component(self, request, pk):
+        component = get_object_or_404(
+            UnitAsset.objects.select_related("product", "product__brand"), pk=pk
+        )
+        require_location_access(request.user, component.current_location)
+        return component
+
+    def get(self, request, pk):
+        component = self._component(request, pk)
+        form = InstallComponentForm(user=request.user, component=component)
+        return render(request, self.template_name, {"form": form, "component": component})
+
+    def post(self, request, pk):
+        component = self._component(request, pk)
+        form = InstallComponentForm(request.POST, user=request.user, component=component)
+        if not form.is_valid():
+            return render(request, self.template_name, {"form": form, "component": component})
+
+        data = form.cleaned_data
+        try:
+            txn = install_component(
+                user=request.user,
+                component_id=component.pk,
+                parent_id=data["parent_asset"].pk,
+                occurred_at=data["occurred_at"],
+                notes=data["notes"],
+            )
+        except ValidationError as exc:
+            form.add_error(None, exc)
+            return render(request, self.template_name, {"form": form, "component": component})
+
+        messages.success(
+            request,
+            f"Installed {component} into {data['parent_asset']} — "
+            f"transaction {txn.transaction_number}.",
+        )
+        return redirect(component.get_absolute_url())
+
+
+class RemoveComponentView(LoginRequiredMixin, RoleRequiredMixin, View):
+    """Reached from either the component's own detail page ("Installed in:
+    ... [Remove]") or the parent's detail page's installed-components list.
+    """
+
+    allowed_roles = (ADMINISTRATOR, STOCK_MANAGER)
+    template_name = "inventory/remove_component_form.html"
+
+    def _component(self, request, pk):
+        component = get_object_or_404(
+            UnitAsset.objects.select_related(
+                "product", "product__brand", "installed_in", "installed_in__product"
+            ),
+            pk=pk,
+        )
+        require_location_access(request.user, component.current_location)
+        return component
+
+    def get(self, request, pk):
+        component = self._component(request, pk)
+        form = RemoveComponentForm(initial={"occurred_at": timezone.localdate()})
+        return render(request, self.template_name, {"form": form, "component": component})
+
+    def post(self, request, pk):
+        component = self._component(request, pk)
+        form = RemoveComponentForm(request.POST)
+        if not form.is_valid():
+            return render(request, self.template_name, {"form": form, "component": component})
+
+        data = form.cleaned_data
+        try:
+            txn = remove_component(
+                user=request.user,
+                component_id=component.pk,
+                occurred_at=data["occurred_at"],
+                notes=data["notes"],
+            )
+        except ValidationError as exc:
+            form.add_error(None, exc)
+            return render(request, self.template_name, {"form": form, "component": component})
+
+        messages.success(request, f"Removed {component} — transaction {txn.transaction_number}.")
+        return redirect(component.get_absolute_url())
 
 
 class StockBalanceListView(LoginRequiredMixin, CSVExportMixin, SortableListMixin, ListView):
@@ -1182,6 +1388,7 @@ PRODUCT_GRID_SORT_FIELDS = {
     "model": "model",
     "sku": "sku",
     "product_type": "product_type__name",
+    "category": "category",
     "tracking_method": "tracking_method",
     "supplier": "supplier",
     "low_stock_threshold": "low_stock_threshold",
@@ -1264,6 +1471,8 @@ class ProductGridDataView(LoginRequiredMixin, View):
             "model": product.model,
             "sku": product.sku,
             "product_type": product.product_type.name,
+            "category": product.category or "",
+            "category_display": product.get_category_display() if product.category else "",
             "tracking_method": product.tracking_method,
             "tracking_method_display": product.get_tracking_method_display(),
             "supplier": product.supplier,

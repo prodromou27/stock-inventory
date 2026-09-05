@@ -40,7 +40,7 @@
           <th>Model</th>
           <th>SKU</th>
           <th>Type</th>
-          <th>Tracking</th>
+          <th>Category</th>
           <th>Supplier</th>
         </tr>
       </thead>
@@ -60,7 +60,7 @@
               {{ form.product_type_name }}
               {% if form.product_type_name.errors %}<div class="errorlist">{{ form.product_type_name.errors|join:" " }}</div>{% endif %}
             </td>
-            <td>{{ form.tracking_method }}</td>
+            <td>{{ form.category }}</td>
             <td>{{ form.supplier }}</td>
           </tr>
         {% endfor %}

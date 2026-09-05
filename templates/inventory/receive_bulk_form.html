@@ -69,7 +69,7 @@
             <th>Model</th>
             <th>SKU</th>
             <th>Type</th>
-            <th>Tracking</th>
+            <th>Category</th>
             <th>Serials (unit-tracked)</th>
             <th>Quantity (quantity-tracked)</th>
             <th>Location override</th>
@@ -98,8 +98,8 @@
                 {% if form.product_type_name.errors %}<div class="errorlist">{{ form.product_type_name.errors|join:" " }}</div>{% endif %}
               </td>
               <td>
-                {{ form.tracking_method }}
-                {% if form.tracking_method.errors %}<div class="errorlist">{{ form.tracking_method.errors|join:" " }}</div>{% endif %}
+                {{ form.category }}
+                {% if form.category.errors %}<div class="errorlist">{{ form.category.errors|join:" " }}</div>{% endif %}
               </td>
               <td>
                 {{ form.vendor_serials }}

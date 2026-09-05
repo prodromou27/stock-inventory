@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}Review Add Stock — Stock Inventory{% endblock %}
+
+{% block content %}
+  <p><a href="{% url 'inventory:movements_hub' %}">&larr; Operations</a></p>
+  <div class="page-header">
+    <h1>Review before adding stock</h1>
+  </div>
+
+  <div class="card">
+    <dl class="definition-list">
+      <dt>Item</dt>
+      <dd>{{ data.brand_name }} {{ data.model }}{% if data.sku %} ({{ data.sku }}){% endif %} — {{ data.product_type_name }}</dd>
+      <dt>Category</dt>
+      <dd>{{ category_label }} — {% if tracking_method == "unit" %}Individually tracked{% else %}Quantity tracked{% endif %}</dd>
+      {% if tracking_method == "unit" %}
+        <dt>Units</dt>
+        <dd>
+          {{ data.unit_count }} unit{{ data.unit_count|pluralize }}
+          {% if data.parsed_serials %}— serial(s): {{ data.parsed_serials|join:", " }}{% else %}— no serial numbers{% endif %}
+        </dd>
+      {% else %}
+        <dt>Quantity</dt>
+        <dd>{{ data.quantity }}</dd>
+      {% endif %}
+      <dt>Stock purpose</dt>
+      <dd>{{ stock_purpose_label }}</dd>
+      {% if data.final_customer %}<dt>Final customer</dt><dd>{{ data.final_customer }}</dd>{% endif %}
+      {% if data.project_reference %}<dt>Project reference</dt><dd>{{ data.project_reference }}</dd>{% endif %}
+      <dt>Location</dt>
+      <dd>{{ data.location }}</dd>
+      <dt>Arrival date</dt>
+      <dd>{{ data.occurred_at }}</dd>
+      {% if data.supplier %}<dt>Supplier</dt><dd>{{ data.supplier }}</dd>{% endif %}
+      {% if data.invoice_number %}<dt>Invoice number</dt><dd>{{ data.invoice_number }}</dd>{% endif %}
+      {% if condition_label %}<dt>Condition</dt><dd>{{ condition_label }}</dd>{% endif %}
+      {% if data.accessories %}<dt>Accessories</dt><dd>{{ data.accessories }}</dd>{% endif %}
+      {% if data.notes %}<dt>Notes</dt><dd>{{ data.notes }}</dd>{% endif %}
+    </dl>
+  </div>
+
+  <form method="post">
+    {% csrf_token %}
+    {% for key, value in hidden_fields %}
+      <input type="hidden" name="{{ key }}" value="{{ value }}">
+    {% endfor %}
+    <input type="hidden" name="confirmed" value="true">
+    <div class="form-actions">
+      <a href="javascript:history.back()" class="btn btn--ghost">&larr; Edit</a>
+      <button type="submit" class="btn btn--primary">Confirm and add stock</button>
+    </div>
+  </form>
+{% endblock %}

@@ -19,6 +19,7 @@
       <dt>Brand</dt><dd>{{ product.brand.name }}</dd>
       <dt>SKU</dt><dd>{{ product.sku|default:"—" }}</dd>
       <dt>Type</dt><dd>{{ product.product_type.name }}</dd>
+      {% if product.category %}<dt>Category</dt><dd>{{ product.get_category_display }}</dd>{% endif %}
       <dt>Tracking method</dt><dd>{{ product.get_tracking_method_display }}</dd>
       {% if product.description %}<dt>Description</dt><dd>{{ product.description }}</dd>{% endif %}
       {% if product.supplier %}<dt>Supplier</dt><dd>{{ product.supplier }}</dd>{% endif %}

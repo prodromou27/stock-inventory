@@ -103,7 +103,7 @@ class TestDamagedLostDisposedReports:
     def test_disposed_items_report_includes_hdd_and_survives_after_disposal(
         self, client, administrator, location_tree
     ):
-        from apps.catalog.models import TrackingMethod
+        from apps.catalog.models import ItemCategory
         from apps.catalog.services import create_product
 
         hdd = create_product(
@@ -111,7 +111,7 @@ class TestDamagedLostDisposedReports:
             brand_name="Seagate",
             model="ST2000",
             product_type_name="HDD",
-            tracking_method=TrackingMethod.UNIT,
+            category=ItemCategory.SERIALIZED_ASSET,
         )
         receive_stock(
             user=administrator,
@@ -134,7 +134,7 @@ class TestDamagedLostDisposedReports:
         assert "HDD-REPORT-1" in serials
 
     def test_disposed_items_type_filter(self, client, administrator, location_tree):
-        from apps.catalog.models import TrackingMethod
+        from apps.catalog.models import ItemCategory
         from apps.catalog.services import create_product
 
         hdd = create_product(
@@ -142,14 +142,14 @@ class TestDamagedLostDisposedReports:
             brand_name="WD",
             model="WD1",
             product_type_name="HDD",
-            tracking_method=TrackingMethod.UNIT,
+            category=ItemCategory.SERIALIZED_ASSET,
         )
         keyboard = create_product(
             user=administrator,
             brand_name="Logitech",
             model="K1",
             product_type_name="Keyboard",
-            tracking_method=TrackingMethod.UNIT,
+            category=ItemCategory.SERIALIZED_ASSET,
         )
         receive_stock(
             user=administrator,
@@ -379,7 +379,7 @@ class TestMovementHistoryReport:
 @pytest.mark.django_db
 class TestLowStockReport:
     def test_empty_when_no_threshold_configured(self, client, administrator, location_tree):
-        from apps.catalog.models import TrackingMethod
+        from apps.catalog.models import ItemCategory
         from apps.catalog.services import create_product
 
         no_threshold_product = create_product(
@@ -387,7 +387,7 @@ class TestLowStockReport:
             brand_name="Generic",
             model="No Threshold Product",
             product_type_name="Accessory",
-            tracking_method=TrackingMethod.QUANTITY,
+            category=ItemCategory.QUANTITY_STOCK,
         )
         receive_stock(
             user=administrator,
@@ -410,7 +410,7 @@ class TestLowStockReport:
             brand_name=quantity_product.brand.name,
             model=quantity_product.model,
             product_type_name=quantity_product.product_type.name,
-            tracking_method=quantity_product.tracking_method,
+            category=quantity_product.category,
             low_stock_threshold=10,
         )
         receive_stock(
@@ -434,7 +434,7 @@ class TestLowStockReport:
             brand_name=quantity_product.brand.name,
             model=quantity_product.model,
             product_type_name=quantity_product.product_type.name,
-            tracking_method=quantity_product.tracking_method,
+            category=quantity_product.category,
             low_stock_threshold=2,
         )
         receive_stock(
@@ -458,7 +458,7 @@ class TestLowStockReport:
             brand_name=quantity_product.brand.name,
             model=quantity_product.model,
             product_type_name=quantity_product.product_type.name,
-            tracking_method=quantity_product.tracking_method,
+            category=quantity_product.category,
             low_stock_threshold=10,
         )
         receive_stock(

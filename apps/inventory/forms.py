@@ -2,11 +2,11 @@ from django import forms
 from django.forms import formset_factory
 from django.utils import timezone
 
-from apps.catalog.models import Product, TrackingMethod
+from apps.catalog.models import CATEGORY_TRACKING_METHOD, ItemCategory, Product, TrackingMethod
 from apps.locations.models import Location
-from apps.locations.scoping import accessible_locations
+from apps.locations.scoping import accessible_locations, scope_queryset
 
-from .models import Condition, Customer, StockPurpose, UnitStatus, WipeMethod
+from .models import Condition, Customer, StockPurpose, UnitAsset, UnitStatus, WipeMethod
 
 
 def validate_not_future_date(value):
@@ -66,19 +66,21 @@ class TrackingMethodSelect(forms.Select):
         return option
 
 
-class TrackingChoiceSelect(forms.Select):
-    """A plain <select> of the two TrackingMethod values themselves, each
-    option carrying data-tracking-method equal to its own value — reuses
+class CategoryChoiceSelect(forms.Select):
+    """A plain <select> of ItemCategory values, each option carrying
+    data-tracking-method derived from CATEGORY_TRACKING_METHOD — reuses
     static/js/movement_forms.js's existing applyTrackingVisibility() (built
     for TrackingMethodSelect above, which looks up an *external* product's
-    tracking method) for the Add Stock case, where there's no product yet to
-    look one up from: the operator picks the tracking method directly.
+    tracking method) so the same serial/quantity field show-and-hide
+    behavior works from a Category pick, without a parallel JS mechanism.
+    Category is the one thing an operator actually chooses; tracking method
+    is always derived, never asked directly, on this form.
     """
 
     def create_option(self, name, value, label, selected, index, subindex=None, attrs=None):
         option = super().create_option(name, value, label, selected, index, subindex, attrs)
         if value not in (None, ""):
-            option["attrs"]["data-tracking-method"] = value
+            option["attrs"]["data-tracking-method"] = CATEGORY_TRACKING_METHOD[value]
         return option
 
 
@@ -89,6 +91,17 @@ class ReceiveStockForm(forms.Form):
     apps.catalog.services.resolve_or_create_product() in the view: reused
     silently on an exact match, flagged for acknowledgement on a close
     match, created outright otherwise. SKU stays optional end-to-end.
+
+    Category (not tracking method) is what the Stock Manager actually
+    picks — CategoryChoiceSelect derives tracking method from it. For a
+    Category that maps to Unit tracking, `vendor_serials` accepts one serial
+    per line (blank lines are meaningful here, not stray whitespace to
+    discard — see clean()): pasting several real serials receives that many
+    units in one submission, and leaving it blank while giving a plain
+    `quantity` receives that many individually-tracked units with no serial
+    at all, never a fake generated one. For a Category that maps to
+    Quantity tracking, `quantity` is the aggregate amount added to the
+    balance at `location` and `vendor_serials` is ignored.
     """
 
     brand_name = forms.CharField(
@@ -103,8 +116,8 @@ class ReceiveStockForm(forms.Form):
         label="Type",
         widget=forms.TextInput(attrs={"list": "product-type-options", "autocomplete": "off"}),
     )
-    tracking_method = forms.ChoiceField(
-        choices=TrackingMethod.choices, label="Tracking method", widget=TrackingChoiceSelect
+    category = forms.ChoiceField(
+        choices=ItemCategory.choices, label="Category", widget=CategoryChoiceSelect
     )
     location = forms.ModelChoiceField(queryset=Location.objects.none())
     occurred_at = forms.DateField(
@@ -118,19 +131,29 @@ class ReceiveStockForm(forms.Form):
         label="Stock purpose",
     )
     # data-tracking-method: static/js/movement_forms.js shows/hides these two
-    # based on the selected product (unit-tracked needs a serial, quantity-
-    # tracked needs a quantity) — purely a UX layer; clean() below remains
-    # the actual, unchanged source of truth.
-    vendor_serial = forms.CharField(
-        max_length=120,
+    # based on the selected category (unit-tracked needs the serials box,
+    # quantity-tracked needs the quantity field) — purely a UX layer;
+    # clean() below remains the actual, unchanged source of truth.
+    vendor_serials = forms.CharField(
         required=False,
-        label="Vendor serial",
-        widget=forms.TextInput(attrs={"data_tracking_method": "unit"}),
+        label="Serial number(s)",
+        help_text="One per line. Leave blank — or add blank lines for some units — when the "
+        "physical item has no serial; each still becomes its own tracked unit.",
+        widget=forms.Textarea(
+            attrs={
+                "rows": 4,
+                "placeholder": "One serial per line (optional)",
+                "data_tracking_method": "unit",
+            }
+        ),
     )
     quantity = forms.IntegerField(
         required=False,
         min_value=1,
-        widget=forms.NumberInput(attrs={"data_tracking_method": "quantity"}),
+        label="Quantity",
+        help_text="For Quantity-tracked items, the amount received. For Individually-tracked "
+        "items, only needed if you didn't list serials above (or to add extra blank-serial "
+        "units alongside the ones you did list).",
     )
     project_reference = forms.CharField(max_length=120, required=False, label="Project reference")
     final_customer = forms.CharField(max_length=120, required=False, label="Final customer")
@@ -139,6 +162,12 @@ class ReceiveStockForm(forms.Form):
     condition = forms.ChoiceField(choices=Condition.choices, required=False, initial=Condition.NEW)
     accessories = forms.CharField(required=False, widget=forms.Textarea)
     notes = forms.CharField(required=False, widget=forms.Textarea)
+    # Round-trips through initial -> render -> (possibly invalid) re-render
+    # -> review -> confirm using Django's own bound-field machinery, so a
+    # validation error never loses the token a fresh GET generated —
+    # apps.core.idempotency.claim_submission_token() is only ever actually
+    # checked on the final confirmed=true submission.
+    submission_token = forms.CharField(required=False, widget=forms.HiddenInput)
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -151,11 +180,33 @@ class ReceiveStockForm(forms.Form):
 
     def clean(self):
         cleaned = super().clean()
-        tracking_method = cleaned.get("tracking_method")
-        if tracking_method == TrackingMethod.QUANTITY and not cleaned.get("quantity"):
-            self.add_error("quantity", "Quantity is required for quantity-tracked products.")
-        if tracking_method == TrackingMethod.UNIT and not cleaned.get("vendor_serial"):
-            self.add_error("vendor_serial", "Vendor serial is required for unit-tracked products.")
+        category = cleaned.get("category")
+        tracking_method = CATEGORY_TRACKING_METHOD.get(category)
+        serial_lines = [line.strip() for line in (cleaned.get("vendor_serials") or "").splitlines()]
+        parsed_serials = [line for line in serial_lines if line]
+        cleaned["parsed_serials"] = parsed_serials
+
+        if tracking_method == TrackingMethod.QUANTITY:
+            if not cleaned.get("quantity"):
+                self.add_error("quantity", "Quantity is required for quantity-tracked items.")
+        elif tracking_method == TrackingMethod.UNIT:
+            entered_quantity = cleaned.get("quantity")
+            if parsed_serials:
+                if entered_quantity and entered_quantity != len(parsed_serials):
+                    self.add_error(
+                        "quantity",
+                        f"Quantity ({entered_quantity}) doesn't match the number of serials "
+                        f"entered ({len(parsed_serials)}). Leave quantity blank to infer it "
+                        "from the serials, or set it higher to add extra blank-serial units.",
+                    )
+                cleaned["unit_count"] = max(entered_quantity or 0, len(parsed_serials))
+            else:
+                if not entered_quantity:
+                    self.add_error(
+                        "quantity", "Enter a quantity, or list at least one serial above."
+                    )
+                cleaned["unit_count"] = entered_quantity
+
         cleaned["stock_purpose"] = cleaned.get("stock_purpose") or StockPurpose.INTERNAL
         if cleaned["stock_purpose"] == StockPurpose.CUSTOMER and not cleaned.get("final_customer"):
             self.add_error("final_customer", "Final customer is required for Customer stock.")
@@ -611,15 +662,17 @@ class ReceiveBulkLineForm(forms.Form):
         label="Type",
         widget=forms.TextInput(attrs={"list": "product-type-options", "autocomplete": "off"}),
     )
-    tracking_method = forms.ChoiceField(
-        choices=TrackingMethod.choices,
+    category = forms.ChoiceField(
+        choices=ItemCategory.choices,
         required=False,
-        label="Tracking method",
-        widget=TrackingChoiceSelect,
+        label="Category",
+        widget=CategoryChoiceSelect,
     )
     vendor_serials = forms.CharField(
         required=False,
-        widget=forms.Textarea(attrs={"rows": 3, "placeholder": "One serial per line"}),
+        widget=forms.Textarea(
+            attrs={"rows": 3, "placeholder": "One serial per line", "data_tracking_method": "unit"}
+        ),
         label="Serials",
     )
     quantity = forms.IntegerField(required=False, min_value=1)
@@ -651,10 +704,10 @@ class ReceiveBulkLineForm(forms.Form):
         cleaned = super().clean()
         if not cleaned.get("brand_name") and not cleaned.get("model"):
             return cleaned  # blank row — silently skipped, not an error
-        for field_name in ("brand_name", "model", "product_type_name", "tracking_method"):
+        for field_name in ("brand_name", "model", "product_type_name", "category"):
             if not cleaned.get(field_name):
                 self.add_error(field_name, "This field is required.")
-        tracking_method = cleaned.get("tracking_method")
+        tracking_method = CATEGORY_TRACKING_METHOD.get(cleaned.get("category"))
         if tracking_method == TrackingMethod.UNIT:
             serials = [
                 s.strip() for s in (cleaned.get("vendor_serials") or "").splitlines() if s.strip()
@@ -665,6 +718,48 @@ class ReceiveBulkLineForm(forms.Form):
         elif tracking_method == TrackingMethod.QUANTITY and not cleaned.get("quantity"):
             self.add_error("quantity", "Quantity is required for quantity-tracked products.")
         return cleaned
+
+
+class InstallComponentForm(forms.Form):
+    """Reached from a Component-category unit asset's own detail page — the
+    component itself is fixed (the URL's pk); this only asks which parent
+    asset it's being installed into. Both must currently be In Stock at a
+    location the operator can access — see
+    apps.inventory.services.components' module docstring for why.
+    """
+
+    parent_asset = forms.ModelChoiceField(
+        queryset=UnitAsset.objects.none(),
+        label="Install into",
+        widget=forms.Select(attrs={"data-filterable": "true"}),
+    )
+    occurred_at = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
+    notes = forms.CharField(required=False, widget=forms.Textarea)
+
+    def __init__(self, *args, user=None, component=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        queryset = scope_queryset(
+            user,
+            UnitAsset.objects.select_related(
+                "product", "product__brand", "current_location"
+            ).filter(status=UnitStatus.IN_STOCK),
+            location_field="current_location",
+        )
+        if component is not None:
+            queryset = queryset.exclude(pk=component.pk)
+        self.fields["parent_asset"].queryset = queryset.order_by(
+            "product__brand__name", "product__model"
+        )
+
+
+class RemoveComponentForm(forms.Form):
+    """The component (and, implicitly, the parent it's currently installed
+    in) is fixed by the URL — this is just the occurred_at/notes every other
+    movement asks for.
+    """
+
+    occurred_at = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
+    notes = forms.CharField(required=False, widget=forms.Textarea)
 
 
 ReceiveBulkFormSet = formset_factory(ReceiveBulkLineForm, extra=5)

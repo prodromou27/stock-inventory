@@ -9,9 +9,9 @@
       <h1>Edit products</h1>
       <div class="page-header__subtitle">
         Edit many products at once, spreadsheet-style — change whatever cells you need, then Save changes. Only
-        rows that actually changed are updated; a product whose tracking method is locked (it already has recorded
-        movements) is reported instead of saved if you try to change that cell. Shows up to {{ row_limit }} products
-        at a time — use search to narrow down which ones.
+        rows that actually changed are updated; a product whose category change would flip its tracking method
+        (it already has recorded movements) is reported instead of saved if you try to change that cell. Shows up
+        to {{ row_limit }} products at a time — use search to narrow down which ones.
       </div>
     </div>
   </div>
@@ -50,7 +50,7 @@
               <th>Model</th>
               <th>SKU</th>
               <th>Type</th>
-              <th>Tracking</th>
+              <th>Category</th>
               <th>Supplier</th>
               <th>Active</th>
             </tr>
@@ -72,7 +72,7 @@
                   {{ form.product_type_name }}
                   {% if form.product_type_name.errors %}<div class="errorlist">{{ form.product_type_name.errors|join:" " }}</div>{% endif %}
                 </td>
-                <td>{{ form.tracking_method }}</td>
+                <td>{{ form.category }}</td>
                 <td>{{ form.supplier }}</td>
                 <td>{{ form.is_active }}</td>
               </tr>
