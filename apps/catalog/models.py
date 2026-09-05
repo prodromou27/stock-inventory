@@ -133,6 +133,24 @@ class Product(UUIDPrimaryKeyModel, UserStampedModel):
     default_notes = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
     low_stock_threshold = models.PositiveIntegerField(null=True, blank=True)
+    # Reorder suggestions (apps.reporting.queries.reorder_suggestions()) —
+    # siblings of low_stock_threshold, not a replacement: threshold decides
+    # *whether* a balance shows up as low, these decide *how much* to
+    # suggest reordering once it does. Same quantity-tracked-only rule as
+    # low_stock_threshold (see the matching CheckConstraint below and
+    # save()'s auto-null).
+    target_stock_level = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text='Reorder up to this many units. Leave blank to show "Configuration '
+        'required" on the reorder suggestions report instead of a suggested quantity.',
+    )
+    min_reorder_quantity = models.PositiveIntegerField(
+        null=True, blank=True, help_text="Never suggest reordering fewer than this many units."
+    )
+    preferred_supplier = models.CharField(
+        max_length=120, blank=True, help_text="Shown on the reorder suggestions report."
+    )
     custom_field_values = models.JSONField(default=dict, blank=True)
 
     class Meta:
@@ -155,6 +173,16 @@ class Product(UUIDPrimaryKeyModel, UserStampedModel):
                     | models.Q(low_stock_threshold__isnull=True)
                 ),
                 name="product_low_stock_threshold_unit_null",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    ~models.Q(tracking_method=TrackingMethod.UNIT)
+                    | (
+                        models.Q(target_stock_level__isnull=True)
+                        & models.Q(min_reorder_quantity__isnull=True)
+                    )
+                ),
+                name="product_reorder_fields_unit_null",
             ),
             # CATEGORY_TRACKING_METHOD's mapping enforced at the DB layer too —
             # category is nullable only during the migration-0004/0005/0006
@@ -198,6 +226,9 @@ class Product(UUIDPrimaryKeyModel, UserStampedModel):
         self.normalized_sku = self.sku.lower()
         if self.tracking_method != TrackingMethod.QUANTITY:
             self.low_stock_threshold = None
+            self.target_stock_level = None
+            self.min_reorder_quantity = None
+            self.preferred_supplier = ""
         super().save(*args, **kwargs)
 
     def get_absolute_url(self):

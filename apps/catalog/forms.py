@@ -63,6 +63,17 @@ class ProductForm(forms.Form):
     supplier = forms.CharField(max_length=120, required=False)
     default_notes = forms.CharField(required=False, widget=forms.Textarea)
     low_stock_threshold = forms.IntegerField(required=False, min_value=0)
+    target_stock_level = forms.IntegerField(
+        required=False,
+        min_value=0,
+        label="Target stock level",
+        help_text="Reorder suggestions report: reorder up to this many units. Leave blank to "
+        'show "Configuration required" instead of a suggested quantity.',
+    )
+    min_reorder_quantity = forms.IntegerField(
+        required=False, min_value=0, label="Minimum reorder quantity"
+    )
+    preferred_supplier = forms.CharField(max_length=120, required=False, label="Preferred supplier")
     is_active = forms.BooleanField(required=False, initial=True)
 
     def __init__(self, *args, **kwargs):
@@ -78,6 +89,9 @@ class ProductForm(forms.Form):
         category = cleaned.get("category")
         if category and CATEGORY_TRACKING_METHOD.get(category) != TrackingMethod.QUANTITY:
             cleaned["low_stock_threshold"] = None
+            cleaned["target_stock_level"] = None
+            cleaned["min_reorder_quantity"] = None
+            cleaned["preferred_supplier"] = ""
         return cleaned
 
     def get_custom_field_values(self):

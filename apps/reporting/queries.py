@@ -15,7 +15,9 @@ from apps.inventory.filters import duplicate_serial_values
 from apps.inventory.models import (
     AssetStatusHistory,
     InventoryTransaction,
+    InventoryTransactionLine,
     MovementType,
+    ProductLocationThreshold,
     ReservationStatus,
     StockBalance,
     StockPurpose,
@@ -224,6 +226,87 @@ def low_stock_balances(user, location=None):
     if location is not None:
         queryset = queryset.filter(location__path__descendant_or_self=location.path)
     return queryset.order_by("product__brand__name", "product__model")
+
+
+def reorder_suggestions(user, location=None):
+    """Same base set as low_stock_balances() (below its configured
+    threshold) — this report answers "how much," not "whether," so it only
+    makes sense for items already flagged as low. Never invents a number:
+    a product with no target_stock_level configured (product-wide, or
+    overridden for this specific location via ProductLocationThreshold)
+    shows "Configuration required" rather than a guess. Every row is
+    labeled a *suggestion* — this is not a purchase order, supplier
+    ordering, or invoicing feature, and creates nothing on its own.
+
+    The per-row last-receipt lookup is an N+1 by design, not an oversight:
+    the base set is already threshold-filtered down to a small result (the
+    same tradeoff low_stock_balances() accepts), so one extra indexed query
+    per row is cheap here in a way it wouldn't be over the full balance
+    table.
+    """
+    balances = list(low_stock_balances(user, location=location))
+    if not balances:
+        return []
+
+    overrides = {
+        (t.product_id, t.location_id): t
+        for t in ProductLocationThreshold.objects.filter(
+            product_id__in={b.product_id for b in balances},
+            location_id__in={b.location_id for b in balances},
+        )
+    }
+
+    rows = []
+    for balance in balances:
+        override = overrides.get((balance.product_id, balance.location_id))
+        target = balance.product.target_stock_level
+        min_reorder = balance.product.min_reorder_quantity
+        supplier = balance.product.preferred_supplier
+        if override is not None:
+            if override.target_stock_level is not None:
+                target = override.target_stock_level
+            if override.min_reorder_quantity is not None:
+                min_reorder = override.min_reorder_quantity
+            if override.preferred_supplier:
+                supplier = override.preferred_supplier
+
+        available = balance.available_quantity
+        suggested_quantity = None if target is None else max(target - available, min_reorder or 0)
+
+        last_receipt_line = (
+            InventoryTransactionLine.objects.filter(
+                product=balance.product,
+                to_location=balance.location,
+                transaction__movement_type=MovementType.RECEIPT,
+            )
+            .select_related("transaction")
+            .order_by("-transaction__occurred_at", "-transaction__created_at")
+            .first()
+        )
+
+        rows.append(
+            {
+                "balance": balance,
+                "product": balance.product,
+                "location": balance.location,
+                "available_quantity": available,
+                "target_stock_level": target,
+                "min_reorder_quantity": min_reorder,
+                "preferred_supplier": supplier,
+                "suggested_quantity": suggested_quantity,
+                "configuration_required": target is None,
+                "last_receipt_date": (
+                    last_receipt_line.transaction.occurred_at if last_receipt_line else None
+                ),
+                "last_receipt_quantity": (
+                    last_receipt_line.quantity_delta if last_receipt_line else None
+                ),
+                "last_invoice_number": (
+                    last_receipt_line.invoice_number_snapshot if last_receipt_line else ""
+                ),
+            }
+        )
+    return rows
 
 
 def dashboard_summary(user):

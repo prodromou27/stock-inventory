@@ -308,6 +308,78 @@ class LowStockView(LoginRequiredMixin, ListView):
         return context
 
 
+class ReorderSuggestionsView(LoginRequiredMixin, View):
+    """Not a ListView/CSVExportMixin — queries.reorder_suggestions() returns
+    a plain list of dicts (each row needs a per-item extra lookup and a
+    computed suggested quantity, not just a queryset), so this follows
+    SavedReportRunView's own hand-rolled CSV pattern below instead.
+    """
+
+    template_name = "reporting/reorder_suggestions.html"
+
+    def get(self, request):
+        location = None
+        if location_id := request.GET.get("location"):
+            location = Location.objects.filter(pk=location_id).first()
+        rows = queries.reorder_suggestions(request.user, location=location)
+
+        if request.GET.get("format") == "csv":
+            return self._csv_response(rows)
+
+        return render(
+            request,
+            self.template_name,
+            {
+                "rows": rows,
+                "locations": accessible_locations(request.user).order_by("level", "name"),
+                "filters": request.GET,
+            },
+        )
+
+    def _csv_response(self, rows):
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = 'attachment; filename="reorder_suggestions.csv"'
+        writer = csv.writer(response)
+        writer.writerow(
+            [
+                "Product",
+                "Location",
+                "Available Quantity",
+                "Target Stock Level",
+                "Min Reorder Quantity",
+                "Suggested Quantity",
+                "Preferred Supplier",
+                "Last Receipt Date",
+                "Last Receipt Quantity",
+                "Last Invoice Number",
+            ]
+        )
+        for row in rows:
+            writer.writerow(
+                [
+                    str(row["product"]),
+                    str(row["location"]),
+                    row["available_quantity"],
+                    row["target_stock_level"] if row["target_stock_level"] is not None else "",
+                    row["min_reorder_quantity"] if row["min_reorder_quantity"] is not None else "",
+                    (
+                        row["suggested_quantity"]
+                        if row["suggested_quantity"] is not None
+                        else "Configuration required"
+                    ),
+                    row["preferred_supplier"],
+                    row["last_receipt_date"].isoformat() if row["last_receipt_date"] else "",
+                    (
+                        row["last_receipt_quantity"]
+                        if row["last_receipt_quantity"] is not None
+                        else ""
+                    ),
+                    row["last_invoice_number"],
+                ]
+            )
+        return response
+
+
 # --- Ad-hoc report builder ("more structured reporting", user request) ---
 
 

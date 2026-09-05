@@ -595,3 +595,38 @@ class SavedGridView(UUIDPrimaryKeyModel, UserStampedModel):
 
     def __str__(self):
         return self.name
+
+
+class ProductLocationThreshold(UUIDPrimaryKeyModel, UserStampedModel):
+    """A per-location override of Product's global reorder fields (target
+    stock level/min reorder quantity/preferred supplier) — sparse config
+    data an Administrator sets only for the locations that actually need a
+    different number than the product-wide default, never touched by any
+    ledger operation. Lives here rather than on apps.catalog.Product itself
+    because it needs a Location FK, and catalog has no dependency on
+    locations (docs/architecture/01-repository-structure.md's dependency
+    table) — inventory already depends on both.
+
+    All three override fields are individually optional: a row can override
+    just the preferred supplier for this location while still falling back
+    to the product's global target_stock_level, for instance.
+    """
+
+    product = models.ForeignKey(
+        "catalog.Product", on_delete=models.CASCADE, related_name="location_thresholds"
+    )
+    location = models.ForeignKey("locations.Location", on_delete=models.CASCADE, related_name="+")
+    target_stock_level = models.PositiveIntegerField(null=True, blank=True)
+    min_reorder_quantity = models.PositiveIntegerField(null=True, blank=True)
+    preferred_supplier = models.CharField(max_length=120, blank=True)
+
+    class Meta:
+        ordering = ["product__brand__name", "product__model", "location__name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["product", "location"], name="productlocationthreshold_unique"
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.product} @ {self.location} threshold override"

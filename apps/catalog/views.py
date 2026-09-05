@@ -183,6 +183,9 @@ class ProductCreateView(LoginRequiredMixin, RoleRequiredMixin, View):
                 supplier=data["supplier"],
                 default_notes=data["default_notes"],
                 low_stock_threshold=data["low_stock_threshold"],
+                target_stock_level=data["target_stock_level"],
+                min_reorder_quantity=data["min_reorder_quantity"],
+                preferred_supplier=data["preferred_supplier"],
                 duplicate_acknowledged=request.POST.get("duplicate_acknowledged") == "true",
                 custom_field_values=form.get_custom_field_values(),
             )
@@ -361,6 +364,9 @@ class ProductGridView(LoginRequiredMixin, RoleRequiredMixin, View):
                 supplier=row["supplier"],
                 default_notes=product.default_notes,
                 low_stock_threshold=product.low_stock_threshold,
+                target_stock_level=product.target_stock_level,
+                min_reorder_quantity=product.min_reorder_quantity,
+                preferred_supplier=product.preferred_supplier,
                 is_active=row["is_active"],
                 custom_field_values=product.custom_field_values,
             )
@@ -389,6 +395,9 @@ class ProductUpdateView(LoginRequiredMixin, RoleRequiredMixin, View):
                 "supplier": product.supplier,
                 "default_notes": product.default_notes,
                 "low_stock_threshold": product.low_stock_threshold,
+                "target_stock_level": product.target_stock_level,
+                "min_reorder_quantity": product.min_reorder_quantity,
+                "preferred_supplier": product.preferred_supplier,
                 "is_active": product.is_active,
             }
         )
@@ -436,6 +445,9 @@ class ProductUpdateView(LoginRequiredMixin, RoleRequiredMixin, View):
                 supplier=data["supplier"],
                 default_notes=data["default_notes"],
                 low_stock_threshold=data["low_stock_threshold"],
+                target_stock_level=data["target_stock_level"],
+                min_reorder_quantity=data["min_reorder_quantity"],
+                preferred_supplier=data["preferred_supplier"],
                 is_active=data["is_active"],
                 custom_field_values=form.get_custom_field_values(),
             )

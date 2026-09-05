@@ -5,6 +5,7 @@ from .models import (
     Customer,
     InventoryTransaction,
     InventoryTransactionLine,
+    ProductLocationThreshold,
     StockBalance,
     UnitAsset,
 )
@@ -80,3 +81,23 @@ class InventoryTransactionLineAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
 @admin.register(AssetStatusHistory)
 class AssetStatusHistoryAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
     list_display = ("unit_asset", "from_status", "to_status", "occurred_at")
+
+
+@admin.register(ProductLocationThreshold)
+class ProductLocationThresholdAdmin(admin.ModelAdmin):
+    """Sparse, per-location reorder overrides — see the model's docstring
+    for why this is plain admin CRUD rather than a dedicated screen: rare,
+    low-volume configuration data, not something operators touch daily the
+    way Product's own global reorder fields (edited on the ordinary product
+    form) are.
+    """
+
+    list_display = (
+        "product",
+        "location",
+        "target_stock_level",
+        "min_reorder_quantity",
+        "preferred_supplier",
+    )
+    search_fields = ("product__model", "product__brand__name", "location__name")
+    autocomplete_fields = ("product", "location")

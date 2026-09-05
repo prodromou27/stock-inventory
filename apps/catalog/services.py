@@ -181,6 +181,9 @@ def create_product(
     supplier="",
     default_notes="",
     low_stock_threshold=None,
+    target_stock_level=None,
+    min_reorder_quantity=None,
+    preferred_supplier="",
     duplicate_acknowledged=False,
     custom_field_values=None,
 ):
@@ -199,6 +202,9 @@ def create_product(
 
     if tracking_method != TrackingMethod.QUANTITY:
         low_stock_threshold = None
+        target_stock_level = None
+        min_reorder_quantity = None
+        preferred_supplier = ""
 
     product = Product(
         brand=brand,
@@ -211,6 +217,9 @@ def create_product(
         supplier=supplier,
         default_notes=default_notes,
         low_stock_threshold=low_stock_threshold,
+        target_stock_level=target_stock_level,
+        min_reorder_quantity=min_reorder_quantity,
+        preferred_supplier=preferred_supplier,
         custom_field_values=_validate_custom_field_values(
             custom_field_values, _active_custom_field_definitions()
         ),
@@ -379,6 +388,9 @@ def update_product(
     supplier="",
     default_notes="",
     low_stock_threshold=None,
+    target_stock_level=None,
+    min_reorder_quantity=None,
+    preferred_supplier="",
     is_active=True,
     custom_field_values=None,
 ):
@@ -407,6 +419,9 @@ def update_product(
 
     if tracking_method != TrackingMethod.QUANTITY:
         low_stock_threshold = None
+        target_stock_level = None
+        min_reorder_quantity = None
+        preferred_supplier = ""
 
     # A value stored for a definition that's since gone inactive is left
     # untouched (it wasn't part of this submission — the form only ever
@@ -432,6 +447,9 @@ def update_product(
     product.supplier = supplier
     product.default_notes = default_notes
     product.low_stock_threshold = low_stock_threshold
+    product.target_stock_level = target_stock_level
+    product.min_reorder_quantity = min_reorder_quantity
+    product.preferred_supplier = preferred_supplier
     product.is_active = is_active
     product.custom_field_values = merged_custom_fields
     product.updated_by = user

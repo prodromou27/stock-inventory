@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+
+{% block title %}Reorder Suggestions — Stock Inventory{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>Reorder suggestions</h1>
+      <div class="page-header__subtitle">
+        Suggestions, not purchase orders — based on each product's configured target stock
+        level and minimum reorder quantity. Only products already at or below their low-stock
+        threshold are shown; a product with no target configured shows "Configuration required"
+        rather than a guessed number.
+      </div>
+    </div>
+    <div class="page-header__actions">
+      <a class="btn" href="?{{ request.GET.urlencode }}{% if request.GET %}&{% else %}?{% endif %}format=csv">Export CSV</a>
+    </div>
+  </div>
+
+  <form method="get" class="toolbar">
+    <label>Country / location
+      <select name="location">
+        <option value="">All locations</option>
+        {% for location in locations %}
+          <option value="{{ location.pk }}" {% if filters.location == location.pk|stringformat:"s" %}selected{% endif %}>
+            {{ location.name }} ({{ location.get_level_display }})
+          </option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit" class="btn btn--primary">Filter</button>
+    {% if filters.location %}<a class="btn btn--ghost" href="{% url 'reporting:reorder_suggestions' %}">Clear</a>{% endif %}
+  </form>
+
+  {% if rows %}
+    <div class="table-scroll" tabindex="0">
+      <table class="dense-table">
+        <thead>
+          <tr>
+            <th>Product</th>
+            <th>Location</th>
+            <th>Available</th>
+            <th>Target</th>
+            <th>Min reorder</th>
+            <th>Suggested</th>
+            <th>Preferred supplier</th>
+            <th>Last receipt</th>
+            <th>Last invoice</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+            <tr>
+              <td><a href="{{ row.product.get_absolute_url }}">{{ row.product }}</a></td>
+              <td>{{ row.location }}</td>
+              <td>{{ row.available_quantity }}</td>
+              <td>{{ row.target_stock_level|default:"—" }}</td>
+              <td>{{ row.min_reorder_quantity|default:"—" }}</td>
+              <td>
+                {% if row.configuration_required %}
+                  <span class="badge badge--warning">Configuration required</span>
+                {% else %}
+                  <strong>Suggestion: {{ row.suggested_quantity }}</strong>
+                {% endif %}
+              </td>
+              <td>{{ row.preferred_supplier|default:"—" }}</td>
+              <td>
+                {% if row.last_receipt_date %}
+                  {{ row.last_receipt_date }} ({{ row.last_receipt_quantity }})
+                {% else %}
+                  —
+                {% endif %}
+              </td>
+              <td>{{ row.last_invoice_number|default:"—" }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="empty-state">Nothing below its configured threshold right now (or no product has a threshold configured).</p>
+  {% endif %}
+{% endblock %}
