@@ -7,17 +7,14 @@ from apps.catalog.models import TrackingMethod
 from apps.core.authorization import ADMINISTRATOR, STOCK_MANAGER, require_role
 from apps.locations.scoping import require_location_access
 
-from ..models import (
-    AssetStatusHistory,
-    Condition,
-    InventoryTransactionLine,
-    MovementType,
-    StockPurpose,
-    UnitAsset,
-    UnitStatus,
-)
+from ..models import Condition, MovementType, StockPurpose
 from .duplicates import check_duplicate_serial, duplicate_serial_count
-from .ledger import adjust_balance, create_transaction_header
+from .ledger import (
+    adjust_balance,
+    create_transaction_header,
+    write_quantity_line,
+    write_unit_creation_line,
+)
 
 
 class DuplicateSerialError(Exception):
@@ -139,60 +136,22 @@ def _receive_unit(
         duplicate_serial_acknowledged=bool(duplicate_count),
     )
 
-    asset = UnitAsset(
+    asset = write_unit_creation_line(
+        transaction=txn,
+        line_number=1,
         product=product,
         vendor_serial=vendor_serial,
-        status=UnitStatus.IN_STOCK,
+        location=location,
+        user=user,
+        arrival_date=occurred_at,
+        condition=condition,
         stock_purpose=stock_purpose,
-        current_location=location,
         project_reference=project_reference,
         final_customer=final_customer,
         supplier=supplier,
         invoice_number=invoice_number,
-        arrival_date=occurred_at,
-        condition=condition,
         accessories=accessories,
         notes=notes,
-        created_by=user,
-        updated_by=user,
-    )
-    asset.full_clean(exclude=["normalized_serial"])
-    asset.save()
-
-    InventoryTransactionLine.objects.create(
-        transaction=txn,
-        line_number=1,
-        unit_asset=asset,
-        product=product,
-        stock_purpose_snapshot=stock_purpose,
-        quantity_delta=1,
-        from_status=None,
-        to_status=UnitStatus.IN_STOCK,
-        from_location=None,
-        to_location=location,
-        brand_snapshot=product.brand.name,
-        model_snapshot=product.model,
-        sku_snapshot=product.sku,
-        type_snapshot=product.product_type.name,
-        description_snapshot=product.description,
-        serial_snapshot=vendor_serial,
-        project_reference_snapshot=project_reference,
-        final_customer_snapshot=final_customer,
-        supplier_snapshot=supplier,
-        invoice_number_snapshot=invoice_number,
-        condition_snapshot=condition,
-        accessories_snapshot=accessories,
-        notes=notes,
-    )
-
-    AssetStatusHistory.objects.create(
-        unit_asset=asset,
-        transaction=txn,
-        from_status=None,
-        to_status=UnitStatus.IN_STOCK,
-        from_location=None,
-        to_location=location,
-        recorded_by=user,
     )
 
     if duplicate_count:
@@ -248,24 +207,18 @@ def _receive_quantity(
         product=product, location=location, delta=quantity, stock_purpose=stock_purpose
     )
 
-    InventoryTransactionLine.objects.create(
+    write_quantity_line(
         transaction=txn,
         line_number=1,
-        unit_asset=None,
         product=product,
-        stock_purpose_snapshot=stock_purpose,
         quantity_delta=quantity,
         from_location=None,
         to_location=location,
-        brand_snapshot=product.brand.name,
-        model_snapshot=product.model,
-        sku_snapshot=product.sku,
-        type_snapshot=product.product_type.name,
-        description_snapshot=product.description,
-        project_reference_snapshot=project_reference,
-        final_customer_snapshot=final_customer,
-        supplier_snapshot=supplier,
-        invoice_number_snapshot=invoice_number,
+        stock_purpose=stock_purpose,
+        project_reference=project_reference,
+        final_customer=final_customer,
+        supplier=supplier,
+        invoice_number=invoice_number,
         notes=notes,
     )
 
@@ -509,58 +462,22 @@ def receive_stock_bulk(
         if resolved["kind"] == "unit":
             for serial in resolved["serials"]:
                 line_number += 1
-                asset = UnitAsset(
+                asset = write_unit_creation_line(
+                    transaction=txn,
+                    line_number=line_number,
                     product=product,
                     vendor_serial=serial,
-                    status=UnitStatus.IN_STOCK,
+                    location=location,
+                    user=user,
+                    arrival_date=resolved["arrival_date"],
+                    condition=resolved["condition"],
                     stock_purpose=stock_purpose,
-                    current_location=location,
                     project_reference=project_reference,
                     final_customer=final_customer,
                     supplier=supplier,
                     invoice_number=invoice_number,
-                    arrival_date=resolved["arrival_date"],
-                    condition=resolved["condition"],
                     accessories=resolved["accessories"],
                     notes=resolved["notes"],
-                    created_by=user,
-                    updated_by=user,
-                )
-                asset.full_clean(exclude=["normalized_serial"])
-                asset.save()
-                InventoryTransactionLine.objects.create(
-                    transaction=txn,
-                    line_number=line_number,
-                    unit_asset=asset,
-                    product=product,
-                    stock_purpose_snapshot=stock_purpose,
-                    quantity_delta=1,
-                    from_status=None,
-                    to_status=UnitStatus.IN_STOCK,
-                    from_location=None,
-                    to_location=location,
-                    brand_snapshot=product.brand.name,
-                    model_snapshot=product.model,
-                    sku_snapshot=product.sku,
-                    type_snapshot=product.product_type.name,
-                    description_snapshot=product.description,
-                    serial_snapshot=serial,
-                    project_reference_snapshot=project_reference,
-                    final_customer_snapshot=final_customer,
-                    supplier_snapshot=supplier,
-                    invoice_number_snapshot=invoice_number,
-                    condition_snapshot=resolved["condition"],
-                    accessories_snapshot=resolved["accessories"],
-                    notes=resolved["notes"],
-                )
-                AssetStatusHistory.objects.create(
-                    unit_asset=asset,
-                    transaction=txn,
-                    from_status=None,
-                    to_status=UnitStatus.IN_STOCK,
-                    from_location=None,
-                    to_location=location,
-                    recorded_by=user,
                 )
                 created_asset_ids.append(str(asset.pk))
         else:
@@ -571,24 +488,18 @@ def receive_stock_bulk(
                 delta=resolved["quantity"],
                 stock_purpose=stock_purpose,
             )
-            InventoryTransactionLine.objects.create(
+            write_quantity_line(
                 transaction=txn,
                 line_number=line_number,
-                unit_asset=None,
                 product=product,
-                stock_purpose_snapshot=stock_purpose,
                 quantity_delta=resolved["quantity"],
                 from_location=None,
                 to_location=location,
-                brand_snapshot=product.brand.name,
-                model_snapshot=product.model,
-                sku_snapshot=product.sku,
-                type_snapshot=product.product_type.name,
-                description_snapshot=product.description,
-                project_reference_snapshot=project_reference,
-                final_customer_snapshot=final_customer,
-                supplier_snapshot=supplier,
-                invoice_number_snapshot=invoice_number,
+                stock_purpose=stock_purpose,
+                project_reference=project_reference,
+                final_customer=final_customer,
+                supplier=supplier,
+                invoice_number=invoice_number,
                 notes=resolved["notes"],
             )
             touched_balance_ids.add(str(balance.pk))

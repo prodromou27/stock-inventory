@@ -245,6 +245,47 @@ class TestCorrectBalance:
                 reason="",
             )
 
+    def test_cannot_correct_on_hand_below_reserved(
+        self, administrator, quantity_product, location_tree
+    ):
+        """Regression test: correct_balance() now routes its mutation
+        through ledger.adjust_balance() (the one module documented as
+        exclusively responsible for writing StockBalance) instead of
+        setting balance.on_hand_quantity directly — this must still
+        reject a correction that would leave reserved_quantity >
+        on_hand_quantity, same as the DB CheckConstraint already enforces.
+        """
+        from apps.inventory.services.reservations import reserve_stock
+
+        receive_stock(
+            user=administrator,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=10,
+        )
+        reserve_stock(
+            user=administrator,
+            occurred_at=date.today(),
+            project_reference="PRJ-CORRECT-BELOW-RESERVED",
+            quantity_lines=[
+                {"product": quantity_product, "location": location_tree["room"], "quantity": 8}
+            ],
+        )
+
+        with pytest.raises(ValidationError):
+            correct_balance(
+                user=administrator,
+                product=quantity_product,
+                location=location_tree["room"],
+                new_on_hand_quantity=5,
+                occurred_at=date.today(),
+                reason="physical count discrepancy",
+            )
+        balance = StockBalance.objects.get(product=quantity_product, location=location_tree["room"])
+        assert balance.on_hand_quantity == 10
+        assert balance.reserved_quantity == 8
+
 
 @pytest.mark.django_db
 class TestReverseTransaction:

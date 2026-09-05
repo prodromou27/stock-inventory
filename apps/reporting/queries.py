@@ -220,7 +220,7 @@ def low_stock_balances(user, location=None):
     queryset = (
         _scoped_balances(user)
         .filter(product__low_stock_threshold__isnull=False)
-        .annotate(available=F("on_hand_quantity") - F("reserved_quantity"))
+        .annotate(available=StockBalance.AVAILABLE_QUANTITY_EXPRESSION)
         .filter(available__lte=F("product__low_stock_threshold"))
     )
     if location is not None:

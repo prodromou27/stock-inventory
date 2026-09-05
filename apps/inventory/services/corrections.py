@@ -132,9 +132,19 @@ def correct_balance(
     if delta == 0:
         raise ValidationError("New quantity is the same as the current quantity.")
 
-    balance.on_hand_quantity = new_on_hand_quantity
-    balance.full_clean()
-    balance.save()
+    # Routed through adjust_balance() — ledger.py's own module docstring
+    # says it's the only module that mutates StockBalance; a direct
+    # balance.save() here used to be a second, undocumented write path
+    # that only avoided the DB check constraints by luck (full_clean()
+    # happening to catch them), producing a raw constraint-violation
+    # message instead of adjust_balance()'s friendly one.
+    adjust_balance(
+        product=product,
+        location=location,
+        delta=delta,
+        stock_purpose=stock_purpose,
+        respect_available=False,
+    )
 
     txn = create_transaction_header(
         movement_type=MovementType.CORRECTION,

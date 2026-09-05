@@ -273,6 +273,15 @@ class StockBalance(UUIDPrimaryKeyModel):
     balance, immutable ledger lines are what make it reconstructable.
     """
 
+    # The one authoritative "available" expression for queryset-level
+    # annotation/aggregation — every call site that needs this at the DB
+    # layer (rather than via the available_quantity property below, which
+    # only works on an already-fetched instance) annotates or aggregates
+    # with this same F() expression rather than re-writing the arithmetic,
+    # so they can never silently drift out of agreement with each other or
+    # with available_quantity.
+    AVAILABLE_QUANTITY_EXPRESSION = models.F("on_hand_quantity") - models.F("reserved_quantity")
+
     product = models.ForeignKey(
         "catalog.Product", on_delete=models.PROTECT, related_name="stock_balances"
     )

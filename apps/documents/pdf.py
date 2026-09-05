@@ -13,8 +13,6 @@ from django.template import Context, Template, engines
 from django.template.loader import render_to_string
 from weasyprint import HTML
 
-from apps.inventory.models import MovementType
-
 from .models import REPORT_COLUMNS, FontChoice, PageMargin, _default_layout_config
 
 CURRENT_TEMPLATE_VERSION = "form_v1"
@@ -135,14 +133,6 @@ def sample_document_context():
             },
         ],
     }
-
-
-def document_type_for(transaction):
-    if transaction.movement_type == MovementType.ASSIGNMENT:
-        return "assignment"
-    if transaction.movement_type == MovementType.DISPOSAL:
-        return "disposal"
-    return "delivery"
 
 
 def default_template_source():

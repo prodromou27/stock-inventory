@@ -65,6 +65,42 @@ class TestReceiveStockView:
         balance = StockBalance.objects.get(product=quantity_product, location=location_tree["room"])
         assert balance.on_hand_quantity == 15
 
+    def test_summary_shows_real_balance_not_the_raw_input_quantity(
+        self, client, stock_manager_with_room_access, quantity_product, location_tree
+    ):
+        """Regression test: the receipt summary used to fall back to the
+        raw submitted quantity when a StockBalance lookup didn't find a
+        row — masking a real lookup mismatch with a plausible-looking but
+        possibly wrong number. It must show the actual on-hand/reserved
+        figure, which differs from the just-submitted quantity whenever
+        stock already existed at that location beforehand.
+        """
+        receive_stock(
+            user=stock_manager_with_room_access,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=10,
+        )
+
+        client.force_login(stock_manager_with_room_access)
+        response = client.post(
+            reverse("inventory:receive_stock"),
+            {
+                "brand_name": quantity_product.brand.name,
+                "model": quantity_product.model,
+                "sku": quantity_product.sku,
+                "product_type_name": quantity_product.product_type.name,
+                "category": quantity_product.category,
+                "confirmed": "true",
+                "location": location_tree["room"].pk,
+                "occurred_at": date.today().isoformat(),
+                "quantity": 5,
+            },
+        )
+        assert response.status_code == 200
+        assert response.context["available_quantity"] == 15
+
     def test_location_field_only_offers_accessible_locations(
         self, client, stock_manager_with_room_access, location_tree, other_location_tree
     ):

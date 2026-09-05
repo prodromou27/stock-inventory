@@ -13,7 +13,6 @@ from .pdf import (
     CURRENT_TEMPLATE_VERSION,
     active_template_for,
     build_document_context,
-    document_type_for,
     render_pdf,
 )
 
@@ -27,13 +26,25 @@ def next_document_number():
     return f"DOC-{value:06d}"
 
 
+def document_type_for(transaction):
+    """Which GeneratedDocument.document_type/DocumentTemplate this
+    transaction renders as — a domain mapping, not a rendering concern, so
+    it lives here rather than in pdf.py alongside the actual PDF assembly.
+    """
+    if transaction.movement_type == MovementType.ASSIGNMENT:
+        return "assignment"
+    if transaction.movement_type == MovementType.DISPOSAL:
+        return "disposal"
+    return "delivery"
+
+
 _PRINTABLE_MOVEMENT_TYPES = (MovementType.ASSIGNMENT, MovementType.DELIVERY, MovementType.DISPOSAL)
 
 
 def generate_document(*, txn, user, supersedes=None):
     """Renders and persists a PDF snapshot of a completed assignment/
     delivery/disposal transaction (spec §10, acceptance criterion §21.13,
-    plus the disposal certificate — apps.documents.pdf.document_type_for()).
+    plus the disposal certificate — document_type_for() above).
     `supersedes`, when given, links to the GeneratedDocument this one
     replaces — regeneration never edits or removes the old row/file (doc 06).
     """

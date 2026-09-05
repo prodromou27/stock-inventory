@@ -7,7 +7,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import Case, Count, F, IntegerField, Max, Q, Sum, When
+from django.db.models import Case, Count, IntegerField, Max, Q, Sum, When
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -240,6 +240,16 @@ def _default_location_for(user):
     return None
 
 
+def _pad_serials_to_unit_count(serials, unit_count):
+    """`serials` plus enough blank entries to reach `unit_count` — a blank
+    entry still receives its own individually-tracked UnitAsset with no
+    serial (never a fake generated one). Shared by ReceiveStockView and
+    ReceiveBulkView, whose forms both let a Stock Manager list fewer real
+    serials than the total unit count and leave the rest blank.
+    """
+    return serials + [""] * (unit_count - len(serials))
+
+
 class ReceiveStockView(LoginRequiredMixin, RoleRequiredMixin, View):
     """Add Stock — no pre-existing Product required. resolve_or_create_product()
     (apps.catalog.services) resolves the typed brand/model/sku/type into a
@@ -369,7 +379,7 @@ class ReceiveStockView(LoginRequiredMixin, RoleRequiredMixin, View):
                         transactions = [txn]
                         created_serials = [vendor_serial] if vendor_serial else []
                     else:
-                        vendor_serials_list = serials + [""] * (unit_count - len(serials))
+                        vendor_serials_list = _pad_serials_to_unit_count(serials, unit_count)
                         transactions = receive_stock_units_atomic(
                             user=request.user,
                             product=product,
@@ -410,10 +420,17 @@ class ReceiveStockView(LoginRequiredMixin, RoleRequiredMixin, View):
             )
 
         if tracking_method == TrackingMethod.QUANTITY:
-            balance = StockBalance.objects.filter(
+            # The balance for this exact (product, location, stock_purpose)
+            # triple was just created/updated by the receive_stock() call
+            # above, in this same request — it always exists here. No
+            # fallback to the raw input quantity: that used to paper over
+            # a StockBalance lookup mismatch (e.g. a stock_purpose typo)
+            # with a plausible-looking but potentially wrong number instead
+            # of surfacing the real, authoritative on-hand/reserved figure.
+            balance = StockBalance.objects.get(
                 product=product, location=data["location"], stock_purpose=data["stock_purpose"]
-            ).first()
-            available_quantity = balance.available_quantity if balance else data["quantity"]
+            )
+            available_quantity = balance.available_quantity
             received_quantity = data["quantity"]
         else:
             available_quantity = UnitAsset.objects.filter(
@@ -651,8 +668,8 @@ class ReceiveBulkView(LoginRequiredMixin, RoleRequiredMixin, View):
             }
             if product.tracking_method == TrackingMethod.UNIT:
                 serials = row.get("parsed_serials", [])
-                entry["vendor_serials"] = serials + [""] * (
-                    row.get("unit_count", len(serials)) - len(serials)
+                entry["vendor_serials"] = _pad_serials_to_unit_count(
+                    serials, row.get("unit_count", len(serials))
                 )
                 entry["condition"] = row.get("condition")
                 entry["accessories"] = row.get("accessories", "")
@@ -1476,7 +1493,7 @@ class StockBalanceGridDataView(LoginRequiredMixin, View):
             queryset = queryset.filter(product_id=product_id)
         queryset = filter_stock_balances(queryset, request.GET)
         queryset = queryset.annotate(
-            available_quantity_annotated=F("on_hand_quantity") - F("reserved_quantity")
+            available_quantity_annotated=StockBalance.AVAILABLE_QUANTITY_EXPRESSION
         )
         queryset = apply_multi_sort(
             queryset,
@@ -1545,7 +1562,7 @@ def _scoped_available_by_product(user):
     return dict(
         scope_queryset(user, StockBalance.objects.all(), location_field="location")
         .values("product_id")
-        .annotate(available=Sum(F("on_hand_quantity") - F("reserved_quantity")))
+        .annotate(available=Sum(StockBalance.AVAILABLE_QUANTITY_EXPRESSION))
         .values_list("product_id", "available")
     )
 
@@ -1895,7 +1912,7 @@ def _eligible_balances(request):
         location_field="location",
     )
     queryset = queryset.annotate(
-        available_quantity_annotated=F("on_hand_quantity") - F("reserved_quantity")
+        available_quantity_annotated=StockBalance.AVAILABLE_QUANTITY_EXPRESSION
     ).filter(available_quantity_annotated__gt=0)
     product_id = request.GET.get("product")
     if product_id:

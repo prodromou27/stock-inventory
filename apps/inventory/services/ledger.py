@@ -21,6 +21,7 @@ from ..models import (
     InventoryTransactionLine,
     StockBalance,
     StockPurpose,
+    UnitAsset,
     UnitStatus,
 )
 
@@ -175,6 +176,92 @@ def write_unit_line(
         recorded_by=user,
     )
     return line
+
+
+def write_unit_creation_line(
+    *,
+    transaction,
+    line_number,
+    product,
+    vendor_serial,
+    location,
+    user,
+    arrival_date,
+    condition,
+    stock_purpose=StockPurpose.INTERNAL,
+    project_reference="",
+    final_customer="",
+    supplier="",
+    invoice_number="",
+    accessories="",
+    notes="",
+):
+    """Creates a brand-new UnitAsset at receipt time and writes its first
+    InventoryTransactionLine + AssetStatusHistory row. Can't reuse
+    write_unit_line() for this: that function derives from_status/
+    from_location from an asset that already exists — a newly-received unit
+    has no "before" at all (both are always None here), and the asset row
+    itself doesn't exist yet to attach the line to until this creates it.
+    """
+    if product.tracking_method != TrackingMethod.UNIT:
+        raise ValidationError("Unit ledger lines require a unit-tracked product.")
+
+    asset = UnitAsset(
+        product=product,
+        vendor_serial=vendor_serial,
+        status=UnitStatus.IN_STOCK,
+        stock_purpose=stock_purpose,
+        current_location=location,
+        project_reference=project_reference,
+        final_customer=final_customer,
+        supplier=supplier,
+        invoice_number=invoice_number,
+        arrival_date=arrival_date,
+        condition=condition,
+        accessories=accessories,
+        notes=notes,
+        created_by=user,
+        updated_by=user,
+    )
+    asset.full_clean(exclude=["normalized_serial"])
+    asset.save()
+
+    InventoryTransactionLine.objects.create(
+        transaction=transaction,
+        line_number=line_number,
+        unit_asset=asset,
+        product=product,
+        stock_purpose_snapshot=stock_purpose,
+        quantity_delta=1,
+        from_status=None,
+        to_status=UnitStatus.IN_STOCK,
+        from_location=None,
+        to_location=location,
+        brand_snapshot=product.brand.name,
+        model_snapshot=product.model,
+        sku_snapshot=product.sku,
+        type_snapshot=product.product_type.name,
+        description_snapshot=product.description,
+        serial_snapshot=vendor_serial,
+        project_reference_snapshot=project_reference,
+        final_customer_snapshot=final_customer,
+        supplier_snapshot=supplier,
+        invoice_number_snapshot=invoice_number,
+        condition_snapshot=condition,
+        accessories_snapshot=accessories,
+        notes=notes,
+    )
+
+    AssetStatusHistory.objects.create(
+        unit_asset=asset,
+        transaction=transaction,
+        from_status=None,
+        to_status=UnitStatus.IN_STOCK,
+        from_location=None,
+        to_location=location,
+        recorded_by=user,
+    )
+    return asset
 
 
 def write_quantity_line(
