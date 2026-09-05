@@ -11,6 +11,41 @@ from apps.inventory.services.returns import assess_return, return_stock
 
 @pytest.mark.django_db
 class TestReturnStock:
+    def test_duplicate_quantity_rows_cannot_collectively_over_return(
+        self, administrator, quantity_product, location_tree
+    ):
+        receive_stock(
+            user=administrator,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=5,
+        )
+        issue = assign_to_employee(
+            user=administrator,
+            employee_name="Sam",
+            occurred_at=date.today(),
+            quantity_lines=[
+                {"product": quantity_product, "location": location_tree["room"], "quantity": 5}
+            ],
+        )
+
+        with pytest.raises(ValidationError, match="exceeds the 5 outstanding"):
+            return_stock(
+                user=administrator,
+                original_transaction=issue,
+                location=location_tree["room"],
+                occurred_at=date.today(),
+                quantity_lines=[
+                    {"product": quantity_product, "quantity": 3},
+                    {"product": quantity_product, "quantity": 3},
+                ],
+            )
+
+        balance = StockBalance.objects.get(product=quantity_product, location=location_tree["room"])
+        assert balance.on_hand_quantity == 0
+        assert issue.related_transactions.count() == 0
+
     def test_quantity_returns_cannot_exceed_original_outstanding_amount(
         self, administrator, quantity_product, location_tree
     ):

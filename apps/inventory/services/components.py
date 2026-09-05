@@ -25,6 +25,7 @@ from apps.catalog.models import ItemCategory
 from apps.core.authorization import ADMINISTRATOR, STOCK_MANAGER, require_role
 from apps.locations.scoping import require_location_access
 
+from ..access import require_asset_access
 from ..models import MovementType, UnitAsset, UnitStatus
 from .ledger import create_transaction_header, write_unit_line
 
@@ -131,7 +132,7 @@ def remove_component(*, user, component_id, occurred_at, notes=""):
         raise ValidationError("This component isn't currently installed in anything.")
 
     parent = component.installed_in
-    require_location_access(user, component.current_location)
+    require_asset_access(user, component)
 
     txn = create_transaction_header(
         movement_type=MovementType.REMOVE_COMPONENT,

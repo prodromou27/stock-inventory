@@ -641,6 +641,7 @@ class ReceiveBulkBatchForm(forms.Form):
     project_reference = forms.CharField(max_length=120, required=False, label="Project reference")
     final_customer = forms.CharField(max_length=120, required=False, label="Final customer")
     notes = forms.CharField(required=False, widget=forms.Textarea)
+    submission_token = forms.CharField(required=False, widget=forms.HiddenInput)
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)

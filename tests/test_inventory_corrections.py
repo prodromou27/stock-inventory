@@ -600,3 +600,53 @@ class TestQuantityReversalIntegrity:
         )
         balance = StockBalance.objects.get(product=quantity_product, location=location_tree["room"])
         assert balance.reserved_quantity == 0
+
+    def test_reversing_a_reservation_consuming_delivery_restores_on_hand_before_reserved(
+        self, administrator, quantity_product, location_tree
+    ):
+        """Regression test: reversing an assignment/delivery that consumed a
+        quantity reservation must restore on_hand *before* reserved, since
+        reserved <= on_hand is a DB-enforced invariant — restoring reserved
+        first (the original line_number order the ledger writes them in)
+        would raise ValidationError forever, making the delivery
+        permanently unreversible whenever the whole reservation was drawn
+        down to (or past) the point where on_hand alone couldn't cover it.
+        """
+        receive_stock(
+            user=administrator,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=10,
+        )
+        reserve_stock(
+            user=administrator,
+            occurred_at=date.today(),
+            project_reference="PRJ-REVERSE-DELIVERY",
+            quantity_lines=[
+                {"product": quantity_product, "location": location_tree["room"], "quantity": 8}
+            ],
+        )
+        delivery_txn = assign_to_employee(
+            user=administrator,
+            employee_name="Someone",
+            occurred_at=date.today(),
+            quantity_lines=[
+                {"product": quantity_product, "location": location_tree["room"], "quantity": 8}
+            ],
+            project_reference="PRJ-REVERSE-DELIVERY",
+        )
+        balance = StockBalance.objects.get(product=quantity_product, location=location_tree["room"])
+        assert balance.on_hand_quantity == 2
+        assert balance.reserved_quantity == 0
+
+        reverse_transaction(
+            user=administrator,
+            original_transaction=delivery_txn,
+            occurred_at=date.today(),
+            reason="wrong recipient",
+        )
+
+        balance.refresh_from_db()
+        assert balance.on_hand_quantity == 10
+        assert balance.reserved_quantity == 8

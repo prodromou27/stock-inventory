@@ -19,6 +19,46 @@ from ..transitions import validate_unit_transition
 from .ledger import adjust_balance, create_transaction_header, write_quantity_line, write_unit_line
 
 
+def outstanding_quantity_lines(original_transaction):
+    """Outstanding issued quantity grouped by product and stock purpose."""
+    issued_rows = (
+        original_transaction.lines.filter(unit_asset=None, quantity_delta__lt=0)
+        .values("product_id", "stock_purpose_snapshot")
+        .annotate(total=Sum("quantity_delta"))
+    )
+    reversed_return_ids = original_transaction.related_transactions.filter(
+        movement_type=MovementType.RETURN,
+        related_transactions__movement_type=MovementType.REVERSAL,
+    ).values_list("pk", flat=True)
+    returned_rows = (
+        InventoryTransactionLine.objects.filter(
+            transaction__related_transaction=original_transaction,
+            transaction__movement_type=MovementType.RETURN,
+            unit_asset=None,
+        )
+        .exclude(transaction_id__in=reversed_return_ids)
+        .values("product_id", "stock_purpose_snapshot")
+        .annotate(total=Sum("quantity_delta"))
+    )
+    returned = {
+        (row["product_id"], row["stock_purpose_snapshot"]): row["total"] or 0
+        for row in returned_rows
+    }
+    outstanding = []
+    for row in issued_rows:
+        key = (row["product_id"], row["stock_purpose_snapshot"])
+        remaining = -(row["total"] or 0) - returned.get(key, 0)
+        if remaining > 0:
+            outstanding.append(
+                {
+                    "product_id": row["product_id"],
+                    "stock_purpose": row["stock_purpose_snapshot"],
+                    "outstanding": remaining,
+                }
+            )
+    return outstanding
+
+
 @transaction.atomic
 def return_stock(
     *,
@@ -84,34 +124,27 @@ def return_stock(
             )
         validate_unit_transition(asset.status, UnitStatus.RETURNED)
 
+    requested = {}
     for entry in quantity_lines:
         if entry["quantity"] <= 0:
             raise ValidationError("Return quantity must be positive.")
-        product = entry["product"]
-        issued = -(
-            original_transaction.lines.filter(unit_asset=None, product=product).aggregate(
-                total=Sum("quantity_delta")
-            )["total"]
-            or 0
-        )
-        reversed_return_ids = original_transaction.related_transactions.filter(
-            movement_type=MovementType.RETURN,
-            related_transactions__movement_type=MovementType.REVERSAL,
-        ).values_list("pk", flat=True)
-        returned = (
-            InventoryTransactionLine.objects.filter(
-                transaction__related_transaction=original_transaction,
-                transaction__movement_type=MovementType.RETURN,
-                unit_asset=None,
-                product=product,
+        purpose = entry.get("stock_purpose") or StockPurpose.INTERNAL
+        key = (entry["product"].pk, purpose)
+        requested[key] = requested.get(key, 0) + entry["quantity"]
+
+    available = {
+        (row["product_id"], row["stock_purpose"]): row["outstanding"]
+        for row in outstanding_quantity_lines(original_transaction)
+    }
+    for (product_id, purpose), requested_quantity in requested.items():
+        remaining = available.get((product_id, purpose), 0)
+        if requested_quantity > remaining:
+            product = next(
+                entry["product"] for entry in quantity_lines if entry["product"].pk == product_id
             )
-            .exclude(transaction_id__in=reversed_return_ids)
-            .aggregate(total=Sum("quantity_delta"))["total"]
-            or 0
-        )
-        if not issued or returned + entry["quantity"] > issued:
             raise ValidationError(
-                f"Return quantity for {product} exceeds the {issued - returned} outstanding."
+                f"Return quantity for {product} ({StockPurpose(purpose).label}) exceeds the "
+                f"{remaining} outstanding."
             )
 
     txn = create_transaction_header(

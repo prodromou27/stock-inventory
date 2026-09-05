@@ -256,6 +256,49 @@ class TestTransferView:
         asset.refresh_from_db()
         assert asset.current_location == location_tree["room"]
 
+    def test_transfers_multiple_quantity_rows_in_one_transaction(
+        self, client, stock_manager_with_room_access, quantity_product, location_tree, rack
+    ):
+        import json
+
+        from apps.inventory.models import InventoryTransactionLine, StockPurpose
+
+        for purpose in (StockPurpose.INTERNAL, StockPurpose.CUSTOMER):
+            receive_stock(
+                user=stock_manager_with_room_access,
+                product=quantity_product,
+                location=location_tree["room"],
+                occurred_at=date.today(),
+                quantity=10,
+                stock_purpose=purpose,
+            )
+        balances = list(
+            StockBalance.objects.filter(product=quantity_product).order_by("stock_purpose")
+        )
+        client.force_login(stock_manager_with_room_access)
+
+        response = client.post(
+            reverse("inventory:transfer"),
+            {
+                "destination_location": rack.pk,
+                "occurred_at": date.today().isoformat(),
+                "quantity_lines_json": json.dumps(
+                    [
+                        {"balance_id": str(balances[0].pk), "quantity": 2},
+                        {"balance_id": str(balances[1].pk), "quantity": 3},
+                    ]
+                ),
+            },
+        )
+
+        assert response.status_code == 302
+        assert (
+            InventoryTransactionLine.objects.filter(
+                transaction__movement_type="transfer", product=quantity_product
+            ).count()
+            == 2
+        )
+
 
 @pytest.mark.django_db
 class TestReserveAndReleaseViews:
@@ -335,6 +378,44 @@ class TestReserveAndReleaseViews:
         response = client.get(reverse("inventory:reservation_list"))
         assert response.status_code == 200
         assert len(response.context["reservations"]) == 1
+
+    def test_reserves_multiple_quantity_rows_in_one_transaction(
+        self, client, stock_manager_with_room_access, quantity_product, location_tree
+    ):
+        import json
+
+        from apps.inventory.models import StockPurpose
+
+        for purpose in (StockPurpose.INTERNAL, StockPurpose.CUSTOMER):
+            receive_stock(
+                user=stock_manager_with_room_access,
+                product=quantity_product,
+                location=location_tree["room"],
+                occurred_at=date.today(),
+                quantity=10,
+                stock_purpose=purpose,
+            )
+        balances = list(
+            StockBalance.objects.filter(product=quantity_product).order_by("stock_purpose")
+        )
+        client.force_login(stock_manager_with_room_access)
+
+        response = client.post(
+            reverse("inventory:reserve"),
+            {
+                "occurred_at": date.today().isoformat(),
+                "project_reference": "PRJ-MULTI-QTY",
+                "quantity_lines_json": json.dumps(
+                    [
+                        {"balance_id": str(balances[0].pk), "quantity": 2},
+                        {"balance_id": str(balances[1].pk), "quantity": 3},
+                    ]
+                ),
+            },
+        )
+
+        assert response.status_code == 302
+        assert StockReservation.objects.filter(project_reference="PRJ-MULTI-QTY").count() == 2
 
 
 @pytest.mark.django_db
@@ -557,6 +638,60 @@ class TestBalancePickerDataView:
 
 @pytest.mark.django_db
 class TestReturnAndAssessViews:
+    def test_return_view_supports_multiple_quantity_lines(
+        self, client, stock_manager_with_room_access, quantity_product, location_tree
+    ):
+        from apps.catalog.models import Brand, Product
+
+        second_product = Product.objects.create(
+            brand=Brand.objects.create(name="Return view brand"),
+            product_type=quantity_product.product_type,
+            model="Return view second product",
+            sku="RETURN-VIEW-SECOND",
+            category=quantity_product.category,
+            tracking_method=quantity_product.tracking_method,
+        )
+        for product in (quantity_product, second_product):
+            receive_stock(
+                user=stock_manager_with_room_access,
+                product=product,
+                location=location_tree["room"],
+                occurred_at=date.today(),
+                quantity=10,
+            )
+        issue = assign_to_employee(
+            user=stock_manager_with_room_access,
+            employee_name="Multiple quantity recipient",
+            occurred_at=date.today(),
+            quantity_lines=[
+                {"product": quantity_product, "location": location_tree["room"], "quantity": 4},
+                {"product": second_product, "location": location_tree["room"], "quantity": 6},
+            ],
+        )
+
+        client.force_login(stock_manager_with_room_access)
+        response = client.post(
+            reverse("inventory:return_stock", kwargs={"pk": issue.pk}),
+            {
+                "location": location_tree["room"].pk,
+                "occurred_at": date.today().isoformat(),
+                f"return_quantity__{quantity_product.pk}__internal": "2",
+                f"return_quantity__{second_product.pk}__internal": "3",
+            },
+        )
+
+        assert response.status_code == 302
+        first_balance = StockBalance.objects.get(
+            product=quantity_product, location=location_tree["room"]
+        )
+        second_balance = StockBalance.objects.get(
+            product=second_product, location=location_tree["room"]
+        )
+        assert first_balance.on_hand_quantity == 8
+        assert second_balance.on_hand_quantity == 7
+        returned_lines = issue.related_transactions.get().lines.filter(unit_asset=None)
+        assert sorted(returned_lines.values_list("quantity_delta", flat=True)) == [2, 3]
+
     def test_return_view_full_flow(
         self, client, stock_manager_with_room_access, unit_product, location_tree
     ):
@@ -768,6 +903,49 @@ class TestDispositionViews:
         assert response.status_code == 302
         asset.refresh_from_db()
         assert asset.status == UnitStatus.DISPOSED
+
+    def test_marks_multiple_quantity_rows_damaged_in_one_transaction(
+        self, client, stock_manager_with_room_access, quantity_product, location_tree
+    ):
+        import json
+
+        from apps.inventory.models import InventoryTransactionLine, StockPurpose
+
+        for purpose in (StockPurpose.INTERNAL, StockPurpose.CUSTOMER):
+            receive_stock(
+                user=stock_manager_with_room_access,
+                product=quantity_product,
+                location=location_tree["room"],
+                occurred_at=date.today(),
+                quantity=10,
+                stock_purpose=purpose,
+            )
+        balances = list(
+            StockBalance.objects.filter(product=quantity_product).order_by("stock_purpose")
+        )
+        client.force_login(stock_manager_with_room_access)
+
+        response = client.post(
+            reverse("inventory:mark_damaged"),
+            {
+                "occurred_at": date.today().isoformat(),
+                "notes": "Batch damage",
+                "quantity_lines_json": json.dumps(
+                    [
+                        {"balance_id": str(balances[0].pk), "quantity": 2},
+                        {"balance_id": str(balances[1].pk), "quantity": 3},
+                    ]
+                ),
+            },
+        )
+
+        assert response.status_code == 302
+        assert (
+            InventoryTransactionLine.objects.filter(
+                transaction__movement_type="mark_damaged", product=quantity_product
+            ).count()
+            == 2
+        )
 
     def test_dispose_view_requires_wipe_method(
         self, client, stock_manager_with_room_access, unit_product, location_tree

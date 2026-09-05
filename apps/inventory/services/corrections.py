@@ -260,7 +260,27 @@ def reverse_transaction(*, user, original_transaction, occurred_at, reason):
         notes=reason,
     )
 
-    for line_number, line in enumerate(lines, start=1):
+    # Reservation-release lines are processed after every other line, not in
+    # original line_number order: `_issue_stock` writes a reservation-release
+    # line *before* the quantity-deduction line for the same entry
+    # (assignments.py's _consume_matching_reservations() runs first), so
+    # reversing in line_number order would restore `reserved` before
+    # `on_hand` — and adjust_reserved() correctly refuses reserved >
+    # on_hand. Restoring every balance/unit line first guarantees on_hand is
+    # back to its pre-transaction level before any reserved amount is
+    # restored against it, so a reservation-consuming assignment/delivery
+    # can always be reversed.
+    reservation_lines = []
+    other_lines = []
+    for line in lines:
+        if line.unit_asset_id is None and line.stock_reservation_id:
+            reservation_lines.append(line)
+        else:
+            other_lines.append(line)
+
+    line_number = 0
+    for line in other_lines:
+        line_number += 1
         if line.unit_asset_id is not None:
             asset = locked_assets[line.unit_asset_id]
             write_unit_line(
@@ -273,77 +293,23 @@ def reverse_transaction(*, user, original_transaction, occurred_at, reason):
                 notes=reason,
             )
             _recompute_last_removal_date(asset)
-        else:
-            if line.stock_reservation_id:
-                reservation = StockReservation.objects.select_for_update().get(
-                    pk=line.stock_reservation_id
-                )
-                adjust_reserved(
-                    product=line.product,
-                    location=reservation.location,
-                    delta=-line.reserved_quantity_delta,
-                    stock_purpose=line.stock_purpose_snapshot,
-                )
-                reservation.status = (
-                    ReservationStatus.RELEASED
-                    if line.reserved_quantity_delta > 0
-                    else ReservationStatus.ACTIVE
-                )
-                update_fields = ["status"]
-                if original_transaction.movement_type in (
-                    MovementType.ASSIGNMENT,
-                    MovementType.DELIVERY,
-                ):
-                    reservation.consumed_quantity -= abs(line.reserved_quantity_delta)
-                    reservation.status = ReservationStatus.ACTIVE
-                    update_fields.append("consumed_quantity")
-                    if reservation.consuming_transaction_id == original_transaction.pk:
-                        reservation.consuming_transaction = None
-                        update_fields.append("consuming_transaction")
-                reservation.save(update_fields=update_fields)
-                write_reservation_line(
-                    transaction=txn,
-                    line_number=line_number,
-                    reservation=reservation,
-                    reserved_quantity_delta=-line.reserved_quantity_delta,
-                    notes=reason,
-                )
-                continue
-            if (
-                original_transaction.movement_type == MovementType.TRANSFER
-                and line.from_location_id
-                and line.to_location_id
-            ):
-                adjust_balance(
-                    product=line.product,
-                    location=line.to_location,
-                    delta=-line.quantity_delta,
-                    stock_purpose=line.stock_purpose_snapshot,
-                    respect_available=False,
-                )
-                adjust_balance(
-                    product=line.product,
-                    location=line.from_location,
-                    delta=line.quantity_delta,
-                    stock_purpose=line.stock_purpose_snapshot,
-                    respect_available=False,
-                )
-                write_quantity_line(
-                    transaction=txn,
-                    line_number=line_number,
-                    product=line.product,
-                    quantity_delta=-line.quantity_delta,
-                    from_location=line.to_location,
-                    to_location=line.from_location,
-                    stock_purpose=line.stock_purpose_snapshot,
-                    notes=reason,
-                )
-                continue
-            reversal_location = line.to_location or line.from_location
+            continue
+        if (
+            original_transaction.movement_type == MovementType.TRANSFER
+            and line.from_location_id
+            and line.to_location_id
+        ):
             adjust_balance(
                 product=line.product,
-                location=reversal_location,
+                location=line.to_location,
                 delta=-line.quantity_delta,
+                stock_purpose=line.stock_purpose_snapshot,
+                respect_available=False,
+            )
+            adjust_balance(
+                product=line.product,
+                location=line.from_location,
+                delta=line.quantity_delta,
                 stock_purpose=line.stock_purpose_snapshot,
                 respect_available=False,
             )
@@ -357,6 +323,59 @@ def reverse_transaction(*, user, original_transaction, occurred_at, reason):
                 stock_purpose=line.stock_purpose_snapshot,
                 notes=reason,
             )
+            continue
+        reversal_location = line.to_location or line.from_location
+        adjust_balance(
+            product=line.product,
+            location=reversal_location,
+            delta=-line.quantity_delta,
+            stock_purpose=line.stock_purpose_snapshot,
+            respect_available=False,
+        )
+        write_quantity_line(
+            transaction=txn,
+            line_number=line_number,
+            product=line.product,
+            quantity_delta=-line.quantity_delta,
+            from_location=line.to_location,
+            to_location=line.from_location,
+            stock_purpose=line.stock_purpose_snapshot,
+            notes=reason,
+        )
+
+    for line in reservation_lines:
+        line_number += 1
+        reservation = StockReservation.objects.select_for_update().get(pk=line.stock_reservation_id)
+        adjust_reserved(
+            product=line.product,
+            location=reservation.location,
+            delta=-line.reserved_quantity_delta,
+            stock_purpose=line.stock_purpose_snapshot,
+        )
+        reservation.status = (
+            ReservationStatus.RELEASED
+            if line.reserved_quantity_delta > 0
+            else ReservationStatus.ACTIVE
+        )
+        update_fields = ["status"]
+        if original_transaction.movement_type in (
+            MovementType.ASSIGNMENT,
+            MovementType.DELIVERY,
+        ):
+            reservation.consumed_quantity -= abs(line.reserved_quantity_delta)
+            reservation.status = ReservationStatus.ACTIVE
+            update_fields.append("consumed_quantity")
+            if reservation.consuming_transaction_id == original_transaction.pk:
+                reservation.consuming_transaction = None
+                update_fields.append("consuming_transaction")
+        reservation.save(update_fields=update_fields)
+        write_reservation_line(
+            transaction=txn,
+            line_number=line_number,
+            reservation=reservation,
+            reserved_quantity_delta=-line.reserved_quantity_delta,
+            notes=reason,
+        )
 
     record_event(
         actor=user,

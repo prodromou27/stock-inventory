@@ -779,3 +779,45 @@ class TestReceiveBulkView:
         )
         assert response.status_code == 200
         assert not UnitAsset.objects.filter(vendor_serial="SN-BULKVIEW-XCOUNTRY").exists()
+
+    def test_resubmitting_the_same_submission_token_does_not_double_receive(
+        self, client, stock_manager_with_room_access, location_tree
+    ):
+        """Regression test: ReceiveBulkView had no idempotency guard at all
+        (unlike every other movement view), so a double-click/resend on a
+        slow request would silently duplicate every quantity line and every
+        blank-serial unit line.
+        """
+        from django.urls import reverse
+
+        client.force_login(stock_manager_with_room_access)
+        get_response = client.get(reverse("inventory:receive_bulk"))
+        token = get_response.context["batch_form"]["submission_token"].value()
+        assert token
+
+        payload = {
+            "occurred_at": date.today().isoformat(),
+            "default_location": location_tree["room"].pk,
+            "default_stock_purpose": StockPurpose.INTERNAL,
+            "submission_token": token,
+            "form-TOTAL_FORMS": "1",
+            "form-INITIAL_FORMS": "0",
+            "form-MIN_NUM_FORMS": "0",
+            "form-MAX_NUM_FORMS": "1000",
+            "form-0-brand_name": "BulkView Dup Brand",
+            "form-0-model": "BulkView Dup Model",
+            "form-0-product_type_name": "Toner",
+            "form-0-category": "quantity_stock",
+            "form-0-quantity": "5",
+        }
+        first = client.post(reverse("inventory:receive_bulk"), payload)
+        assert first.status_code == 302
+
+        second = client.post(reverse("inventory:receive_bulk"), payload)
+        assert second.status_code == 302
+        assert second.url == reverse("inventory:movements_hub")
+
+        balance = StockBalance.objects.get(
+            product__model="BulkView Dup Model", location=location_tree["room"]
+        )
+        assert balance.on_hand_quantity == 5

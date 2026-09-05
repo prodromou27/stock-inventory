@@ -2,6 +2,8 @@ import json
 from datetime import date
 
 import pytest
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
 from django.urls import reverse
 
 from apps.audit.models import AuditEvent
@@ -302,6 +304,54 @@ class TestAssetGridFieldUpdateView:
             content_type="application/json",
         )
         assert response.status_code == 403
+
+    def test_denied_for_off_storage_asset_outside_scope(
+        self,
+        client,
+        administrator,
+        stock_manager_with_room_access,
+        unit_product,
+        location_tree,
+        other_location_tree,
+    ):
+        """An off-storage asset (current_location=NULL after assignment)
+        must still be scoped by its last known location — regression test
+        for require_location_access(None) silently allowing an inline edit
+        on any off-storage asset regardless of the country it came from.
+        """
+        from apps.accounts.services import grant_location_access
+        from apps.inventory.services.assignments import assign_to_employee
+
+        User = get_user_model()
+        other_manager = User.objects.create_user(
+            username="grid-other-country-manager", password="a-strong-test-password-123"
+        )
+        other_manager.groups.add(Group.objects.get(name="StockManager"))
+        grant_location_access(
+            user=other_manager, location=other_location_tree["country"], granted_by=administrator
+        )
+
+        asset = self._asset(
+            stock_manager_with_room_access, unit_product, location_tree, "SN-EDIT-OFFSTORAGE"
+        )
+        assign_to_employee(
+            user=stock_manager_with_room_access,
+            employee_name="Someone",
+            occurred_at=date.today(),
+            unit_asset_ids=[str(asset.pk)],
+        )
+        asset.refresh_from_db()
+        assert asset.current_location_id is None
+
+        client.force_login(other_manager)
+        response = client.post(
+            reverse("inventory:asset_grid_field_update", kwargs={"pk": asset.pk}),
+            data=json.dumps({"field": "notes", "value": "hacked"}),
+            content_type="application/json",
+        )
+        assert response.status_code == 403
+        asset.refresh_from_db()
+        assert asset.notes != "hacked"
 
     def test_invalid_json_body_returns_400(
         self, client, administrator, unit_product, location_tree

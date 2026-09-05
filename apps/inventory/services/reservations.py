@@ -6,6 +6,7 @@ from apps.audit.services import record_event
 from apps.core.authorization import ADMINISTRATOR, STOCK_MANAGER, require_role
 from apps.locations.scoping import require_location_access
 
+from ..access import require_asset_access
 from ..models import (
     MovementType,
     ReservationStatus,
@@ -57,7 +58,7 @@ def reserve_stock(
         raise ValidationError("One or more selected assets could not be found.")
 
     for asset in assets:
-        require_location_access(user, asset.current_location)
+        require_asset_access(user, asset)
         validate_unit_transition(asset.status, UnitStatus.RESERVED)
 
     for entry in quantity_lines:

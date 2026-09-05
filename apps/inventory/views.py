@@ -49,6 +49,7 @@ from apps.locations.scoping import (
 )
 
 from .access import (
+    require_asset_access,
     require_transaction_access,
     scope_transaction_line_queryset,
     scope_transaction_queryset,
@@ -109,7 +110,7 @@ from .services.receipts import (
     receive_stock_units_atomic,
 )
 from .services.reservations import release_reservation, reserve_stock
-from .services.returns import assess_return, return_stock
+from .services.returns import assess_return, outstanding_quantity_lines, return_stock
 from .services.transfers import bulk_transfer
 
 
@@ -531,7 +532,10 @@ class ReceiveBulkView(LoginRequiredMixin, RoleRequiredMixin, View):
     template_name = "inventory/receive_bulk_form.html"
 
     def get(self, request):
-        initial = {"occurred_at": timezone.localdate()}
+        initial = {
+            "occurred_at": timezone.localdate(),
+            "submission_token": new_submission_token(),
+        }
         default_location = _default_location_for(request.user)
         if default_location is not None:
             initial["default_location"] = default_location.pk
@@ -619,6 +623,12 @@ class ReceiveBulkView(LoginRequiredMixin, RoleRequiredMixin, View):
                 {"batch_form": batch_form, "formset": formset, **_catalog_choices()},
             )
 
+        if not claim_submission_token(request.POST.get("submission_token")):
+            messages.info(
+                request, "This receipt was already submitted — nothing was done a second time."
+            )
+            return redirect("inventory:movements_hub")
+
         data = batch_form.cleaned_data
         try:
             txn = receive_stock_bulk(
@@ -636,6 +646,7 @@ class ReceiveBulkView(LoginRequiredMixin, RoleRequiredMixin, View):
                 == "true",
             )
         except DuplicateSerialError as exc:
+            release_submission_token(request.POST.get("submission_token"))
             return render(
                 request,
                 self.template_name,
@@ -649,6 +660,7 @@ class ReceiveBulkView(LoginRequiredMixin, RoleRequiredMixin, View):
                 },
             )
         except ValidationError as exc:
+            release_submission_token(request.POST.get("submission_token"))
             batch_form.add_error(None, exc)
             return render(
                 request,
@@ -1119,7 +1131,7 @@ class AssetGridFieldUpdateView(LoginRequiredMixin, View):
     def post(self, request, pk):
         require_role(request.user, ADMINISTRATOR, STOCK_MANAGER)
         asset = get_object_or_404(UnitAsset, pk=pk)
-        require_location_access(request.user, asset.current_location)
+        require_asset_access(request.user, asset)
 
         try:
             payload = json.loads(request.body)
@@ -1172,7 +1184,7 @@ class UnitAssetDetailView(LoginRequiredMixin, DetailView):
             ),
             pk=self.kwargs["pk"],
         )
-        require_location_access(self.request.user, obj.current_location)
+        require_asset_access(self.request.user, obj)
         return obj
 
     def get_template_names(self):
@@ -1228,7 +1240,7 @@ class InstallComponentView(LoginRequiredMixin, RoleRequiredMixin, View):
         component = get_object_or_404(
             UnitAsset.objects.select_related("product", "product__brand"), pk=pk
         )
-        require_location_access(request.user, component.current_location)
+        require_asset_access(request.user, component)
         return component
 
     def get(self, request, pk):
@@ -1278,7 +1290,7 @@ class RemoveComponentView(LoginRequiredMixin, RoleRequiredMixin, View):
             ),
             pk=pk,
         )
-        require_location_access(request.user, component.current_location)
+        require_asset_access(request.user, component)
         return component
 
     def get(self, request, pk):
@@ -1917,7 +1929,7 @@ def _quantity_lines_from_form(data, *, location_field="quantity_location"):
     ]
 
 
-def _quantity_lines_from_balance_picker(request, user):
+def _quantity_lines_from_balance_picker(request, user, *, location_key="location"):
     """Assign/Deliver's quantity-tracked lines: templates/inventory/
     _balance_picker.html (static/js/movement_forms.js's wireBalancePicker())
     posts one JSON array in `quantity_lines_json`, each entry naming a
@@ -1967,7 +1979,7 @@ def _quantity_lines_from_balance_picker(request, user):
         lines.append(
             {
                 "product": balance.product,
-                "location": balance.location,
+                location_key: balance.location,
                 "quantity": quantity,
                 "stock_purpose": balance.stock_purpose,
             }
@@ -1989,6 +2001,7 @@ class TransferView(LoginRequiredMixin, RoleRequiredMixin, View):
             {
                 "form": form,
                 "assets": assets,
+                "balances": _eligible_balances(request),
                 "preselected_ids": _preselected_ids(request),
                 "eligible_statuses": _status_param(eligible_statuses),
             },
@@ -1998,8 +2011,11 @@ class TransferView(LoginRequiredMixin, RoleRequiredMixin, View):
         form = TransferForm(request.POST, user=request.user)
         unit_asset_ids = request.POST.getlist("unit_asset_ids")
         assets = _eligible_assets(request, [UnitStatus.IN_STOCK, UnitStatus.RESERVED])
+        balances = _eligible_balances(request)
         if not form.is_valid():
-            return render(request, self.template_name, {"form": form, "assets": assets})
+            return render(
+                request, self.template_name, {"form": form, "assets": assets, "balances": balances}
+            )
 
         if not claim_submission_token(request.POST.get("submission_token")):
             messages.info(
@@ -2008,16 +2024,14 @@ class TransferView(LoginRequiredMixin, RoleRequiredMixin, View):
             return redirect("inventory:movements_hub")
 
         data = form.cleaned_data
-        quantity_lines = []
-        if data["quantity_product"]:
-            quantity_lines.append(
-                {
-                    "product": data["quantity_product"],
-                    "source_location": data["quantity_source_location"],
-                    "quantity": data["quantity_amount"],
-                    "stock_purpose": data.get("quantity_stock_purpose") or StockPurpose.INTERNAL,
-                }
+        quantity_lines = _quantity_lines_from_balance_picker(
+            request, request.user, location_key="source_location"
+        )
+        if not quantity_lines and data["quantity_product"]:
+            quantity_lines = _quantity_lines_from_form(
+                data, location_field="quantity_source_location"
             )
+            quantity_lines[0]["source_location"] = quantity_lines[0].pop("location")
 
         try:
             txn = bulk_transfer(
@@ -2031,7 +2045,9 @@ class TransferView(LoginRequiredMixin, RoleRequiredMixin, View):
         except ValidationError as exc:
             release_submission_token(request.POST.get("submission_token"))
             form.add_error(None, exc)
-            return render(request, self.template_name, {"form": form, "assets": assets})
+            return render(
+                request, self.template_name, {"form": form, "assets": assets, "balances": balances}
+            )
 
         messages.success(request, f"Transferred stock — transaction {txn.transaction_number}.")
         return redirect(txn.get_absolute_url())
@@ -2051,6 +2067,7 @@ class ReserveView(LoginRequiredMixin, RoleRequiredMixin, View):
             {
                 "form": form,
                 "assets": assets,
+                "balances": _eligible_balances(request),
                 "preselected_ids": _preselected_ids(request),
                 "eligible_statuses": _status_param(eligible_statuses),
             },
@@ -2060,8 +2077,11 @@ class ReserveView(LoginRequiredMixin, RoleRequiredMixin, View):
         form = ReserveForm(request.POST, user=request.user)
         unit_asset_ids = request.POST.getlist("unit_asset_ids")
         assets = _eligible_assets(request, [UnitStatus.IN_STOCK])
+        balances = _eligible_balances(request)
         if not form.is_valid():
-            return render(request, self.template_name, {"form": form, "assets": assets})
+            return render(
+                request, self.template_name, {"form": form, "assets": assets, "balances": balances}
+            )
 
         if not claim_submission_token(request.POST.get("submission_token")):
             messages.info(
@@ -2077,13 +2097,18 @@ class ReserveView(LoginRequiredMixin, RoleRequiredMixin, View):
                 project_reference=data["project_reference"],
                 final_customer=data["final_customer"],
                 unit_asset_ids=unit_asset_ids,
-                quantity_lines=_quantity_lines_from_form(data),
+                quantity_lines=(
+                    _quantity_lines_from_balance_picker(request, request.user)
+                    or _quantity_lines_from_form(data)
+                ),
                 notes=data["notes"],
             )
         except ValidationError as exc:
             release_submission_token(request.POST.get("submission_token"))
             form.add_error(None, exc)
-            return render(request, self.template_name, {"form": form, "assets": assets})
+            return render(
+                request, self.template_name, {"form": form, "assets": assets, "balances": balances}
+            )
 
         messages.success(request, f"Reserved stock — transaction {txn.transaction_number}.")
         return redirect(txn.get_absolute_url())
@@ -2385,11 +2410,32 @@ class ReturnView(LoginRequiredMixin, RoleRequiredMixin, View):
         )
         return Product.objects.filter(pk__in=product_ids)
 
+    def _quantity_return_options(self, original_transaction, submitted_data=None):
+        rows = outstanding_quantity_lines(original_transaction)
+        products = Product.objects.in_bulk(row["product_id"] for row in rows)
+        options = [
+            {
+                **row,
+                "product": products[row["product_id"]],
+                "purpose_label": StockPurpose(row["stock_purpose"]).label,
+                "input_name": f"return_quantity__{row['product_id']}__{row['stock_purpose']}",
+            }
+            for row in rows
+        ]
+        for option in options:
+            option["entered_quantity"] = (
+                submitted_data.get(option["input_name"], "0") if submitted_data else "0"
+            )
+        return options
+
     def _context(self, request, original_transaction, form):
         return {
             "form": form,
             "original_transaction": original_transaction,
             "lines": self._outstanding_lines(original_transaction),
+            "quantity_options": self._quantity_return_options(
+                original_transaction, request.POST if request.method == "POST" else None
+            ),
         }
 
     def get(self, request, pk):
@@ -2417,7 +2463,20 @@ class ReturnView(LoginRequiredMixin, RoleRequiredMixin, View):
 
         data = form.cleaned_data
         quantity_lines = []
-        if data["quantity_product"]:
+        for option in self._quantity_return_options(original_transaction):
+            try:
+                quantity = int(request.POST.get(option["input_name"]) or 0)
+            except (TypeError, ValueError):
+                quantity = 0
+            if quantity > 0:
+                quantity_lines.append(
+                    {
+                        "product": option["product"],
+                        "quantity": quantity,
+                        "stock_purpose": option["stock_purpose"],
+                    }
+                )
+        if not quantity_lines and data["quantity_product"]:
             quantity_lines.append(
                 {
                     "product": data["quantity_product"],
@@ -2529,6 +2588,7 @@ class _DispositionView(LoginRequiredMixin, RoleRequiredMixin, View):
             {
                 "form": form,
                 "assets": assets,
+                "balances": _eligible_balances(request),
                 "page_title": self.page_title,
                 "preselected_ids": _preselected_ids(request),
                 "eligible_statuses": _status_param(self.eligible_statuses),
@@ -2541,11 +2601,17 @@ class _DispositionView(LoginRequiredMixin, RoleRequiredMixin, View):
         )
         unit_asset_ids = request.POST.getlist("unit_asset_ids")
         assets = _eligible_assets(request, self.eligible_statuses)
+        balances = _eligible_balances(request)
         if not form.is_valid():
             return render(
                 request,
                 self.template_name,
-                {"form": form, "assets": assets, "page_title": self.page_title},
+                {
+                    "form": form,
+                    "assets": assets,
+                    "balances": balances,
+                    "page_title": self.page_title,
+                },
             )
 
         if not claim_submission_token(request.POST.get("submission_token")):
@@ -2560,7 +2626,10 @@ class _DispositionView(LoginRequiredMixin, RoleRequiredMixin, View):
                 user=request.user,
                 occurred_at=data["occurred_at"],
                 unit_asset_ids=unit_asset_ids,
-                quantity_lines=_quantity_lines_from_form(data),
+                quantity_lines=(
+                    _quantity_lines_from_balance_picker(request, request.user)
+                    or _quantity_lines_from_form(data)
+                ),
                 notes=data["notes"],
                 **self._extra_service_kwargs(data),
             )
@@ -2570,7 +2639,12 @@ class _DispositionView(LoginRequiredMixin, RoleRequiredMixin, View):
             return render(
                 request,
                 self.template_name,
-                {"form": form, "assets": assets, "page_title": self.page_title},
+                {
+                    "form": form,
+                    "assets": assets,
+                    "balances": balances,
+                    "page_title": self.page_title,
+                },
             )
 
         messages.success(request, f"{self.verb} — transaction {txn.transaction_number}.")
@@ -2817,7 +2891,7 @@ class UnitPurposeReclassifyView(LoginRequiredMixin, RoleRequiredMixin, View):
 
     def get(self, request, pk):
         asset = get_object_or_404(UnitAsset, pk=pk)
-        require_location_access(request.user, asset.current_location)
+        require_asset_access(request.user, asset)
         new_purpose = (
             StockPurpose.CUSTOMER
             if asset.stock_purpose == StockPurpose.INTERNAL
@@ -2828,7 +2902,7 @@ class UnitPurposeReclassifyView(LoginRequiredMixin, RoleRequiredMixin, View):
 
     def post(self, request, pk):
         asset = get_object_or_404(UnitAsset, pk=pk)
-        require_location_access(request.user, asset.current_location)
+        require_asset_access(request.user, asset)
         form = UnitPurposeReclassifyForm(request.POST)
         if not form.is_valid():
             return render(request, self.template_name, {"form": form, "asset": asset})

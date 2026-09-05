@@ -1,6 +1,8 @@
 from datetime import date, timedelta
 
 import pytest
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
 from django.urls import reverse
 from django.utils import timezone
 
@@ -474,6 +476,88 @@ class TestUnitAssetListAndDetail:
         asset = UnitAsset.objects.get(vendor_serial="SN-DENY")
 
         client.force_login(stock_manager_with_room_access)
+        response = client.get(reverse("inventory:asset_detail", kwargs={"pk": asset.pk}))
+        assert response.status_code == 403
+
+    def test_detail_denied_for_off_storage_asset_outside_scope(
+        self,
+        client,
+        administrator,
+        stock_manager_with_room_access,
+        unit_product,
+        location_tree,
+        other_location_tree,
+    ):
+        """An off-storage asset (current_location=NULL after assignment/
+        delivery/loss/disposal) must still be scoped by its last known
+        location, not treated as universally accessible — regression test
+        for require_location_access(None) silently allowing access to any
+        off-storage asset regardless of the country it came from.
+        """
+        from apps.accounts.services import grant_location_access
+        from apps.inventory.services.assignments import assign_to_employee
+
+        User = get_user_model()
+        other_manager = User.objects.create_user(
+            username="other-country-manager", password="a-strong-test-password-123"
+        )
+        other_manager.groups.add(Group.objects.get(name="StockManager"))
+        grant_location_access(
+            user=other_manager, location=other_location_tree["country"], granted_by=administrator
+        )
+
+        receive_stock(
+            user=stock_manager_with_room_access,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-OFFSTORAGE-XCOUNTRY",
+        )
+        assign_to_employee(
+            user=stock_manager_with_room_access,
+            employee_name="Someone",
+            occurred_at=date.today(),
+            unit_asset_ids=[str(UnitAsset.objects.get(vendor_serial="SN-OFFSTORAGE-XCOUNTRY").pk)],
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-OFFSTORAGE-XCOUNTRY")
+        assert asset.current_location_id is None
+
+        client.force_login(other_manager)
+        response = client.get(reverse("inventory:asset_detail", kwargs={"pk": asset.pk}))
+        assert response.status_code == 403
+
+    def test_read_only_user_denied_off_storage_asset(
+        self,
+        client,
+        administrator,
+        stock_manager_with_room_access,
+        read_only_user,
+        unit_product,
+        location_tree,
+    ):
+        """A Read-Only user with zero location grants must not be able to
+        read an off-storage asset's full detail (custody, notes, project
+        reference) just because current_location is NULL.
+        """
+        from apps.inventory.services.assignments import assign_to_employee
+
+        receive_stock(
+            user=stock_manager_with_room_access,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-OFFSTORAGE-READONLY",
+        )
+        assign_to_employee(
+            user=stock_manager_with_room_access,
+            employee_name="Someone",
+            occurred_at=date.today(),
+            unit_asset_ids=[str(UnitAsset.objects.get(vendor_serial="SN-OFFSTORAGE-READONLY").pk)],
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-OFFSTORAGE-READONLY")
+        assert asset.current_location_id is None
+
+        client.force_login(read_only_user)
         response = client.get(reverse("inventory:asset_detail", kwargs={"pk": asset.pk}))
         assert response.status_code == 403
 

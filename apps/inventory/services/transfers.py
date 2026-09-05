@@ -6,6 +6,7 @@ from apps.audit.services import record_event
 from apps.core.authorization import ADMINISTRATOR, STOCK_MANAGER, require_role
 from apps.locations.scoping import require_location_access
 
+from ..access import require_asset_access
 from ..models import MovementType, StockPurpose, UnitAsset
 from ..transitions import validate_transferable
 from .ledger import adjust_balance, create_transaction_header, write_quantity_line, write_unit_line
@@ -44,7 +45,7 @@ def bulk_transfer(
         raise ValidationError("One or more selected assets could not be found.")
 
     for asset in assets:
-        require_location_access(user, asset.current_location)
+        require_asset_access(user, asset)
         validate_transferable(asset.status)
 
     for entry in quantity_lines:

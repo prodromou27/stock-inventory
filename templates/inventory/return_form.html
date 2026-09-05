@@ -22,9 +22,32 @@
     {% csrf_token %}
     <div class="card">
       {% for field in form %}
-        {% include "_form_field.html" with field=field %}
+        {% if field.name != "quantity_product" and field.name != "quantity_amount" and field.name != "quantity_stock_purpose" %}
+          {% include "_form_field.html" with field=field %}
+        {% endif %}
       {% endfor %}
     </div>
+
+    {% if quantity_options %}
+      <div class="card">
+        <h2>Quantity stock to return</h2>
+        <div class="table-scroll">
+          <table class="dense-table">
+            <thead><tr><th>Product</th><th>Purpose</th><th>Outstanding</th><th>Return now</th></tr></thead>
+            <tbody>
+              {% for option in quantity_options %}
+                <tr>
+                  <td>{{ option.product }}</td>
+                  <td>{{ option.purpose_label }}</td>
+                  <td>{{ option.outstanding }}</td>
+                  <td><input type="number" min="0" max="{{ option.outstanding }}" name="{{ option.input_name }}" value="{{ option.entered_quantity }}" aria-label="Quantity of {{ option.product }} to return"></td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {% endif %}
 
     <div class="card">
       <h2>Outstanding lines</h2>
