@@ -54,7 +54,23 @@ def generate_document(*, txn, user, supersedes=None):
             document_type = document_type_for(txn)
             template_obj = active_template_for(document_type)
             context = build_document_context(transaction=txn, document_number=document_number)
-            pdf_bytes = render_pdf(context, document_type=document_type, template_obj=template_obj)
+            try:
+                pdf_bytes = render_pdf(
+                    context, document_type=document_type, template_obj=template_obj
+                )
+            except ValidationError:
+                raise
+            except Exception as exc:
+                # A custom document template (apps.documents.template_services.
+                # update_template) is only validated against sample_document_
+                # context() before it's saved — a real transaction's data can
+                # still differ enough (e.g. an empty source_locations list, an
+                # unusual movement_type_display) to make an otherwise-valid
+                # template fail only now. Without this, that failure was an
+                # uncaught WeasyPrint/TemplateSyntaxError exception — a raw
+                # 500 on the transaction detail page — instead of a message
+                # an Administrator can act on (fix or reset the template).
+                raise ValidationError(f"Could not render the document template: {exc}") from exc
 
             document = GeneratedDocument(
                 transaction=txn,

@@ -64,6 +64,23 @@ class TestGenerateDocumentView:
         )
         assert response.status_code == 403
 
+    def test_broken_template_shows_a_message_instead_of_a_500(
+        self, client, monkeypatch, administrator, assignment_txn
+    ):
+        def broken_render(*args, **kwargs):
+            raise RuntimeError("unexpected token in template")
+
+        monkeypatch.setattr("apps.documents.services.render_pdf", broken_render)
+
+        client.force_login(administrator)
+        response = client.post(
+            reverse("documents:generate_document", kwargs={"pk": assignment_txn.pk}),
+            follow=True,
+        )
+        assert response.status_code == 200
+        messages = [str(m) for m in response.context["messages"]]
+        assert any("Could not render the document template" in m for m in messages)
+
 
 @pytest.mark.django_db
 class TestDocumentDownloadView:

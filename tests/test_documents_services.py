@@ -205,6 +205,30 @@ class TestGenerateDocument:
         with pytest.raises(ValidationError):
             generate_document(txn=receipt_txn, user=administrator)
 
+    def test_broken_template_render_becomes_a_clean_validation_error(
+        self, administrator, assignment_txn, monkeypatch
+    ):
+        """Regression test: a custom document template is only validated
+        against sample_document_context() before it's saved
+        (template_services._validate_template_renders) — real transaction
+        data can still differ enough to make rendering fail only at actual
+        generation time. That failure used to be an uncaught exception
+        (WeasyPrint/TemplateSyntaxError) propagating straight to a 500 on
+        the transaction detail page; generate_document() must now convert
+        any render failure into a ValidationError, matching how
+        render_preview_pdf() already behaves for the settings-screen
+        preview.
+        """
+
+        def broken_render(*args, **kwargs):
+            raise RuntimeError("unexpected token in template")
+
+        monkeypatch.setattr("apps.documents.services.render_pdf", broken_render)
+
+        with pytest.raises(ValidationError, match="Could not render the document template"):
+            generate_document(txn=assignment_txn, user=administrator)
+        assert not GeneratedDocument.objects.filter(transaction=assignment_txn).exists()
+
     def test_generation_is_audited(self, administrator, assignment_txn):
         document = generate_document(txn=assignment_txn, user=administrator)
 
