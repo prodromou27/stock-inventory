@@ -1,5 +1,7 @@
 import csv
+import io
 
+import openpyxl
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -7,6 +9,7 @@ from django.core.paginator import Paginator
 from django.db.models import Q
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.text import slugify
 from django.views import View
@@ -21,11 +24,18 @@ from apps.locations.scoping import accessible_locations
 from . import queries
 from .forms import ReportBaseModelForm, ReportBuilderForm, ReportFilterFormSet
 from .models import ReportBaseModel, SavedReport
-from .report_builder import REPORTABLE_FIELDS, build_queryset, friendly_rows
+from .report_builder import (
+    REPORTABLE_FIELDS,
+    build_queryset,
+    field_kinds,
+    friendly_rows,
+    report_totals,
+)
 from .services import create_saved_report, delete_saved_report
 
 REPORT_PAGE_SIZE = 50
-SAVED_REPORT_ROW_CAP = 1000
+SAVED_REPORT_PAGE_SIZE = 50
+SAVED_REPORT_PDF_ROW_CAP = 1000
 
 
 class ReportsHubView(LoginRequiredMixin, View):
@@ -466,6 +476,8 @@ class ReportBuilderView(LoginRequiredMixin, View):
                 selected_fields=form.cleaned_data["selected_fields"],
                 filters=filters,
                 is_shared=form.cleaned_data["is_shared"],
+                sort_by=form.cleaned_data["sort_by"],
+                sort_direction=form.cleaned_data["sort_direction"] or "asc",
             )
         except ValidationError as exc:
             form.add_error(None, "; ".join(exc.messages) if hasattr(exc, "messages") else str(exc))
@@ -483,6 +495,7 @@ class ReportBuilderView(LoginRequiredMixin, View):
                 "filter_formset": filter_formset,
                 "base_model": base_model,
                 "base_model_label": dict(ReportBaseModel.choices).get(base_model, base_model),
+                "field_kinds": field_kinds(base_model),
             },
         )
 
@@ -503,18 +516,26 @@ class SavedReportRunView(LoginRequiredMixin, View):
             base_model=report.base_model,
             selected_fields=report.selected_fields,
             filters=report.filters,
+            sort_by=report.sort_by,
+            sort_direction=report.sort_direction,
         )
-        raw_rows = list(queryset[: SAVED_REPORT_ROW_CAP + 1])
-        truncated = len(raw_rows) > SAVED_REPORT_ROW_CAP
-        dict_rows = friendly_rows(columns, report.base_model, raw_rows[:SAVED_REPORT_ROW_CAP])
+        export_format = request.GET.get("format")
+        if export_format == "csv":
+            return self._csv_response(report, columns, queryset)
+        if export_format == "xlsx":
+            return self._xlsx_response(report, columns, queryset)
+        if export_format == "pdf":
+            return self._pdf_response(report, columns, queryset)
+
+        totals = report_totals(queryset, base_model=report.base_model, columns=columns)
+        paginator = Paginator(queryset, SAVED_REPORT_PAGE_SIZE)
+        page_obj = paginator.get_page(request.GET.get("page"))
+        dict_rows = friendly_rows(columns, report.base_model, page_obj.object_list)
         # Reshaped from {column: value} dicts into plain value-lists (same
         # order as `columns`) so the template can render a row with a
         # simple {% for %} — Django template dot-lookup can't index a dict
         # by a loop variable, only by a literal key.
         rows = [[row.get(column, "") for column in columns] for row in dict_rows]
-
-        if request.GET.get("format") == "csv":
-            return self._csv_response(report, columns, rows)
 
         return render(
             request,
@@ -523,20 +544,65 @@ class SavedReportRunView(LoginRequiredMixin, View):
                 "report": report,
                 "columns": columns,
                 "rows": rows,
-                "row_cap": SAVED_REPORT_ROW_CAP,
-                "truncated": truncated,
+                "page_obj": page_obj,
+                "is_paginated": page_obj.has_other_pages(),
+                "totals": [totals.get(column) for column in columns],
+                "has_totals": bool(totals),
                 "can_delete": report.created_by_id == request.user.id,
             },
         )
 
-    def _csv_response(self, report, columns, rows):
+    @staticmethod
+    def _value_rows(report, columns, queryset):
+        raw_rows = queryset.iterator(chunk_size=1000)
+        for row in friendly_rows(columns, report.base_model, raw_rows):
+            yield [row.get(column, "") for column in columns]
+
+    def _csv_response(self, report, columns, queryset):
         response = HttpResponse(content_type="text/csv")
         filename = slugify(report.name) or "report"
         response["Content-Disposition"] = f'attachment; filename="{filename}.csv"'
         writer = csv.writer(response)
         writer.writerow(spreadsheet_safe_row(columns))
-        for row in rows:
+        for row in self._value_rows(report, columns, queryset):
             writer.writerow(spreadsheet_safe_row(row))
+        return response
+
+    def _xlsx_response(self, report, columns, queryset):
+        workbook = openpyxl.Workbook(write_only=True)
+        sheet = workbook.create_sheet("Report")
+        sheet.append(spreadsheet_safe_row(columns))
+        for row in self._value_rows(report, columns, queryset):
+            sheet.append(spreadsheet_safe_row(row))
+        buffer = io.BytesIO()
+        workbook.save(buffer)
+        filename = slugify(report.name) or "report"
+        response = HttpResponse(
+            buffer.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}.xlsx"'
+        return response
+
+    def _pdf_response(self, report, columns, queryset):
+        raw_rows = list(queryset[:SAVED_REPORT_PDF_ROW_CAP])
+        dict_rows = friendly_rows(columns, report.base_model, raw_rows)
+        rows = [[row.get(column, "") for column in columns] for row in dict_rows]
+        html = render_to_string(
+            "reporting/saved_report_pdf.html",
+            {
+                "report": report,
+                "columns": columns,
+                "rows": rows,
+                "truncated": queryset.count() > SAVED_REPORT_PDF_ROW_CAP,
+                "row_cap": SAVED_REPORT_PDF_ROW_CAP,
+            },
+        )
+        from weasyprint import HTML
+
+        response = HttpResponse(HTML(string=html).write_pdf(), content_type="application/pdf")
+        filename = slugify(report.name) or "report"
+        response["Content-Disposition"] = f'inline; filename="{filename}.pdf"'
         return response
 
 

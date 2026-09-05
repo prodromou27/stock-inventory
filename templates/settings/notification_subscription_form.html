@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+{% block title %}Edit daily notification — Stock Inventory{% endblock %}
+
+{% block content %}
+  <p><a href="{% url 'settings:notifications' %}">&larr; Daily notifications</a></p>
+  <div class="page-header"><h1>Edit daily notification</h1></div>
+  <form method="post" class="form-card">
+    {% csrf_token %}
+    <div class="card">
+      {% if form.non_field_errors %}<p class="messages__item messages__item--error">{{ form.non_field_errors|join:" " }}</p>{% endif %}
+      {% for field in form %}{% include "_form_field.html" with field=field %}{% endfor %}
+    </div>
+    <div class="form-actions"><button class="btn btn--primary" type="submit">Save changes</button></div>
+  </form>
+{% endblock %}

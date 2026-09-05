@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{ report.name }}</title>
+  <style>
+    @page { size: A4 landscape; margin: 12mm; }
+    body { font-family: sans-serif; color: #172033; font-size: 9pt; }
+    h1 { font-size: 16pt; margin: 0 0 8mm; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #cbd5e1; padding: 4px 5px; text-align: left; }
+    th { background: #e8eef7; }
+    .warning { color: #92400e; }
+  </style>
+</head>
+<body>
+  <h1>{{ report.name }}</h1>
+  {% if truncated %}<p class="warning">PDF limited to the first {{ row_cap }} rows. Excel and CSV exports contain the full result.</p>{% endif %}
+  <table>
+    <thead><tr>{% for column in columns %}<th>{{ column }}</th>{% endfor %}</tr></thead>
+    <tbody>
+      {% for row in rows %}<tr>{% for value in row %}<td>{{ value }}</td>{% endfor %}</tr>{% empty %}<tr><td colspan="{{ columns|length }}">No results.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</body>
+</html>

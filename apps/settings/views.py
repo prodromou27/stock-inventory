@@ -8,11 +8,13 @@ from apps.core.authorization import ADMINISTRATOR, RoleRequiredMixin
 
 from .forms import (
     CertificateUploadForm,
+    NotificationSubscriptionForm,
     SmtpSettingsForm,
     SystemSettingsForm,
     TimezoneSettingsForm,
 )
-from .models import SystemSettings
+from .models import NotificationSubscription, SystemSettings
+from .notifications import save_notification_subscription
 from .services import (
     send_test_email,
     update_certificate,
@@ -185,3 +187,69 @@ class SmtpConfigurationView(LoginRequiredMixin, RoleRequiredMixin, View):
             else:
                 messages.success(request, f"Test email sent to {data['test_email_recipient']}.")
         return redirect("settings:smtp")
+
+
+class NotificationSubscriptionListView(LoginRequiredMixin, RoleRequiredMixin, View):
+    allowed_roles = (ADMINISTRATOR,)
+    template_name = "settings/notification_subscriptions.html"
+
+    def get(self, request):
+        subscriptions = NotificationSubscription.objects.select_related("recipient", "country")
+        return render(
+            request,
+            self.template_name,
+            {"subscriptions": subscriptions, "form": NotificationSubscriptionForm()},
+        )
+
+    def post(self, request):
+        form = NotificationSubscriptionForm(request.POST)
+        subscriptions = NotificationSubscription.objects.select_related("recipient", "country")
+        if form.is_valid():
+            try:
+                save_notification_subscription(user=request.user, **form.cleaned_data)
+            except ValidationError as exc:
+                form.add_error(None, "; ".join(exc.messages))
+            else:
+                messages.success(request, "Notification subscription created.")
+                return redirect("settings:notifications")
+        return render(
+            request,
+            self.template_name,
+            {"subscriptions": subscriptions, "form": form},
+        )
+
+
+class NotificationSubscriptionUpdateView(LoginRequiredMixin, RoleRequiredMixin, View):
+    allowed_roles = (ADMINISTRATOR,)
+    template_name = "settings/notification_subscription_form.html"
+
+    def _subscription(self, pk):
+        from django.shortcuts import get_object_or_404
+
+        return get_object_or_404(NotificationSubscription, pk=pk)
+
+    def get(self, request, pk):
+        subscription = self._subscription(pk)
+        return render(
+            request,
+            self.template_name,
+            {
+                "subscription": subscription,
+                "form": NotificationSubscriptionForm(instance=subscription),
+            },
+        )
+
+    def post(self, request, pk):
+        subscription = self._subscription(pk)
+        form = NotificationSubscriptionForm(request.POST, instance=subscription)
+        if form.is_valid():
+            try:
+                save_notification_subscription(
+                    user=request.user, subscription=subscription, **form.cleaned_data
+                )
+            except ValidationError as exc:
+                form.add_error(None, "; ".join(exc.messages))
+            else:
+                messages.success(request, "Notification subscription saved.")
+                return redirect("settings:notifications")
+        return render(request, self.template_name, {"subscription": subscription, "form": form})

@@ -8,6 +8,8 @@
     <h1>{{ report.name }}</h1>
     <div class="page-header__actions">
       <a class="btn" href="?format=csv">Export CSV</a>
+      <a class="btn" href="?format=xlsx">Export Excel</a>
+      <a class="btn" href="?format=pdf" target="_blank" rel="noopener">Print PDF</a>
       {% if can_delete %}
         <form method="post" action="{% url 'reporting:saved_report_delete' report.pk %}" class="inline-form"
               data-confirm="Delete this report?">
@@ -17,12 +19,6 @@
       {% endif %}
     </div>
   </div>
-
-  {% if truncated %}
-    <p class="messages__item messages__item--warning">
-      Showing the first {{ row_cap }} rows — narrow this report with a filter to see fewer.
-    </p>
-  {% endif %}
 
   {% if rows %}
     <div class="table-scroll" tabindex="0" aria-label="{{ report.name }}">
@@ -39,8 +35,12 @@
             </tr>
           {% endfor %}
         </tbody>
+        {% if has_totals %}
+          <tfoot><tr>{% for total in totals %}<td>{% if total is not None %}<strong>{{ total }}</strong>{% endif %}</td>{% endfor %}</tr></tfoot>
+        {% endif %}
       </table>
     </div>
+    {% include "_pagination.html" %}
   {% else %}
     <p class="empty-state">No results within your accessible locations.</p>
   {% endif %}

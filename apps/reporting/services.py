@@ -6,7 +6,17 @@ from .models import SavedReport
 from .report_builder import ALLOWED_FILTER_OPS, REPORTABLE_FIELDS, normalize_filter_value
 
 
-def create_saved_report(*, user, name, base_model, selected_fields, filters, is_shared=False):
+def create_saved_report(
+    *,
+    user,
+    name,
+    base_model,
+    selected_fields,
+    filters,
+    is_shared=False,
+    sort_by="",
+    sort_direction="asc",
+):
     """Re-validates selected_fields/filters against REPORTABLE_FIELDS again
     at save time — never trusts that a caller (a form, a future API) already
     did this correctly; the same defense-in-depth apps.reporting.
@@ -22,6 +32,10 @@ def create_saved_report(*, user, name, base_model, selected_fields, filters, is_
     clean_fields = [key for key in selected_fields if key in fields]
     if not clean_fields:
         raise ValidationError("Choose at least one field.")
+    if sort_by and sort_by not in clean_fields:
+        raise ValidationError("Sort field must be one of the selected report columns.")
+    if sort_direction not in {"asc", "desc"}:
+        raise ValidationError("Unknown sort direction.")
 
     clean_filters = []
     for row in filters:
@@ -44,6 +58,8 @@ def create_saved_report(*, user, name, base_model, selected_fields, filters, is_
         base_model=base_model,
         selected_fields=clean_fields,
         filters=clean_filters,
+        sort_by=sort_by,
+        sort_direction=sort_direction,
         is_shared=is_shared,
         created_by=user,
         updated_by=user,

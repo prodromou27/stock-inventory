@@ -4,7 +4,7 @@ import re
 from django.conf import settings
 from django.db import models
 
-from apps.core.models import TimestampedModel
+from apps.core.models import TimestampedModel, UserStampedModel, UUIDPrimaryKeyModel
 
 _HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
@@ -105,3 +105,57 @@ class SystemSettings(TimestampedModel):
     @property
     def allowed_hosts_list(self):
         return [host.strip() for host in self.allowed_hosts_override.split(",") if host.strip()]
+
+
+class NotificationSubscription(UUIDPrimaryKeyModel, UserStampedModel):
+    """Daily digest preferences for one recipient and one country."""
+
+    recipient = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="inventory_notification_subscriptions",
+    )
+    country = models.ForeignKey(
+        "locations.Location", on_delete=models.PROTECT, related_name="notification_subscriptions"
+    )
+    is_active = models.BooleanField(default=True)
+    notify_low_stock = models.BooleanField(default=True)
+    notify_overdue_assignments = models.BooleanField(default=True)
+    notify_import_export_failures = models.BooleanField(default=True)
+    notify_data_quality = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["country__name", "recipient__username"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["recipient", "country"], name="notification_unique_recipient_country"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.recipient} — {self.country}"
+
+
+class NotificationDigestDelivery(UUIDPrimaryKeyModel, TimestampedModel):
+    class Status(models.TextChoices):
+        SENT = "sent", "Sent"
+        NO_CONTENT = "no_content", "No content"
+        FAILED = "failed", "Failed"
+
+    subscription = models.ForeignKey(
+        NotificationSubscription, on_delete=models.CASCADE, related_name="deliveries"
+    )
+    digest_date = models.DateField()
+    status = models.CharField(max_length=12, choices=Status.choices)
+    item_counts = models.JSONField(default=dict, blank=True)
+    detail = models.TextField(blank=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-digest_date", "subscription__country__name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["subscription", "digest_date"],
+                name="notification_unique_subscription_digest_date",
+            )
+        ]

@@ -17,7 +17,7 @@ interpolated into `.filter(**{...})`.
 
 from django.core.exceptions import ValidationError
 from django.db import models
-from django.db.models import Q
+from django.db.models import Q, Sum
 
 from apps.inventory.access import (
     scope_asset_status_history_queryset,
@@ -166,7 +166,25 @@ def field_choices(base_model):
     return [(key, key.replace("_", " ").title()) for key in REPORTABLE_FIELDS.get(base_model, {})]
 
 
-def build_queryset(*, user, base_model, selected_fields, filters):
+def field_kinds(base_model):
+    """Return safe input-type hints; server-side coercion remains authoritative."""
+    kinds = {}
+    for key in REPORTABLE_FIELDS.get(base_model, {}):
+        field = _report_field(base_model, key)
+        if isinstance(field, models.DateField):
+            kinds[key] = "date"
+        elif isinstance(field, (models.IntegerField, models.DecimalField, models.FloatField)):
+            kinds[key] = "number"
+        elif isinstance(field, models.BooleanField):
+            kinds[key] = "boolean"
+        else:
+            kinds[key] = "text"
+    return kinds
+
+
+def build_queryset(
+    *, user, base_model, selected_fields, filters, sort_by=None, sort_direction="asc"
+):
     """Returns (columns, queryset) — `columns` is the ordered list of
     friendly field keys actually used (never empty; falls back to every
     field for this base_model if selected_fields ends up empty after
@@ -215,7 +233,27 @@ def build_queryset(*, user, base_model, selected_fields, filters):
     if not columns:
         columns = list(fields.keys())
     orm_paths = [fields[key] for key in columns]
-    return columns, queryset.values(*orm_paths).distinct()
+    sort_key = sort_by if sort_by in columns else columns[0]
+    sort_path = fields[sort_key]
+    prefix = "-" if sort_direction == "desc" else ""
+    return columns, queryset.values(*orm_paths).distinct().order_by(f"{prefix}{sort_path}")
+
+
+def report_totals(queryset, *, base_model, columns):
+    """Return full-result totals for selected numeric report fields."""
+    fields = REPORTABLE_FIELDS[base_model]
+    numeric = {
+        key: fields[key]
+        for key in columns
+        if isinstance(
+            _report_field(base_model, key),
+            (models.IntegerField, models.DecimalField, models.FloatField),
+        )
+    }
+    if not numeric:
+        return {}
+    values = queryset.aggregate(**{f"total_{key}": Sum(path) for key, path in numeric.items()})
+    return {key: values[f"total_{key}"] or 0 for key in numeric}
 
 
 def friendly_rows(columns, base_model, rows):

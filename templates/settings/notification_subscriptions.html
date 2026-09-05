@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}Daily notifications — Stock Inventory{% endblock %}
+
+{% block content %}
+  <p><a href="{% url 'settings:hub' %}">&larr; All settings</a></p>
+  <div class="page-header">
+    <div>
+      <h1>Daily notifications</h1>
+      <div class="page-header__subtitle">One digest per recipient and country. Only selected alert categories are included.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Configured recipients</h2>
+    {% if subscriptions %}
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Recipient</th><th>Country</th><th>Alerts</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            {% for subscription in subscriptions %}
+              <tr>
+                <td>{{ subscription.recipient.get_full_name|default:subscription.recipient.username }}<br><small>{{ subscription.recipient.email }}</small></td>
+                <td>{{ subscription.country }}</td>
+                <td>
+                  {% if subscription.notify_low_stock %}<span class="badge">Low stock</span>{% endif %}
+                  {% if subscription.notify_overdue_assignments %}<span class="badge">Overdue</span>{% endif %}
+                  {% if subscription.notify_import_export_failures %}<span class="badge">Failures</span>{% endif %}
+                  {% if subscription.notify_data_quality %}<span class="badge">Data quality</span>{% endif %}
+                </td>
+                <td><span class="badge {% if subscription.is_active %}badge--success{% else %}badge--muted{% endif %}">{% if subscription.is_active %}Active{% else %}Inactive{% endif %}</span></td>
+                <td><a class="btn btn--secondary btn--small" href="{% url 'settings:notification_edit' subscription.pk %}">Edit</a></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="empty-state">No notification recipients have been configured.</p>
+    {% endif %}
+  </div>
+
+  <form method="post" class="form-card">
+    {% csrf_token %}
+    <div class="card">
+      <h2>Add recipient</h2>
+      {% if form.non_field_errors %}<p class="messages__item messages__item--error">{{ form.non_field_errors|join:" " }}</p>{% endif %}
+      {% for field in form %}{% include "_form_field.html" with field=field %}{% endfor %}
+    </div>
+    <div class="form-actions"><button class="btn btn--primary" type="submit">Add subscription</button></div>
+  </form>
+{% endblock %}

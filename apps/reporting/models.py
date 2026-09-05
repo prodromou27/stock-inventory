@@ -39,6 +39,10 @@ class SavedReport(UUIDPrimaryKeyModel, UserStampedModel):
     base_model = models.CharField(max_length=20, choices=ReportBaseModel.choices)
     selected_fields = models.JSONField(default=list, blank=True)
     filters = models.JSONField(default=list, blank=True)
+    sort_by = models.CharField(max_length=50, blank=True)
+    sort_direction = models.CharField(
+        max_length=4, choices=[("asc", "Ascending"), ("desc", "Descending")], default="asc"
+    )
     is_shared = models.BooleanField(default=False)
 
     class Meta:

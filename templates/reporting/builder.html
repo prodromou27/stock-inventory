@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block title %}Build a Report — Stock Inventory{% endblock %}
 
@@ -33,16 +34,20 @@
         {{ form.selected_fields }}
         {% if form.selected_fields.errors %}<div class="messages__item messages__item--error">{{ form.selected_fields.errors }}</div>{% endif %}
       </p>
+      <div class="form-grid form-grid--2">
+        {% include "_form_field.html" with field=form.sort_by %}
+        {% include "_form_field.html" with field=form.sort_direction %}
+      </div>
     </div>
 
     <div class="card">
       <h2>Filters (optional)</h2>
       {{ filter_formset.management_form }}
-      <table class="dense-table">
+      <table class="dense-table" data-report-filters>
         <thead>
           <tr><th>Field</th><th>Is</th><th>Value</th></tr>
         </thead>
-        <tbody>
+        <tbody data-filter-rows>
           {% for filter_form in filter_formset %}
             <tr>
               <td>{{ filter_form.field_key }}</td>
@@ -55,6 +60,14 @@
           {% endfor %}
         </tbody>
       </table>
+      <template data-filter-empty-form>
+        <tr>
+          <td>{{ filter_formset.empty_form.field_key }}</td>
+          <td>{{ filter_formset.empty_form.op }}</td>
+          <td>{{ filter_formset.empty_form.value }} <button type="button" class="btn btn--sm btn--ghost" data-remove-filter>Remove</button></td>
+        </tr>
+      </template>
+      <button type="button" class="btn btn--ghost" data-add-filter>Add filter</button>
       <p class="helptext">"Is" accepts: exact match, contains, at least (gte), at most (lte), or a
         comma-separated list ("in"). Leave a row's Field blank to skip it.</p>
     </div>
@@ -67,4 +80,9 @@
       <button type="submit" class="btn btn--primary">Save and run</button>
     </div>
   </form>
+  {{ field_kinds|json_script:"report-field-kinds" }}
+{% endblock %}
+
+{% block extra_scripts %}
+  <script src="{% static 'js/report_builder.js' %}" defer></script>
 {% endblock %}

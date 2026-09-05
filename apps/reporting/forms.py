@@ -1,7 +1,7 @@
 from django import forms
 
 from .models import ReportBaseModel
-from .report_builder import ALLOWED_FILTER_OPS, field_choices
+from .report_builder import ALLOWED_FILTER_OPS, field_choices, normalize_filter_value
 
 
 class ReportBaseModelForm(forms.Form):
@@ -19,13 +19,22 @@ class ReportBuilderForm(forms.Form):
     selected_fields = forms.MultipleChoiceField(
         choices=(), widget=forms.CheckboxSelectMultiple, label="Columns"
     )
+    sort_by = forms.ChoiceField(choices=(), required=False, label="Sort by")
+    sort_direction = forms.ChoiceField(
+        choices=(("asc", "Ascending"), ("desc", "Descending")),
+        label="Direction",
+        required=False,
+        initial="asc",
+    )
     is_shared = forms.BooleanField(
         required=False, label="Share with everyone (Administrators only)"
     )
 
     def __init__(self, *args, base_model=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["selected_fields"].choices = field_choices(base_model)
+        choices = field_choices(base_model)
+        self.fields["selected_fields"].choices = choices
+        self.fields["sort_by"].choices = [("", "Default")] + choices
 
 
 class ReportFilterRowForm(forms.Form):
@@ -45,6 +54,7 @@ class ReportFilterRowForm(forms.Form):
 
     def __init__(self, *args, base_model=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self.base_model = base_model
         self.fields["field_key"].choices = [("", "—")] + field_choices(base_model)
 
     def clean(self):
@@ -53,7 +63,18 @@ class ReportFilterRowForm(forms.Form):
             return cleaned  # nothing entered on this row — silently skipped
         if not cleaned.get("op"):
             cleaned["op"] = "exact"
+        try:
+            normalize_filter_value(
+                base_model=self.base_model,
+                field_key=cleaned["field_key"],
+                op=cleaned["op"],
+                value=cleaned["value"],
+            )
+        except forms.ValidationError as exc:
+            self.add_error("value", exc)
         return cleaned
 
 
-ReportFilterFormSet = forms.formset_factory(ReportFilterRowForm, extra=3)
+ReportFilterFormSet = forms.formset_factory(
+    ReportFilterRowForm, extra=1, max_num=20, validate_max=True
+)

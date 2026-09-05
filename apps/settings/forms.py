@@ -3,6 +3,10 @@ import zoneinfo
 
 from django import forms
 
+from apps.locations.models import Location, LocationLevel
+
+from .models import NotificationSubscription
+
 _HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
@@ -86,3 +90,36 @@ class SmtpSettingsForm(forms.Form):
         label="Send a test email to (optional)",
         help_text="Leave blank to just save the settings without sending anything.",
     )
+
+
+class NotificationSubscriptionForm(forms.ModelForm):
+    class Meta:
+        model = NotificationSubscription
+        fields = [
+            "recipient",
+            "country",
+            "is_active",
+            "notify_low_stock",
+            "notify_overdue_assignments",
+            "notify_import_export_failures",
+            "notify_data_quality",
+        ]
+        labels = {
+            "notify_import_export_failures": "Import and export failures",
+            "notify_data_quality": "Unresolved high-severity data-quality findings",
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["country"].queryset = Location.objects.filter(
+            level=LocationLevel.COUNTRY, is_active=True
+        ).order_by("name")
+        self.fields["recipient"].queryset = (
+            self.fields["recipient"].queryset.filter(is_active=True).order_by("username")
+        )
+
+    def clean_recipient(self):
+        recipient = self.cleaned_data["recipient"]
+        if not recipient.email:
+            raise forms.ValidationError("The recipient must have an email address.")
+        return recipient

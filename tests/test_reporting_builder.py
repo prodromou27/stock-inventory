@@ -496,6 +496,117 @@ class TestReportBuilderViews:
         assert response["Content-Type"] == "text/csv"
         assert "SN-REPORT-IN-SCOPE" in response.content.decode()
 
+    def test_run_view_is_paginated(self, client, administrator, unit_product, location_tree):
+        from apps.inventory.models import UnitAsset, UnitStatus
+
+        UnitAsset.objects.bulk_create(
+            [
+                UnitAsset(
+                    product=unit_product,
+                    vendor_serial=f"SN-PAGE-{index:03d}",
+                    status=UnitStatus.IN_STOCK,
+                    current_location=location_tree["room"],
+                    arrival_date=date.today(),
+                )
+                for index in range(55)
+            ]
+        )
+        report = create_saved_report(
+            user=administrator,
+            name="Paginated",
+            base_model=ReportBaseModel.UNIT_ASSET,
+            selected_fields=["serial"],
+            filters=[],
+        )
+        client.force_login(administrator)
+
+        response = client.get(reverse("reporting:saved_report_run", args=[report.pk]))
+
+        assert response.status_code == 200
+        assert len(response.context["rows"]) == 50
+        assert response.context["page_obj"].paginator.num_pages == 2
+
+    def test_saved_sort_order_is_applied(self, client, administrator, in_scope_asset):
+        report = create_saved_report(
+            user=administrator,
+            name="Descending serials",
+            base_model=ReportBaseModel.UNIT_ASSET,
+            selected_fields=["serial"],
+            filters=[],
+            sort_by="serial",
+            sort_direction="desc",
+        )
+        client.force_login(administrator)
+
+        response = client.get(reverse("reporting:saved_report_run", args=[report.pk]))
+
+        serials = [row[0] for row in response.context["rows"]]
+        assert serials == sorted(serials, reverse=True)
+
+    def test_xlsx_export(self, client, administrator, in_scope_asset):
+        import io
+
+        import openpyxl
+
+        report = create_saved_report(
+            user=administrator,
+            name="Excel test",
+            base_model=ReportBaseModel.UNIT_ASSET,
+            selected_fields=["serial"],
+            filters=[],
+        )
+        client.force_login(administrator)
+
+        response = client.get(
+            reverse("reporting:saved_report_run", args=[report.pk]), {"format": "xlsx"}
+        )
+
+        assert response.status_code == 200
+        workbook = openpyxl.load_workbook(io.BytesIO(response.content), read_only=True)
+        assert workbook.active["A1"].value == "serial"
+        assert workbook.active["A2"].value == "SN-REPORT-IN-SCOPE"
+
+    def test_pdf_export(self, client, administrator, in_scope_asset):
+        report = create_saved_report(
+            user=administrator,
+            name="PDF test",
+            base_model=ReportBaseModel.UNIT_ASSET,
+            selected_fields=["serial"],
+            filters=[],
+        )
+        client.force_login(administrator)
+
+        response = client.get(
+            reverse("reporting:saved_report_run", args=[report.pk]), {"format": "pdf"}
+        )
+
+        assert response.status_code == 200
+        assert response.content.startswith(b"%PDF")
+
+    def test_numeric_totals_cover_full_result(
+        self, client, administrator, quantity_product, location_tree
+    ):
+        receive_stock(
+            user=administrator,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=7,
+        )
+        report = create_saved_report(
+            user=administrator,
+            name="Balance totals",
+            base_model=ReportBaseModel.STOCK_BALANCE,
+            selected_fields=["on_hand_quantity", "reserved_quantity"],
+            filters=[],
+        )
+        client.force_login(administrator)
+
+        response = client.get(reverse("reporting:saved_report_run", args=[report.pk]))
+
+        assert response.status_code == 200
+        assert response.context["totals"] == [7, 0]
+
     def test_legacy_report_with_invalid_typed_filter_does_not_return_500(
         self, client, administrator, in_scope_asset
     ):

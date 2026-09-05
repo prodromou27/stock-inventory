@@ -157,15 +157,8 @@ def update_smtp_settings(
     return settings_obj
 
 
-def send_test_email(*, recipient):
-    """Sends one plain-text message using the currently-saved SMTP settings
-    — the only thing in this app that ever sends email (deliberately: no
-    password-reset-by-email or notification wiring was asked for, see
-    docs/architecture's Settings section). Raises a plain Exception with the
-    underlying error on failure so the view can show it directly; doesn't
-    roll back a settings save that already succeeded, since a bad test
-    recipient shouldn't cost the operator their otherwise-valid SMTP config.
-    """
+def send_configured_email(*, recipient, subject, body):
+    """Send plain-text mail through the administrator-configured SMTP connection."""
     from django.core.mail import EmailMessage, get_connection
 
     settings_obj = SystemSettings.load()
@@ -181,13 +174,22 @@ def send_test_email(*, recipient):
         use_tls=settings_obj.smtp_use_tls,
     )
     message = EmailMessage(
-        subject="Stock Inventory — test email",
-        body="This is a test email from the Stock Inventory application's SMTP settings.",
+        subject=subject,
+        body=body,
         from_email=settings_obj.smtp_from_email or settings_obj.smtp_username or None,
         to=[recipient],
         connection=connection,
     )
-    message.send()
+    return message.send()
+
+
+def send_test_email(*, recipient):
+    """Send one test message without changing the saved SMTP configuration."""
+    return send_configured_email(
+        recipient=recipient,
+        subject="Stock Inventory — test email",
+        body="This is a test email from the Stock Inventory application's SMTP settings.",
+    )
 
 
 def _validate_cert_key_pair(cert_bytes, key_bytes):
