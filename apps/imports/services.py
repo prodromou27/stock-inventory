@@ -28,6 +28,21 @@ from .normalization import (
 
 EXECUTE_BATCH_SIZE = 500
 
+# A worker that crashes/is killed mid-execute_batch() leaves a batch stuck
+# at EXECUTING forever (the status is committed before the row loop, which
+# then runs outside any transaction) — with no recovery path short of a
+# manual DB edit. A batch that hasn't advanced its own updated_at (touched
+# at every chunk boundary below, not just on entry) for longer than this is
+# treated as failed rather than genuinely still running.
+STALE_EXECUTION_TIMEOUT = datetime.timedelta(minutes=15)
+
+
+def is_stale_execution(batch):
+    return (
+        batch.status == ImportBatchStatus.EXECUTING
+        and timezone.now() - batch.updated_at > STALE_EXECUTION_TIMEOUT
+    )
+
 
 # --- Upload + staging --------------------------------------------------
 
@@ -392,14 +407,22 @@ def execute_batch(*, batch, user):
         if batch.status == ImportBatchStatus.COMPLETED:
             return batch
         if batch.status == ImportBatchStatus.EXECUTING:
-            raise ValidationError("This import batch is already executing.")
-        if batch.status not in (
+            if not is_stale_execution(batch):
+                raise ValidationError("This import batch is already executing.")
+            # No progress in over STALE_EXECUTION_TIMEOUT — the worker that
+            # was running this almost certainly crashed or was killed.
+            # Recorded as FAILED (an already-existing status the daily
+            # digest already watches for) before falling through to
+            # re-execute, rather than leaving it stuck forever.
+            batch.status = ImportBatchStatus.FAILED
+            batch.save(update_fields=["status", "updated_at"])
+        elif batch.status not in (
             ImportBatchStatus.PREVIEWED,
             ImportBatchStatus.PARTIALLY_COMPLETED,
         ):
             raise ValidationError("This import batch cannot be executed in its current state.")
         batch.status = ImportBatchStatus.EXECUTING
-        batch.save(update_fields=["status"])
+        batch.save(update_fields=["status", "updated_at"])
 
     rows = list(
         batch.rows.filter(
@@ -408,6 +431,10 @@ def execute_batch(*, batch, user):
     )
     for start in range(0, len(rows), EXECUTE_BATCH_SIZE):
         _execute_row_chunk(rows[start : start + EXECUTE_BATCH_SIZE], user=user)
+        # Touched after every chunk (not just on entry) so a large,
+        # genuinely-still-running import keeps refreshing its own
+        # staleness clock instead of looking crashed to a concurrent check.
+        batch.save(update_fields=["updated_at"])
 
     counts = {
         "imported": batch.rows.filter(outcome=ImportRowOutcome.IMPORTED).count(),

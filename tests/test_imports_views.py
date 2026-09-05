@@ -1,4 +1,5 @@
 import pytest
+from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 
@@ -112,6 +113,33 @@ class TestExecuteAndDownloads:
         assert results_response.status_code == 200
         assert results_response["Content-Type"] == "text/csv"
         assert "SNVIEW001" in results_response.content.decode()
+
+    def test_execute_raising_mid_call_shows_a_message_instead_of_a_500(
+        self, client, administrator, location_tree, monkeypatch
+    ):
+        """Regression test: ImportExecuteView had no try/except around
+        execute_batch(), unlike its sibling handlers in the same view.
+        Two near-simultaneous Execute requests can both pass the view's own
+        status check (batch still PREVIEWED) and both reach execute_batch(),
+        where the second blocks on select_for_update() until the first
+        commits — then sees EXECUTING and raises. That raise used to be
+        uncaught here: a 500 instead of the friendly redirect every other
+        error path in this view already gets.
+        """
+
+        def raise_already_executing(*args, **kwargs):
+            raise ValidationError("This import batch is already executing.")
+
+        monkeypatch.setattr("apps.imports.views.execute_batch", raise_already_executing)
+
+        client.force_login(administrator)
+        upload = _csv_upload([_base_row(LOCATION="Room A")])
+        batch, _ = services.create_batch_from_upload(uploaded_file=upload, user=administrator)
+
+        response = client.post(reverse("imports:execute", args=[batch.pk]), follow=True)
+        assert response.status_code == 200
+        messages = [str(m) for m in response.context["messages"]]
+        assert any("already executing" in m for m in messages)
 
     def test_template_download(self, client, administrator):
         client.force_login(administrator)

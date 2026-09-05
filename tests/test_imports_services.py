@@ -3,11 +3,12 @@ import io
 import pytest
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.utils import timezone
 
 from apps.audit.models import AuditEvent
 from apps.catalog.models import Product, TrackingMethod
 from apps.imports import services
-from apps.imports.models import ImportBatchStatus, ImportRowOutcome
+from apps.imports.models import ImportBatch, ImportBatchStatus, ImportRowOutcome
 from apps.inventory.models import InventoryTransaction, UnitAsset
 
 from .imports_fixture_builder import build_legacy_workbook_bytes
@@ -322,6 +323,44 @@ class TestExecuteBatch:
         with pytest.raises(ValidationError, match="already executing"):
             services.execute_batch(batch=batch, user=administrator)
         assert not UnitAsset.objects.filter(vendor_serial="SN-CONCURRENT").exists()
+
+    def test_stale_executing_batch_self_heals_and_re_executes(self, administrator, location_tree):
+        """Regression test: a worker that crashes mid-execute_batch() used
+        to strand the batch at EXECUTING forever, with every later attempt
+        raising 'already executing' and no recovery short of a manual DB
+        edit. A batch that hasn't progressed in over
+        STALE_EXECUTION_TIMEOUT must instead be treated as failed and
+        become re-executable.
+        """
+        from datetime import timedelta
+
+        upload = _csv_upload([_base_row(LOCATION="Room A", **{"S/N": "SN-STALE-RECOVER"})])
+        batch, _ = services.create_batch_from_upload(uploaded_file=upload, user=administrator)
+        batch.status = ImportBatchStatus.EXECUTING
+        batch.save(update_fields=["status"])
+        ImportBatch.objects.filter(pk=batch.pk).update(
+            updated_at=timezone.now() - services.STALE_EXECUTION_TIMEOUT - timedelta(minutes=1)
+        )
+        batch.refresh_from_db()
+        assert services.is_stale_execution(batch)
+
+        result = services.execute_batch(batch=batch, user=administrator)
+
+        assert result.status == ImportBatchStatus.COMPLETED
+        assert UnitAsset.objects.filter(vendor_serial="SN-STALE-RECOVER").exists()
+
+    def test_recently_active_executing_batch_is_not_treated_as_stale(
+        self, administrator, location_tree
+    ):
+        upload = _csv_upload([_base_row(LOCATION="Room A", **{"S/N": "SN-STILL-RUNNING"})])
+        batch, _ = services.create_batch_from_upload(uploaded_file=upload, user=administrator)
+        batch.status = ImportBatchStatus.EXECUTING
+        batch.save(update_fields=["status"])
+        batch.refresh_from_db()
+
+        assert not services.is_stale_execution(batch)
+        with pytest.raises(ValidationError, match="already executing"):
+            services.execute_batch(batch=batch, user=administrator)
 
     def test_duplicate_import_requires_explicit_row_acknowledgement(
         self, administrator, location_tree, unit_product

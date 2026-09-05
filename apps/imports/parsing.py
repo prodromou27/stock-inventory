@@ -13,6 +13,14 @@ from django.core.exceptions import ValidationError
 
 MAX_IMPORT_SIZE_BYTES = 25 * 1024 * 1024
 
+# .xlsx is a zip archive — every real one starts with this signature.
+# Never trust the client-supplied filename/extension alone (same rule
+# apps.documents.services._sniff_content_type and
+# apps.settings.services.sniff_logo_content_type already follow for their
+# uploads) — a file merely renamed to .xlsx must not reach
+# openpyxl.load_workbook() at all.
+_XLSX_SIGNATURE = b"PK\x03\x04"
+
 # Canonical column order also used by the downloadable template (services.py).
 COLUMNS = [
     "BRAND",
@@ -79,8 +87,14 @@ def parse_rows(*, filename, file_bytes):
     """
     lower_name = filename.lower()
     if lower_name.endswith(".csv"):
+        if b"\x00" in file_bytes[:8192]:
+            raise ValidationError(
+                "This does not look like a valid CSV file (binary content detected)."
+            )
         return _parse_csv(file_bytes)
     if lower_name.endswith(".xlsx"):
+        if not file_bytes.startswith(_XLSX_SIGNATURE):
+            raise ValidationError("This does not look like a valid Excel (.xlsx) file.")
         return _parse_xlsx(file_bytes)
     raise ValidationError("Only .xlsx or .csv files are supported.")
 
@@ -108,7 +122,12 @@ def _parse_xlsx(file_bytes):
 
 
 def _parse_csv(file_bytes):
-    text = file_bytes.decode("utf-8-sig")
+    try:
+        text = file_bytes.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise ValidationError(
+            "The file is not valid UTF-8 text. Save it as UTF-8 CSV and try again."
+        ) from exc
     reader = csv.reader(io.StringIO(text))
     try:
         header_row = next(reader)

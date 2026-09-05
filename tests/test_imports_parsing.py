@@ -63,6 +63,34 @@ def test_no_header_row_raises():
         parsing.parse_rows(filename="test.csv", file_bytes=b"")
 
 
+def test_file_merely_renamed_to_xlsx_is_rejected():
+    """Regression test: parse_rows() used to dispatch purely on filename
+    extension, so a CSV (or any other file) renamed to .xlsx reached
+    openpyxl.load_workbook() directly — every other upload path in this
+    app sniffs magic bytes rather than trusting the extension.
+    """
+    csv_bytes = (CSV_HEADER + "\nFortinet,FG-100F,Firewall,SN1,1,Room A,,,,,,,,,,\n").encode(
+        "utf-8"
+    )
+    with pytest.raises(ValidationError, match="does not look like a valid Excel"):
+        parsing.parse_rows(filename="fake.xlsx", file_bytes=csv_bytes)
+
+
+def test_binary_content_renamed_to_csv_is_rejected():
+    with pytest.raises(ValidationError, match="does not look like a valid CSV"):
+        parsing.parse_rows(filename="fake.csv", file_bytes=b"\x00\x01\x02\x03binary")
+
+
+def test_non_utf8_csv_raises_a_clean_validation_error():
+    """Regression test: a non-UTF-8 CSV used to raise an uncaught
+    UnicodeDecodeError (a 500), unlike the .xlsx branch's existing broad
+    exception handling.
+    """
+    non_utf8_bytes = (CSV_HEADER + "\n").encode("utf-8") + "Café".encode("latin-1")
+    with pytest.raises(ValidationError, match="not valid UTF-8"):
+        parsing.parse_rows(filename="test.csv", file_bytes=non_utf8_bytes)
+
+
 def test_checksum_is_stable_for_identical_bytes():
     data = b"hello world"
     assert parsing.compute_checksum(data) == parsing.compute_checksum(data)

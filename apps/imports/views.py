@@ -20,6 +20,7 @@ from .services import (
     build_template_xlsx,
     create_batch_from_upload,
     execute_batch,
+    is_stale_execution,
     set_row_location_override,
     skip_row,
 )
@@ -101,6 +102,15 @@ class ImportBatchDetailView(LoginRequiredMixin, RoleRequiredMixin, View):
         paginator = Paginator(rows_queryset, self.paginate_by)
         page_obj = paginator.get_page(request.GET.get("page"))
 
+        # A batch stuck at EXECUTING with no progress for a while almost
+        # certainly belongs to a crashed worker — execute_batch() itself
+        # self-heals this (marks it FAILED, then re-executes) the moment
+        # it's next executed, but the Execute button needs to actually be
+        # offered for that to be reachable at all.
+        executable = batch.status in (
+            ImportBatchStatus.PREVIEWED,
+            ImportBatchStatus.PARTIALLY_COMPLETED,
+        ) or is_stale_execution(batch)
         return render(
             request,
             self.template_name,
@@ -112,10 +122,8 @@ class ImportBatchDetailView(LoginRequiredMixin, RoleRequiredMixin, View):
                 "outcome_filter": outcome_filter,
                 "row_outcomes": ImportRowOutcome.choices,
                 "override_form": RowLocationOverrideForm(),
-                "can_edit": batch.status
-                in (ImportBatchStatus.PREVIEWED, ImportBatchStatus.PARTIALLY_COMPLETED),
-                "can_execute": batch.status
-                in (ImportBatchStatus.PREVIEWED, ImportBatchStatus.PARTIALLY_COMPLETED),
+                "can_edit": executable,
+                "can_execute": executable,
                 "is_repeat_of_completed": _is_repeat_of_completed(batch),
             },
         )
@@ -178,7 +186,11 @@ class ImportExecuteView(LoginRequiredMixin, RoleRequiredMixin, View):
 
     def post(self, request, pk):
         batch = get_object_or_404(ImportBatch, pk=pk)
-        if batch.status not in (ImportBatchStatus.PREVIEWED, ImportBatchStatus.PARTIALLY_COMPLETED):
+        executable = batch.status in (
+            ImportBatchStatus.PREVIEWED,
+            ImportBatchStatus.PARTIALLY_COMPLETED,
+        ) or is_stale_execution(batch)
+        if not executable:
             messages.error(request, "This batch cannot be executed in its current state.")
             return redirect(batch.get_absolute_url())
 
@@ -190,7 +202,11 @@ class ImportExecuteView(LoginRequiredMixin, RoleRequiredMixin, View):
             )
             return redirect(batch.get_absolute_url())
 
-        execute_batch(batch=batch, user=request.user)
+        try:
+            execute_batch(batch=batch, user=request.user)
+        except ValidationError as exc:
+            messages.error(request, "; ".join(exc.messages))
+            return redirect(batch.get_absolute_url())
         messages.success(
             request,
             f"Import finished: {batch.imported_count} imported, {batch.warning_count} still need "
