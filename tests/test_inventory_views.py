@@ -317,19 +317,31 @@ class TestQuickReceiveView:
         response = client.get(reverse("inventory:quick_receive"))
         assert response.status_code == 403
 
+    def _payload(self, unit_product, location, **overrides):
+        payload = {
+            "brand_name": unit_product.brand.name,
+            "model": unit_product.model,
+            "sku": unit_product.sku,
+            "product_type_name": unit_product.product_type.name,
+            "category": unit_product.category,
+            "location": location.pk,
+            "occurred_at": date.today().isoformat(),
+            "condition": "new",
+        }
+        payload.update(overrides)
+        return payload
+
     def test_creates_a_unit_asset_per_line_and_shows_results(
         self, client, stock_manager_with_room_access, unit_product, location_tree
     ):
         client.force_login(stock_manager_with_room_access)
         response = client.post(
             reverse("inventory:quick_receive"),
-            {
-                "product": unit_product.pk,
-                "location": location_tree["room"].pk,
-                "occurred_at": date.today().isoformat(),
-                "vendor_serials": "SN-QV-1\nSN-QV-2\nSN-QV-3",
-                "condition": "new",
-            },
+            self._payload(
+                unit_product,
+                location_tree["room"],
+                vendor_serials="SN-QV-1\nSN-QV-2\nSN-QV-3",
+            ),
         )
         assert response.status_code == 200
         results = response.context["results"]
@@ -337,21 +349,42 @@ class TestQuickReceiveView:
         assert UnitAsset.objects.filter(vendor_serial__startswith="SN-QV-").count() == 3
         assert "Received 3 of 3" in response.content.decode()
 
+    def test_no_pre_existing_product_required(
+        self, client, stock_manager_with_room_access, location_tree
+    ):
+        """Regression test: Quick receive used to require picking an
+        existing Product from a dropdown — the one receiving path that
+        didn't get the resolve-or-create rework Add Stock/Receive
+        (multi-line) already had.
+        """
+        client.force_login(stock_manager_with_room_access)
+        response = client.post(
+            reverse("inventory:quick_receive"),
+            {
+                "brand_name": "Brand New Co",
+                "model": "Freshly Typed Model",
+                "product_type_name": "Router",
+                "category": "serialized_asset",
+                "location": location_tree["room"].pk,
+                "occurred_at": date.today().isoformat(),
+                "vendor_serials": "SN-QV-NEWPRODUCT-1",
+                "condition": "new",
+            },
+        )
+        assert response.status_code == 200
+        assert "Received 1 of 1" in response.content.decode()
+        assert UnitAsset.objects.filter(vendor_serial="SN-QV-NEWPRODUCT-1").exists()
+
     def test_form_redisplayed_with_product_and_location_preset_for_the_next_batch(
         self, client, stock_manager_with_room_access, unit_product, location_tree
     ):
         client.force_login(stock_manager_with_room_access)
         response = client.post(
             reverse("inventory:quick_receive"),
-            {
-                "product": unit_product.pk,
-                "location": location_tree["room"].pk,
-                "occurred_at": date.today().isoformat(),
-                "vendor_serials": "SN-QV-NEXT-1",
-                "condition": "new",
-            },
+            self._payload(unit_product, location_tree["room"], vendor_serials="SN-QV-NEXT-1"),
         )
-        assert response.context["form"]["product"].value() == unit_product.pk
+        assert response.context["form"]["brand_name"].value() == unit_product.brand.name
+        assert response.context["form"]["model"].value() == unit_product.model
         assert response.context["form"]["location"].value() == location_tree["room"].pk
 
     def test_mixed_batch_shows_per_row_outcome(
@@ -370,13 +403,9 @@ class TestQuickReceiveView:
         client.force_login(stock_manager_with_room_access)
         response = client.post(
             reverse("inventory:quick_receive"),
-            {
-                "product": unit_product.pk,
-                "location": location_tree["room"].pk,
-                "occurred_at": date.today().isoformat(),
-                "vendor_serials": "SN-QV-OK\nSN-QV-DUP",
-                "condition": "new",
-            },
+            self._payload(
+                unit_product, location_tree["room"], vendor_serials="SN-QV-OK\nSN-QV-DUP"
+            ),
         )
         results = response.context["results"]
         assert [r["status"] for r in results] == ["created", "duplicate"]
@@ -388,13 +417,7 @@ class TestQuickReceiveView:
         client.force_login(stock_manager_with_room_access)
         response = client.post(
             reverse("inventory:quick_receive"),
-            {
-                "product": unit_product.pk,
-                "location": location_tree["room"].pk,
-                "occurred_at": date.today().isoformat(),
-                "vendor_serials": "   \n\n",
-                "condition": "new",
-            },
+            self._payload(unit_product, location_tree["room"], vendor_serials="   \n\n"),
         )
         assert response.status_code == 200
         assert "results" not in response.context

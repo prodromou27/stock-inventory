@@ -110,7 +110,12 @@ from .services.receipts import (
     receive_stock_units_atomic,
 )
 from .services.reservations import release_reservation, reserve_stock
-from .services.returns import assess_return, outstanding_quantity_lines, return_stock
+from .services.returns import (
+    assess_return,
+    outstanding_quantity_lines,
+    outstanding_unit_lines,
+    return_stock,
+)
 from .services.transfers import bulk_transfer
 
 
@@ -444,6 +449,10 @@ class QuickReceiveView(LoginRequiredMixin, RoleRequiredMixin, View):
     call via receive_stock_batch(); the response shows a per-serial result
     (created / duplicate / error) rather than an all-or-nothing outcome, so
     one bad line doesn't cost you the rest of the batch.
+
+    No pre-existing Product is required, same as Add Stock/Receive
+    (multi-line) — brand/model/type are free text, resolved via
+    resolve_or_create_product() below.
     """
 
     allowed_roles = (ADMINISTRATOR, STOCK_MANAGER)
@@ -453,7 +462,19 @@ class QuickReceiveView(LoginRequiredMixin, RoleRequiredMixin, View):
         initial = {"occurred_at": timezone.localdate()}
         product_id = request.GET.get("product")
         if product_id:
-            initial["product"] = product_id
+            product = (
+                Product.objects.filter(pk=product_id)
+                .select_related("brand", "product_type")
+                .first()
+            )
+            if product is not None:
+                initial.update(
+                    brand_name=product.brand.name,
+                    model=product.model,
+                    sku=product.sku,
+                    product_type_name=product.product_type.name,
+                    category=product.category,
+                )
         location_id = request.GET.get("location")
         if location_id:
             initial["location"] = location_id
@@ -462,39 +483,59 @@ class QuickReceiveView(LoginRequiredMixin, RoleRequiredMixin, View):
             if default_location is not None:
                 initial["location"] = default_location.pk
         form = QuickReceiveForm(user=request.user, initial=initial)
-        return render(request, self.template_name, {"form": form})
+        return render(request, self.template_name, {"form": form, **_catalog_choices()})
 
     def post(self, request):
         form = QuickReceiveForm(request.POST, user=request.user)
         if not form.is_valid():
-            return render(request, self.template_name, {"form": form})
+            return render(request, self.template_name, {"form": form, **_catalog_choices()})
 
         data = form.cleaned_data
         try:
-            results = receive_stock_batch(
-                user=request.user,
-                product=data["product"],
-                location=data["location"],
-                occurred_at=data["occurred_at"],
-                vendor_serials=data["vendor_serials"],
-                stock_purpose=data["stock_purpose"],
-                project_reference=data["project_reference"],
-                final_customer=data["final_customer"],
-                supplier=data["supplier"],
-                invoice_number=data["invoice_number"],
-                condition=data["condition"],
-                accessories=data["accessories"],
-                notes=data["notes"],
+            with transaction.atomic():
+                product = resolve_or_create_product(
+                    user=request.user,
+                    brand_name=data["brand_name"],
+                    model=data["model"],
+                    sku=data["sku"],
+                    product_type_name=data["product_type_name"],
+                    category=data["category"],
+                    duplicate_acknowledged=request.POST.get("duplicate_acknowledged") == "true",
+                )
+                results = receive_stock_batch(
+                    user=request.user,
+                    product=product,
+                    location=data["location"],
+                    occurred_at=data["occurred_at"],
+                    vendor_serials=data["vendor_serials"],
+                    stock_purpose=data["stock_purpose"],
+                    project_reference=data["project_reference"],
+                    final_customer=data["final_customer"],
+                    supplier=data["supplier"],
+                    invoice_number=data["invoice_number"],
+                    condition=data["condition"],
+                    accessories=data["accessories"],
+                    notes=data["notes"],
+                )
+        except DuplicateProductError as exc:
+            return render(
+                request,
+                self.template_name,
+                {
+                    "form": form,
+                    "duplicate_product_matches": exc.matches,
+                    "show_duplicate_product_warning": True,
+                    **_catalog_choices(),
+                },
             )
         except ValidationError as exc:
             form.add_error(None, exc)
-            return render(request, self.template_name, {"form": form})
+            return render(request, self.template_name, {"form": form, **_catalog_choices()})
 
         created = sum(1 for r in results if r["status"] == "created")
         messages.success(
             request,
-            f"Received {created} of {len(results)} unit(s) of "
-            f"{data['product']} at {data['location']}.",
+            f"Received {created} of {len(results)} unit(s) of {product} at {data['location']}.",
         )
         return render(
             request,
@@ -503,13 +544,18 @@ class QuickReceiveView(LoginRequiredMixin, RoleRequiredMixin, View):
                 "form": QuickReceiveForm(
                     user=request.user,
                     initial={
-                        "product": data["product"].pk,
+                        "brand_name": product.brand.name,
+                        "model": product.model,
+                        "sku": product.sku,
+                        "product_type_name": product.product_type.name,
+                        "category": product.category,
                         "location": data["location"].pk,
                         "occurred_at": data["occurred_at"],
                         "stock_purpose": data["stock_purpose"],
                     },
                 ),
                 "results": results,
+                **_catalog_choices(),
             },
         )
 
@@ -1916,19 +1962,6 @@ class BalancePickerDataView(LoginRequiredMixin, View):
         }
 
 
-def _quantity_lines_from_form(data, *, location_field="quantity_location"):
-    if not data.get("quantity_product"):
-        return []
-    return [
-        {
-            "product": data["quantity_product"],
-            "location": data[location_field],
-            "quantity": data["quantity_amount"],
-            "stock_purpose": data.get("quantity_stock_purpose") or StockPurpose.INTERNAL,
-        }
-    ]
-
-
 def _quantity_lines_from_balance_picker(request, user, *, location_key="location"):
     """Assign/Deliver's quantity-tracked lines: templates/inventory/
     _balance_picker.html (static/js/movement_forms.js's wireBalancePicker())
@@ -2024,16 +2057,10 @@ class TransferView(LoginRequiredMixin, RoleRequiredMixin, View):
             return redirect("inventory:movements_hub")
 
         data = form.cleaned_data
-        quantity_lines = _quantity_lines_from_balance_picker(
-            request, request.user, location_key="source_location"
-        )
-        if not quantity_lines and data["quantity_product"]:
-            quantity_lines = _quantity_lines_from_form(
-                data, location_field="quantity_source_location"
-            )
-            quantity_lines[0]["source_location"] = quantity_lines[0].pop("location")
-
         try:
+            quantity_lines = _quantity_lines_from_balance_picker(
+                request, request.user, location_key="source_location"
+            )
             txn = bulk_transfer(
                 user=request.user,
                 destination_location=data["destination_location"],
@@ -2097,10 +2124,7 @@ class ReserveView(LoginRequiredMixin, RoleRequiredMixin, View):
                 project_reference=data["project_reference"],
                 final_customer=data["final_customer"],
                 unit_asset_ids=unit_asset_ids,
-                quantity_lines=(
-                    _quantity_lines_from_balance_picker(request, request.user)
-                    or _quantity_lines_from_form(data)
-                ),
+                quantity_lines=_quantity_lines_from_balance_picker(request, request.user),
                 notes=data["notes"],
             )
         except ValidationError as exc:
@@ -2212,7 +2236,6 @@ class AssignView(LoginRequiredMixin, RoleRequiredMixin, View):
                 recipient_reference=data["recipient_reference"],
                 is_temporary_assignment=data["is_temporary_assignment"],
                 expected_return_date=data["expected_return_date"],
-                condition=data["condition"] or None,
                 accessories=data["accessories"] or None,
                 notes=data["notes"],
             )
@@ -2346,7 +2369,6 @@ class DeliverView(LoginRequiredMixin, RoleRequiredMixin, View):
                 quantity_lines=quantity_lines,
                 project_reference=data["project_reference"],
                 recipient_reference=data["recipient_reference"],
-                condition=data["condition"] or None,
                 accessories=data["accessories"] or None,
                 notes=data["notes"],
             )
@@ -2393,16 +2415,7 @@ class ReturnView(LoginRequiredMixin, RoleRequiredMixin, View):
         return original
 
     def _outstanding_lines(self, original_transaction):
-        returned_asset_ids = set(
-            InventoryTransactionLine.objects.filter(
-                transaction__related_transaction=original_transaction,
-                transaction__movement_type=MovementType.RETURN,
-                unit_asset__isnull=False,
-            ).values_list("unit_asset_id", flat=True)
-        )
-        return original_transaction.lines.exclude(
-            unit_asset_id__in=returned_asset_ids
-        ).select_related("unit_asset", "product")
+        return outstanding_unit_lines(original_transaction)
 
     def _quantity_product_choices(self, original_transaction):
         product_ids = original_transaction.lines.filter(unit_asset__isnull=True).values_list(
@@ -2626,10 +2639,7 @@ class _DispositionView(LoginRequiredMixin, RoleRequiredMixin, View):
                 user=request.user,
                 occurred_at=data["occurred_at"],
                 unit_asset_ids=unit_asset_ids,
-                quantity_lines=(
-                    _quantity_lines_from_balance_picker(request, request.user)
-                    or _quantity_lines_from_form(data)
-                ),
+                quantity_lines=_quantity_lines_from_balance_picker(request, request.user),
                 notes=data["notes"],
                 **self._extra_service_kwargs(data),
             )

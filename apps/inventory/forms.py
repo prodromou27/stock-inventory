@@ -213,18 +213,37 @@ class ReceiveStockForm(forms.Form):
         return cleaned
 
 
+_UNIT_TRACKED_CATEGORY_CHOICES = [
+    (value, label)
+    for value, label in ItemCategory.choices
+    if CATEGORY_TRACKING_METHOD[value] == TrackingMethod.UNIT
+]
+
+
 class QuickReceiveForm(forms.Form):
     """apps.inventory.services.receipts.receive_stock_batch() — one row per
     non-blank line of `vendor_serials`, all sharing every other field here.
+
+    No pre-existing Product is required — same free-text brand/model/type
+    resolved via apps.catalog.services.resolve_or_create_product() that
+    ReceiveStockForm/ReceiveBulkLineForm already use, restricted to the
+    unit-tracked categories since this form is serials-only (no quantity
+    field at all).
     """
 
-    product = forms.ModelChoiceField(
-        queryset=Product.objects.filter(
-            is_active=True, tracking_method=TrackingMethod.UNIT
-        ).select_related("brand"),
-        label="Product",
-        widget=forms.Select(attrs={"data-filterable": "true"}),
+    brand_name = forms.CharField(
+        max_length=120,
+        label="Brand",
+        widget=forms.TextInput(attrs={"list": "brand-options", "autocomplete": "off"}),
     )
+    model = forms.CharField(max_length=120, label="Model")
+    sku = forms.CharField(max_length=60, required=False, label="SKU (optional)")
+    product_type_name = forms.CharField(
+        max_length=80,
+        label="Type",
+        widget=forms.TextInput(attrs={"list": "product-type-options", "autocomplete": "off"}),
+    )
+    category = forms.ChoiceField(choices=_UNIT_TRACKED_CATEGORY_CHOICES, label="Category")
     location = forms.ModelChoiceField(queryset=Location.objects.none())
     occurred_at = forms.DateField(
         widget=forms.DateInput(attrs={"type": "date", "data-arrival-date-field": "true"}),
@@ -279,26 +298,19 @@ class QuickReceiveForm(forms.Form):
 
 
 class _BaseMovementForm(forms.Form):
-    """Shared by every movement form below: a scoped location field for a
-    single optional quantity line, plus occurred_at/notes. Unit-asset
-    selection is handled outside this form (a checkbox list rendered from
-    the view's eligible-assets queryset — see views.py), since it can't be
-    expressed as a static form field.
+    """Shared by every movement form below: occurred_at/notes plus the
+    idempotency token. Unit-asset selection and quantity-tracked lines are
+    both handled outside this form — a checkbox list and a balance picker
+    respectively, rendered from the view's eligible-assets/eligible-balances
+    querysets (see views.py's _quantity_lines_from_balance_picker()) — since
+    neither can be expressed as a handful of static form fields once
+    multiple products/locations/purposes can be picked in one submission.
 
-    Accepts (and, on its own, ignores) `user=` so that both direct
-    subclasses (which don't need it) and subclasses combined with
-    _QuantityLocationMixin (which does) can uniformly pass it through
-    super().__init__(..., user=user) without a TypeError either way.
+    Accepts (and, on its own, ignores) `user=` so that every subclass can
+    uniformly pass it through super().__init__(..., user=user).
     """
 
     occurred_at = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
-    quantity_product = forms.ModelChoiceField(
-        queryset=Product.objects.filter(is_active=True, tracking_method=TrackingMethod.QUANTITY),
-        required=False,
-        label="Quantity product (optional)",
-        widget=forms.Select(attrs={"data-filterable": "true"}),
-    )
-    quantity_amount = forms.IntegerField(required=False, min_value=1, label="Quantity")
     notes = forms.CharField(required=False, widget=forms.Textarea)
     # Round-trips through initial -> render -> (possibly invalid) re-render
     # like ReceiveStockForm's own submission_token — apps.core.idempotency.
@@ -310,88 +322,43 @@ class _BaseMovementForm(forms.Form):
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def clean(self):
-        cleaned = super().clean()
-        if cleaned.get("quantity_product") and not cleaned.get("quantity_amount"):
-            self.add_error("quantity_amount", "Enter a quantity for the selected product.")
-        return cleaned
-
-
-class _QuantityLocationMixin(forms.Form):
-    """Adds an optional `quantity_location` field — plus its scoped
-    queryset and its "quantity_product needs quantity_location" check — to
-    a _BaseMovementForm subclass. Reserve/Assign/Deliver/Disposition all
-    needed this identically; Transfer doesn't (it has its own, differently-
-    scoped quantity_source_location instead), so this isn't on the shared
-    base itself. Must come before _BaseMovementForm in the MRO (i.e.
-    `class X(_QuantityLocationMixin, _BaseMovementForm)`), so its
-    super().__init__()/clean() calls chain into the base correctly.
-
-    Subclasses forms.Form (not a plain mixin) because Django's form
-    metaclass only collects a class's declared fields into base_fields
-    when that class is itself part of the forms.Form metaclass chain — a
-    plain-object mixin's field attributes are silently never registered.
-    """
-
-    quantity_location = forms.ModelChoiceField(
-        queryset=Location.objects.none(), required=False, label="Quantity location"
-    )
-    quantity_stock_purpose = forms.ChoiceField(
-        choices=StockPurpose.choices,
-        required=False,
-        initial=StockPurpose.INTERNAL,
-        label="Stock purpose",
-    )
-
-    def __init__(self, *args, user=None, **kwargs):
-        super().__init__(*args, user=user, **kwargs)
-        _apply_scoped_location(self.fields["quantity_location"], user)
-
-    def clean(self):
-        cleaned = super().clean()
-        if cleaned.get("quantity_product") and not cleaned.get("quantity_location"):
-            self.add_error("quantity_location", "Select a location for the quantity line.")
-        return cleaned
-
 
 class TransferForm(_BaseMovementForm):
+    """The Stock Manager picks specific quantity rows from
+    _balance_picker.html (see views._quantity_lines_from_balance_picker())
+    rather than a separate product/location/quantity dropdown — a dropdown
+    used to sit alongside the picker, letting an operator fill in both, with
+    the picker silently winning and the dropdown entry discarded with no
+    error.
+    """
+
     destination_location = forms.ModelChoiceField(queryset=Location.objects.none())
-    quantity_source_location = forms.ModelChoiceField(
-        queryset=Location.objects.none(), required=False, label="Quantity source location"
-    )
-    quantity_stock_purpose = forms.ChoiceField(
-        choices=StockPurpose.choices,
-        required=False,
-        initial=StockPurpose.INTERNAL,
-        label="Stock purpose",
-    )
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, user=user, **kwargs)
         _apply_scoped_location(self.fields["destination_location"], user)
-        _apply_scoped_location(self.fields["quantity_source_location"], user)
-
-    def clean(self):
-        cleaned = super().clean()
-        if cleaned.get("quantity_product") and not cleaned.get("quantity_source_location"):
-            self.add_error(
-                "quantity_source_location", "Select the source location for the quantity line."
-            )
-        return cleaned
 
 
-class ReserveForm(_QuantityLocationMixin, _BaseMovementForm):
+class ReserveForm(_BaseMovementForm):
+    """The balance picker is the only quantity input path — see
+    TransferForm's docstring.
+    """
+
     project_reference = forms.CharField(max_length=120)
     final_customer = forms.CharField(max_length=120, required=False)
 
 
 class AssignForm(_BaseMovementForm):
-    """Deliberately not _QuantityLocationMixin — per direct instruction, the
-    Stock Manager picks specific items (unit assets from _asset_picker.html,
-    quantity rows from _balance_picker.html) and enters only the date and
-    the employee's name/reference; location, stock purpose, and product are
-    all implicit in *which item/row was selected*, never a separate
-    dropdown. See views._quantity_lines_from_balance_picker().
+    """The Stock Manager picks specific items (unit assets from
+    _asset_picker.html, quantity rows from _balance_picker.html) and enters
+    only the date and the employee's name/reference; location, stock
+    purpose, and product are all implicit in *which item/row was selected*,
+    never a separate dropdown. See views._quantity_lines_from_balance_picker().
+
+    No `condition` field — condition (new/used/refurbished) is an attribute
+    of the asset itself, set once at receipt (ReceiveStockForm) and
+    corrected via an administrator correction if it ever changes; it isn't
+    re-declared at every movement.
     """
 
     employee_name = forms.CharField(max_length=120, label="Employee name")
@@ -403,13 +370,7 @@ class AssignForm(_BaseMovementForm):
     expected_return_date = forms.DateField(
         required=False, widget=forms.DateInput(attrs={"type": "date"}), label="Expected return date"
     )
-    condition = forms.ChoiceField(choices=Condition.choices, required=False, initial=Condition.USED)
     accessories = forms.CharField(required=False, widget=forms.Textarea)
-
-    def __init__(self, *args, user=None, **kwargs):
-        super().__init__(*args, user=user, **kwargs)
-        del self.fields["quantity_product"]
-        del self.fields["quantity_amount"]
 
 
 class DeliverForm(_BaseMovementForm):
@@ -418,6 +379,10 @@ class DeliverForm(_BaseMovementForm):
     required lookup) — customer is an optional live reference to a matching
     Customer row, set by static/js/movement_forms.js when the typed text
     exactly matches a name/reference the customer search datalist offered.
+
+    No `condition` field — see AssignForm's docstring; it's an asset
+    attribute, already known from the asset's own record, not something a
+    delivery re-declares.
     """
 
     final_customer = forms.CharField(
@@ -436,13 +401,7 @@ class DeliverForm(_BaseMovementForm):
         max_length=120, required=False, label="Customer reference (optional)"
     )
     project_reference = forms.CharField(max_length=120, required=False)
-    condition = forms.ChoiceField(choices=Condition.choices, required=False, initial=Condition.USED)
     accessories = forms.CharField(required=False, widget=forms.Textarea)
-
-    def __init__(self, *args, user=None, **kwargs):
-        super().__init__(*args, user=user, **kwargs)
-        del self.fields["quantity_product"]
-        del self.fields["quantity_amount"]
 
 
 class ReturnForm(forms.Form):
@@ -493,9 +452,12 @@ class ReturnAssessmentForm(forms.Form):
     notes = forms.CharField(required=False, widget=forms.Textarea)
 
 
-class DispositionForm(_QuantityLocationMixin, _BaseMovementForm):
+class DispositionForm(_BaseMovementForm):
     """Shared shape for mark-damaged/mark-lost/dispose — notes doubles as the
     required reason (spec §9: "record the reason, notes, date...").
+
+    The balance picker (_balance_picker.html) is the only quantity input
+    path — see TransferForm's docstring.
 
     `require_acknowledgement` (set by the view — True for Mark Lost/Dispose,
     False for Mark Damaged) adds a required typed-confirmation checkbox on

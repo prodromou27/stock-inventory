@@ -59,6 +59,36 @@ def outstanding_quantity_lines(original_transaction):
     return outstanding
 
 
+def outstanding_unit_lines(original_transaction):
+    """Unit-asset lines from `original_transaction` not yet returned —
+    excludes any return that was later reversed by an Administrator, same
+    reversed-exclusion rule as outstanding_quantity_lines() above (a return
+    that never effectively happened must not make its asset unreturnable).
+    Also excludes quantity lines: those are a distinct display and input
+    path (_quantity_return_options()/outstanding_quantity_lines()), so a
+    unit-only view here avoids showing the same line twice with two
+    different, contradictory "remaining" numbers.
+    """
+    reversed_return_ids = original_transaction.related_transactions.filter(
+        movement_type=MovementType.RETURN,
+        related_transactions__movement_type=MovementType.REVERSAL,
+    ).values_list("pk", flat=True)
+    returned_asset_ids = set(
+        InventoryTransactionLine.objects.filter(
+            transaction__related_transaction=original_transaction,
+            transaction__movement_type=MovementType.RETURN,
+            unit_asset__isnull=False,
+        )
+        .exclude(transaction_id__in=reversed_return_ids)
+        .values_list("unit_asset_id", flat=True)
+    )
+    return (
+        original_transaction.lines.filter(unit_asset__isnull=False)
+        .exclude(unit_asset_id__in=returned_asset_ids)
+        .select_related("unit_asset", "product")
+    )
+
+
 @transaction.atomic
 def return_stock(
     *,
@@ -114,10 +144,32 @@ def return_stock(
             raise ValidationError(
                 f"{asset} was not part of transaction {original_transaction.transaction_number}."
             )
-        latest_line = asset.transaction_lines.order_by(
-            "-transaction__created_at", "-line_number"
-        ).first()
-        if latest_line is None or latest_line.transaction_id != original_transaction.pk:
+        latest_line = (
+            asset.transaction_lines.select_related(
+                "transaction", "transaction__related_transaction"
+            )
+            .order_by("-transaction__created_at", "-line_number")
+            .first()
+        )
+        latest_txn = latest_line.transaction if latest_line else None
+        # An asset is still outstanding on `original_transaction` either
+        # because that's still its latest line, or because its most recent
+        # line is the reversal of a return that pointed back at this same
+        # original transaction — an administrator-reversed return must make
+        # the asset returnable again, not permanently stuck (the reversal
+        # already restored its status/location to what original_transaction
+        # set; this only affects which transaction is allowed to be
+        # returned against).
+        still_outstanding = latest_txn is not None and (
+            latest_txn.pk == original_transaction.pk
+            or (
+                latest_txn.movement_type == MovementType.REVERSAL
+                and latest_txn.related_transaction is not None
+                and latest_txn.related_transaction.movement_type == MovementType.RETURN
+                and latest_txn.related_transaction.related_transaction_id == original_transaction.pk
+            )
+        )
+        if not still_outstanding:
             raise ValidationError(
                 f"{asset} is no longer outstanding on "
                 f"{original_transaction.transaction_number}."

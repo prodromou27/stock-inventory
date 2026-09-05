@@ -140,6 +140,18 @@ class TestMovementsHubContext:
 
 @pytest.mark.django_db
 class TestTransferView:
+    def test_form_has_no_legacy_quantity_dropdown(self, client, stock_manager_with_room_access):
+        """Regression test: TransferForm/ReserveForm/DispositionForm used to
+        keep a legacy quantity_product/quantity_amount dropdown alongside
+        the balance picker — if an operator filled in both, the picker
+        silently won and the dropdown entry was discarded with no error.
+        The picker is now the only quantity input path.
+        """
+        client.force_login(stock_manager_with_room_access)
+        response = client.get(reverse("inventory:transfer"))
+        assert "quantity_product" not in response.context["form"].fields
+        assert "quantity_amount" not in response.context["form"].fields
+
     def test_full_flow(
         self, client, stock_manager_with_room_access, unit_product, location_tree, rack
     ):
@@ -299,6 +311,54 @@ class TestTransferView:
             == 2
         )
 
+    def test_transfer_quantity_capped_at_available(
+        self, client, stock_manager_with_room_access, quantity_product, location_tree, rack
+    ):
+        """Regression test: _quantity_lines_from_balance_picker() was called
+        outside TransferView's try/except ValidationError block (the sole
+        outlier among Transfer/Reserve/Assign/Deliver), so an over-quantity
+        or malformed quantity_lines_json raised uncaught — a 500 — and
+        because claim_submission_token() had already run, the token was
+        burned, permanently blocking a retry. This must behave exactly like
+        Deliver's equivalent test: a friendly re-rendered form, not a crash.
+        """
+        import json
+
+        receive_stock(
+            user=stock_manager_with_room_access,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=5,
+        )
+        balance = StockBalance.objects.get(product=quantity_product, location=location_tree["room"])
+
+        client.force_login(stock_manager_with_room_access)
+        get_response = client.get(reverse("inventory:transfer"))
+        token = get_response.context["form"]["submission_token"].value()
+
+        payload = {
+            "destination_location": rack.pk,
+            "occurred_at": date.today().isoformat(),
+            "submission_token": token,
+            "quantity_lines_json": json.dumps([{"balance_id": str(balance.pk), "quantity": 999}]),
+        }
+        response = client.post(reverse("inventory:transfer"), payload)
+        assert response.status_code == 200
+        assert "Only 5" in response.content.decode()
+        balance.refresh_from_db()
+        assert balance.on_hand_quantity == 5
+
+        # The token must have been released on failure, so a corrected
+        # resubmission with the SAME token still succeeds.
+        payload["quantity_lines_json"] = json.dumps(
+            [{"balance_id": str(balance.pk), "quantity": 3}]
+        )
+        retry = client.post(reverse("inventory:transfer"), payload)
+        assert retry.status_code == 302
+        balance.refresh_from_db()
+        assert balance.on_hand_quantity == 2
+
 
 @pytest.mark.django_db
 class TestReserveAndReleaseViews:
@@ -420,6 +480,20 @@ class TestReserveAndReleaseViews:
 
 @pytest.mark.django_db
 class TestAssignAndDeliverViews:
+    def test_assign_and_deliver_forms_have_no_condition_field(
+        self, client, stock_manager_with_room_access
+    ):
+        """Regression test: condition (new/used/refurbished) is an asset
+        attribute set at receipt, not something re-declared on every
+        assignment/delivery — the dropdown used to sit on both forms
+        needlessly re-asking for already-known information.
+        """
+        client.force_login(stock_manager_with_room_access)
+        assign_response = client.get(reverse("inventory:assign"))
+        assert "condition" not in assign_response.context["form"].fields
+        deliver_response = client.get(reverse("inventory:deliver"))
+        assert "condition" not in deliver_response.context["form"].fields
+
     def test_assign_full_flow(
         self, client, stock_manager_with_room_access, unit_product, location_tree
     ):
@@ -720,6 +794,75 @@ class TestReturnAndAssessViews:
             },
         )
         assert response.status_code == 302
+        asset.refresh_from_db()
+        assert asset.status == UnitStatus.RETURNED
+
+    def test_asset_returnable_again_after_its_return_is_reversed(
+        self, client, administrator, stock_manager_with_room_access, unit_product, location_tree
+    ):
+        """Regression test: the view's own _outstanding_lines() didn't
+        exclude reversed returns the way returns.outstanding_quantity_lines()
+        already did, so an asset whose return was administrator-reversed
+        (back to Assigned) disappeared from the Return screen's "Outstanding
+        lines" table — no checkbox, no way to return it again.
+        """
+        from apps.inventory.services.corrections import reverse_transaction
+
+        receive_stock(
+            user=stock_manager_with_room_access,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-REVERSED-RETURN",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-REVERSED-RETURN")
+        assign_txn = assign_to_employee(
+            user=stock_manager_with_room_access,
+            employee_name="Pete",
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+        )
+
+        client.force_login(stock_manager_with_room_access)
+        return_response = client.post(
+            reverse("inventory:return_stock", kwargs={"pk": assign_txn.pk}),
+            {
+                "location": location_tree["room"].pk,
+                "occurred_at": date.today().isoformat(),
+                "unit_asset_ids": [str(asset.pk)],
+            },
+        )
+        assert return_response.status_code == 302
+        asset.refresh_from_db()
+        assert asset.status == UnitStatus.RETURNED
+
+        return_txn = (
+            asset.transaction_lines.filter(transaction__movement_type="return")
+            .latest("transaction__created_at")
+            .transaction
+        )
+        reverse_transaction(
+            user=administrator,
+            original_transaction=return_txn,
+            occurred_at=date.today(),
+            reason="returned by mistake",
+        )
+        asset.refresh_from_db()
+        assert asset.status == UnitStatus.ASSIGNED
+
+        get_response = client.get(reverse("inventory:return_stock", kwargs={"pk": assign_txn.pk}))
+        outstanding_ids = {line.unit_asset_id for line in get_response.context["lines"]}
+        assert asset.pk in outstanding_ids
+
+        return_again = client.post(
+            reverse("inventory:return_stock", kwargs={"pk": assign_txn.pk}),
+            {
+                "location": location_tree["room"].pk,
+                "occurred_at": date.today().isoformat(),
+                "unit_asset_ids": [str(asset.pk)],
+            },
+        )
+        assert return_again.status_code == 302
         asset.refresh_from_db()
         assert asset.status == UnitStatus.RETURNED
 
