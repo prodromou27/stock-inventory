@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}Email (SMTP) — Stock Inventory{% endblock %}
+
+{% block content %}
+  <p><a href="{% url 'settings:hub' %}">&larr; All settings</a></p>
+  <div class="page-header">
+    <div>
+      <h1>Email (SMTP)</h1>
+      <div class="page-header__subtitle">
+        Outgoing mail server used when the app sends email. Nothing in the app sends email
+        automatically today (no password-reset or notification emails) — this only powers the
+        test-send button below, for now.
+      </div>
+    </div>
+  </div>
+
+  {% if form.non_field_errors %}
+    <p class="messages__item messages__item--error">{{ form.non_field_errors|join:" " }}</p>
+  {% endif %}
+
+  <form method="post" class="form-card">
+    {% csrf_token %}
+    <div class="card">
+      {% include "_form_field.html" with field=form.smtp_host %}
+      {% include "_form_field.html" with field=form.smtp_port %}
+      {% include "_form_field.html" with field=form.smtp_username %}
+      {% include "_form_field.html" with field=form.smtp_password %}
+      <p><label>{{ form.smtp_use_tls }} {{ form.smtp_use_tls.label }}</label></p>
+      {% include "_form_field.html" with field=form.smtp_from_email %}
+      {% include "_form_field.html" with field=form.test_email_recipient %}
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn--primary">Save</button>
+    </div>
+  </form>
+{% endblock %}

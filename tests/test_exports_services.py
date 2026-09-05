@@ -176,3 +176,20 @@ class TestShouldRunToday:
         assert sunday.weekday() == 6
         assert should_run_today(settings_obj, today=sunday) is True
         assert should_run_today(settings_obj, today=monday) is False
+
+    def test_default_today_follows_the_active_business_timezone_not_the_host_clock(
+        self, monkeypatch
+    ):
+        """No explicit `today=` — should_run_today() must derive "today" from
+        Django's active timezone (apps.settings.middleware activates the
+        Administrator-configured one), never stdlib date.today()'s host
+        clock. Proven by monkeypatching timezone.localdate() itself rather
+        than depending on real wall-clock timing.
+        """
+        from apps.exports import services as exports_services
+
+        fixed_date = date(2026, 8, 30)
+        monkeypatch.setattr(exports_services.timezone, "localdate", lambda: fixed_date)
+        settings_obj = ExportSettings(schedule=ExportSchedule.WEEKLY, weekly_weekday=6)
+        assert fixed_date.weekday() == 6
+        assert should_run_today(settings_obj) is True

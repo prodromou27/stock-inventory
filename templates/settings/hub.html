@@ -52,7 +52,15 @@
     <div class="card-grid">
       <a class="action-card" href="{% url 'settings:system' %}">
         <span class="action-card__title">System configuration</span>
-        <span class="action-card__desc">Site name, logo, and the allowed-hosts override.</span>
+        <span class="action-card__desc">Site name, brand color, logo, and the allowed-hosts override.</span>
+      </a>
+      <a class="action-card" href="{% url 'settings:timezone' %}">
+        <span class="action-card__title">Timezone</span>
+        <span class="action-card__desc">The business timezone behind arrival dates and every "today" default.</span>
+      </a>
+      <a class="action-card" href="{% url 'settings:smtp' %}">
+        <span class="action-card__title">Email (SMTP)</span>
+        <span class="action-card__desc">Outgoing mail server configuration, with a test-send option.</span>
       </a>
       <a class="action-card" href="{% url 'settings:certificates' %}">
         <span class="action-card__title">TLS certificate</span>

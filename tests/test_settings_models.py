@@ -1,4 +1,5 @@
 import pytest
+from django.core.exceptions import ValidationError
 
 from apps.settings.models import SystemSettings
 
@@ -31,3 +32,43 @@ class TestAllowedHostsList:
     def test_splits_and_strips_comma_separated_hosts(self):
         settings_obj = SystemSettings(allowed_hosts_override=" example.com, other.example.com ,")
         assert settings_obj.allowed_hosts_list == ["example.com", "other.example.com"]
+
+
+@pytest.mark.django_db
+class TestNewFieldDefaults:
+    def test_blank_by_default(self):
+        settings_obj = SystemSettings.load()
+        assert settings_obj.timezone == ""
+        assert settings_obj.accent_color == ""
+        assert settings_obj.smtp_host == ""
+        assert settings_obj.smtp_password == ""
+        assert settings_obj.smtp_from_email == ""
+
+    def test_smtp_port_defaults_to_587(self):
+        settings_obj = SystemSettings.load()
+        assert settings_obj.smtp_port == 587
+
+    def test_smtp_use_tls_defaults_to_true(self):
+        settings_obj = SystemSettings.load()
+        assert settings_obj.smtp_use_tls is True
+
+
+@pytest.mark.django_db
+class TestSystemSettingsClean:
+    def test_valid_accent_color_and_timezone_pass(self):
+        settings_obj = SystemSettings(accent_color="#2563eb", timezone="America/New_York")
+        settings_obj.clean()
+
+    def test_invalid_accent_color_is_rejected(self):
+        settings_obj = SystemSettings(accent_color="blue")
+        with pytest.raises(ValidationError):
+            settings_obj.clean()
+
+    def test_unrecognized_timezone_is_rejected(self):
+        settings_obj = SystemSettings(timezone="Not/AZone")
+        with pytest.raises(ValidationError):
+            settings_obj.clean()
+
+    def test_blank_accent_color_and_timezone_are_allowed(self):
+        settings_obj = SystemSettings(accent_color="", timezone="")
+        settings_obj.clean()

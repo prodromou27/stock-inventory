@@ -43,12 +43,13 @@ def _validate_logo(logo_file):
 
 @transaction.atomic
 def update_system_settings(
-    *, user, site_name, allowed_hosts_override, logo=None, remove_logo=False
+    *, user, site_name, allowed_hosts_override, accent_color="", logo=None, remove_logo=False
 ):
     require_role(user, ADMINISTRATOR)
 
     site_name = (site_name or "").strip()
     allowed_hosts_override = (allowed_hosts_override or "").strip()
+    accent_color = (accent_color or "").strip().lower()
     if logo is not None:
         _validate_logo(logo)
 
@@ -56,9 +57,11 @@ def update_system_settings(
     old_values = {
         "site_name": settings_obj.site_name,
         "allowed_hosts_override": settings_obj.allowed_hosts_override,
+        "accent_color": settings_obj.accent_color,
     }
     settings_obj.site_name = site_name or "Stock Inventory"
     settings_obj.allowed_hosts_override = allowed_hosts_override
+    settings_obj.accent_color = accent_color
     settings_obj.updated_by = user
     if logo is not None:
         settings_obj.logo = logo
@@ -77,9 +80,113 @@ def update_system_settings(
         new_values={
             "site_name": settings_obj.site_name,
             "allowed_hosts_override": settings_obj.allowed_hosts_override,
+            "accent_color": settings_obj.accent_color,
         },
     )
     return settings_obj
+
+
+@transaction.atomic
+def update_timezone_settings(*, user, timezone):
+    require_role(user, ADMINISTRATOR)
+
+    timezone = (timezone or "").strip()
+
+    settings_obj = SystemSettings.load()
+    old_values = {"timezone": settings_obj.timezone}
+    settings_obj.timezone = timezone
+    settings_obj.updated_by = user
+    settings_obj.full_clean()
+    settings_obj.save()
+
+    record_event(
+        actor=user,
+        event_type=AuditEvent.EventType.RECORD_UPDATED,
+        obj=settings_obj,
+        summary="Updated business timezone",
+        old_values=old_values,
+        new_values={"timezone": settings_obj.timezone},
+    )
+    return settings_obj
+
+
+@transaction.atomic
+def update_smtp_settings(
+    *, user, smtp_host, smtp_port, smtp_username, smtp_password, smtp_use_tls, smtp_from_email
+):
+    require_role(user, ADMINISTRATOR)
+
+    settings_obj = SystemSettings.load()
+    # Never logs smtp_password — old_values/new_values record whether a
+    # password is set, not its value, so the audit trail never carries a
+    # secret in cleartext.
+    old_values = {
+        "smtp_host": settings_obj.smtp_host,
+        "smtp_port": settings_obj.smtp_port,
+        "smtp_username": settings_obj.smtp_username,
+        "smtp_password_set": bool(settings_obj.smtp_password),
+        "smtp_use_tls": settings_obj.smtp_use_tls,
+        "smtp_from_email": settings_obj.smtp_from_email,
+    }
+    settings_obj.smtp_host = (smtp_host or "").strip()
+    settings_obj.smtp_port = smtp_port
+    settings_obj.smtp_username = (smtp_username or "").strip()
+    settings_obj.smtp_password = smtp_password or ""
+    settings_obj.smtp_use_tls = bool(smtp_use_tls)
+    settings_obj.smtp_from_email = (smtp_from_email or "").strip()
+    settings_obj.updated_by = user
+    settings_obj.full_clean()
+    settings_obj.save()
+
+    record_event(
+        actor=user,
+        event_type=AuditEvent.EventType.RECORD_UPDATED,
+        obj=settings_obj,
+        summary="Updated SMTP settings",
+        old_values=old_values,
+        new_values={
+            "smtp_host": settings_obj.smtp_host,
+            "smtp_port": settings_obj.smtp_port,
+            "smtp_username": settings_obj.smtp_username,
+            "smtp_password_set": bool(settings_obj.smtp_password),
+            "smtp_use_tls": settings_obj.smtp_use_tls,
+            "smtp_from_email": settings_obj.smtp_from_email,
+        },
+    )
+    return settings_obj
+
+
+def send_test_email(*, recipient):
+    """Sends one plain-text message using the currently-saved SMTP settings
+    — the only thing in this app that ever sends email (deliberately: no
+    password-reset-by-email or notification wiring was asked for, see
+    docs/architecture's Settings section). Raises a plain Exception with the
+    underlying error on failure so the view can show it directly; doesn't
+    roll back a settings save that already succeeded, since a bad test
+    recipient shouldn't cost the operator their otherwise-valid SMTP config.
+    """
+    from django.core.mail import EmailMessage, get_connection
+
+    settings_obj = SystemSettings.load()
+    if not settings_obj.smtp_host:
+        raise ValidationError("Configure and save an SMTP host before sending a test email.")
+
+    connection = get_connection(
+        backend=django_settings.EMAIL_BACKEND,
+        host=settings_obj.smtp_host,
+        port=settings_obj.smtp_port or 587,
+        username=settings_obj.smtp_username,
+        password=settings_obj.smtp_password,
+        use_tls=settings_obj.smtp_use_tls,
+    )
+    message = EmailMessage(
+        subject="Stock Inventory — test email",
+        body="This is a test email from the Stock Inventory application's SMTP settings.",
+        from_email=settings_obj.smtp_from_email or settings_obj.smtp_username or None,
+        to=[recipient],
+        connection=connection,
+    )
+    message.send()
 
 
 def _validate_cert_key_pair(cert_bytes, key_bytes):

@@ -1,6 +1,7 @@
 import pytest
 from django.conf import settings as django_settings
 from django.test import RequestFactory
+from django.utils import timezone
 
 from apps.settings.middleware import SystemSettingsMiddleware, _default_allowed_hosts
 from apps.settings.models import SystemSettings
@@ -48,3 +49,20 @@ class TestSystemSettingsMiddleware:
         request = _run_middleware()
         assert hasattr(request, "_system_settings")
         assert isinstance(request._system_settings, SystemSettings)
+
+    def test_configured_timezone_is_activated(self, settings):
+        SystemSettings.objects.create(pk=1, timezone="America/New_York")
+        try:
+            _run_middleware()
+            assert timezone.get_current_timezone_name() == "America/New_York"
+        finally:
+            timezone.deactivate()
+
+    def test_blank_timezone_falls_back_to_the_server_default(self, settings):
+        timezone.activate("Asia/Tokyo")
+        try:
+            SystemSettings.objects.create(pk=1, timezone="")
+            _run_middleware()
+            assert timezone.get_current_timezone_name() == django_settings.TIME_ZONE
+        finally:
+            timezone.deactivate()

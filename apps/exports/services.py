@@ -1,10 +1,11 @@
 import os
-from datetime import date, datetime
+from datetime import datetime
 from datetime import timezone as dt_timezone
 
 import openpyxl
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.utils import timezone
 
 from apps.audit.models import AuditEvent
 from apps.audit.services import record_event
@@ -194,7 +195,12 @@ def run_export(*, user=None):
 
 
 def should_run_today(settings_obj, *, today=None):
-    today = today or date.today()
+    """`today` defaults to the *business* date (timezone.localdate(), which
+    respects whatever this module's own run_scheduled_export command
+    activated) — not stdlib date.today()'s host-clock date, which would
+    silently ignore an Administrator-configured business timezone.
+    """
+    today = today or timezone.localdate()
     if settings_obj.schedule == ExportSchedule.DISABLED:
         return False
     if settings_obj.schedule == ExportSchedule.NIGHTLY:

@@ -235,7 +235,7 @@ def dashboard_summary(user):
     concern applies here too, even though there's no list to paginate).
     """
     # occurred_at is a DateField, not DateTimeField.
-    since = timezone.now().date() - timedelta(days=7)
+    since = timezone.localdate() - timedelta(days=7)
     on_hand_total = _scoped_balances(user).aggregate(total=Sum("on_hand_quantity"))["total"] or 0
     scoped_assets = _scoped_assets(user)
     return {

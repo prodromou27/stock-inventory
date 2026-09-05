@@ -6,9 +6,20 @@ from django.views import View
 
 from apps.core.authorization import ADMINISTRATOR, RoleRequiredMixin
 
-from .forms import CertificateUploadForm, SystemSettingsForm
+from .forms import (
+    CertificateUploadForm,
+    SmtpSettingsForm,
+    SystemSettingsForm,
+    TimezoneSettingsForm,
+)
 from .models import SystemSettings
-from .services import update_certificate, update_system_settings
+from .services import (
+    send_test_email,
+    update_certificate,
+    update_smtp_settings,
+    update_system_settings,
+    update_timezone_settings,
+)
 
 
 class SettingsHubView(LoginRequiredMixin, View):
@@ -41,6 +52,7 @@ class SystemConfigurationView(LoginRequiredMixin, RoleRequiredMixin, View):
         form = SystemSettingsForm(
             initial={
                 "site_name": settings_obj.site_name,
+                "accent_color": settings_obj.accent_color,
                 "allowed_hosts_override": settings_obj.allowed_hosts_override,
             }
         )
@@ -57,6 +69,7 @@ class SystemConfigurationView(LoginRequiredMixin, RoleRequiredMixin, View):
                 user=request.user,
                 site_name=form.cleaned_data["site_name"],
                 allowed_hosts_override=form.cleaned_data["allowed_hosts_override"],
+                accent_color=form.cleaned_data["accent_color"],
                 logo=form.cleaned_data["logo"],
                 remove_logo=form.cleaned_data["remove_logo"],
             )
@@ -99,3 +112,76 @@ class CertificateUploadView(LoginRequiredMixin, RoleRequiredMixin, View):
             "restart proxy` for it to take effect.",
         )
         return redirect("settings:certificates")
+
+
+class TimezoneConfigurationView(LoginRequiredMixin, RoleRequiredMixin, View):
+    allowed_roles = (ADMINISTRATOR,)
+    template_name = "settings/timezone_form.html"
+
+    def get(self, request):
+        settings_obj = SystemSettings.load()
+        form = TimezoneSettingsForm(initial={"timezone": settings_obj.timezone})
+        return render(request, self.template_name, {"form": form})
+
+    def post(self, request):
+        form = TimezoneSettingsForm(request.POST)
+        if not form.is_valid():
+            return render(request, self.template_name, {"form": form})
+
+        try:
+            update_timezone_settings(user=request.user, timezone=form.cleaned_data["timezone"])
+        except ValidationError as exc:
+            form.add_error(None, "; ".join(exc.messages))
+            return render(request, self.template_name, {"form": form})
+
+        messages.success(request, "Timezone saved.")
+        return redirect("settings:timezone")
+
+
+class SmtpConfigurationView(LoginRequiredMixin, RoleRequiredMixin, View):
+    allowed_roles = (ADMINISTRATOR,)
+    template_name = "settings/smtp_form.html"
+
+    def get(self, request):
+        settings_obj = SystemSettings.load()
+        form = SmtpSettingsForm(
+            initial={
+                "smtp_host": settings_obj.smtp_host,
+                "smtp_port": settings_obj.smtp_port,
+                "smtp_username": settings_obj.smtp_username,
+                "smtp_password": settings_obj.smtp_password,
+                "smtp_use_tls": settings_obj.smtp_use_tls,
+                "smtp_from_email": settings_obj.smtp_from_email,
+            }
+        )
+        return render(request, self.template_name, {"form": form})
+
+    def post(self, request):
+        form = SmtpSettingsForm(request.POST)
+        if not form.is_valid():
+            return render(request, self.template_name, {"form": form})
+
+        data = form.cleaned_data
+        try:
+            update_smtp_settings(
+                user=request.user,
+                smtp_host=data["smtp_host"],
+                smtp_port=data["smtp_port"],
+                smtp_username=data["smtp_username"],
+                smtp_password=data["smtp_password"],
+                smtp_use_tls=data["smtp_use_tls"],
+                smtp_from_email=data["smtp_from_email"],
+            )
+        except ValidationError as exc:
+            form.add_error(None, "; ".join(exc.messages))
+            return render(request, self.template_name, {"form": form})
+
+        messages.success(request, "SMTP settings saved.")
+        if data["test_email_recipient"]:
+            try:
+                send_test_email(recipient=data["test_email_recipient"])
+            except Exception as exc:  # broad: any SMTP/network failure, reported as-is
+                messages.error(request, f"Settings saved, but the test email failed: {exc}")
+            else:
+                messages.success(request, f"Test email sent to {data['test_email_recipient']}.")
+        return redirect("settings:smtp")

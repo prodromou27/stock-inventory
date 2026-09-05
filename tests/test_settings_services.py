@@ -6,7 +6,13 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 
 from apps.audit.models import AuditEvent
 from apps.settings.models import SystemSettings
-from apps.settings.services import update_certificate, update_system_settings
+from apps.settings.services import (
+    send_test_email,
+    update_certificate,
+    update_smtp_settings,
+    update_system_settings,
+    update_timezone_settings,
+)
 
 PNG_BYTES = bytes.fromhex(
     "89504e470d0a1a0a0000000d4948445200000001000000010806000000"
@@ -129,6 +135,30 @@ class TestUpdateSystemSettings:
         assert event is not None
         assert event.actor == administrator
 
+    def test_saves_a_valid_accent_color(self, administrator):
+        settings_obj = update_system_settings(
+            user=administrator,
+            site_name="Acme",
+            allowed_hosts_override="",
+            accent_color="#FF00AA",
+        )
+        assert settings_obj.accent_color == "#ff00aa"
+
+    def test_rejects_an_invalid_accent_color(self, administrator):
+        with pytest.raises(ValidationError):
+            update_system_settings(
+                user=administrator,
+                site_name="Acme",
+                allowed_hosts_override="",
+                accent_color="not-a-color",
+            )
+
+    def test_blank_accent_color_is_allowed(self, administrator):
+        settings_obj = update_system_settings(
+            user=administrator, site_name="Acme", allowed_hosts_override="", accent_color=""
+        )
+        assert settings_obj.accent_color == ""
+
 
 @pytest.mark.django_db
 class TestUpdateCertificate:
@@ -174,3 +204,94 @@ class TestUpdateCertificate:
         assert AuditEvent.objects.filter(
             summary__icontains="Uploaded a new TLS certificate"
         ).exists()
+
+
+@pytest.mark.django_db
+class TestUpdateTimezoneSettings:
+    def test_saves_a_valid_timezone(self, administrator):
+        settings_obj = update_timezone_settings(user=administrator, timezone="America/New_York")
+        assert settings_obj.timezone == "America/New_York"
+
+    def test_rejects_an_unrecognized_timezone(self, administrator):
+        with pytest.raises(ValidationError, match="Unrecognized timezone"):
+            update_timezone_settings(user=administrator, timezone="Not/AZone")
+
+    def test_blank_clears_the_override(self, administrator):
+        update_timezone_settings(user=administrator, timezone="Asia/Tokyo")
+        settings_obj = update_timezone_settings(user=administrator, timezone="")
+        assert settings_obj.timezone == ""
+
+    def test_requires_administrator(self, stock_manager):
+        with pytest.raises(PermissionDenied):
+            update_timezone_settings(user=stock_manager, timezone="Asia/Tokyo")
+
+    def test_records_an_audit_event(self, administrator):
+        update_timezone_settings(user=administrator, timezone="Asia/Tokyo")
+        assert AuditEvent.objects.filter(summary="Updated business timezone").exists()
+
+
+@pytest.mark.django_db
+class TestUpdateSmtpSettings:
+    def test_saves_smtp_fields(self, administrator):
+        settings_obj = update_smtp_settings(
+            user=administrator,
+            smtp_host="smtp.example.com",
+            smtp_port=587,
+            smtp_username="bot@example.com",
+            smtp_password="hunter2",
+            smtp_use_tls=True,
+            smtp_from_email="noreply@example.com",
+        )
+        assert settings_obj.smtp_host == "smtp.example.com"
+        assert settings_obj.smtp_port == 587
+        assert settings_obj.smtp_password == "hunter2"
+
+    def test_requires_administrator(self, stock_manager):
+        with pytest.raises(PermissionDenied):
+            update_smtp_settings(
+                user=stock_manager,
+                smtp_host="smtp.example.com",
+                smtp_port=587,
+                smtp_username="",
+                smtp_password="",
+                smtp_use_tls=True,
+                smtp_from_email="",
+            )
+
+    def test_audit_event_never_carries_the_password_value(self, administrator):
+        update_smtp_settings(
+            user=administrator,
+            smtp_host="smtp.example.com",
+            smtp_port=587,
+            smtp_username="bot@example.com",
+            smtp_password="hunter2",
+            smtp_use_tls=True,
+            smtp_from_email="noreply@example.com",
+        )
+        event = AuditEvent.objects.get(summary="Updated SMTP settings")
+        payload = str(event.old_values) + str(event.new_values)
+        assert "hunter2" not in payload
+        assert event.new_values["smtp_password_set"] is True
+
+
+@pytest.mark.django_db
+class TestSendTestEmail:
+    def test_sends_via_the_saved_smtp_settings(self, administrator, settings, mailoutbox):
+        settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+        update_smtp_settings(
+            user=administrator,
+            smtp_host="smtp.example.com",
+            smtp_port=587,
+            smtp_username="bot@example.com",
+            smtp_password="hunter2",
+            smtp_use_tls=True,
+            smtp_from_email="noreply@example.com",
+        )
+        send_test_email(recipient="ops@example.com")
+        assert len(mailoutbox) == 1
+        assert mailoutbox[0].to == ["ops@example.com"]
+        assert mailoutbox[0].from_email == "noreply@example.com"
+
+    def test_raises_a_clear_error_when_smtp_is_not_configured(self, administrator):
+        with pytest.raises(ValidationError, match="Configure and save an SMTP host"):
+            send_test_email(recipient="ops@example.com")

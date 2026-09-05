@@ -4,7 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{{ site_name }}{% endblock %}</title>
-  <meta name="theme-color" content="#2563eb">
+  <meta name="theme-color" content="{{ accent_color|default:"#2563eb" }}">
+  {% if accent_color %}
+    <!-- Administrator-configured brand color (Settings → System configuration) —
+         overrides the default --color-primary/-hover tokens assets/tailwind/input.css
+         defines under :root; every component already resolves through those
+         tokens, so this is the only override needed, light or dark theme. -->
+    <style>:root { --color-primary: {{ accent_color }}; --color-primary-hover: {{ accent_color_hover }}; }</style>
+  {% endif %}
   <!-- The server's configured business date (settings.TIME_ZONE, via Django's
        now template tag, which already renders in the active timezone) —
        read by movement_forms.js's "Today" button so it sets an Arrival Date

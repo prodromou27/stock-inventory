@@ -16,6 +16,7 @@
     {% csrf_token %}
     <div class="card">
       {% include "_form_field.html" with field=form.site_name %}
+      {% include "_form_field.html" with field=form.accent_color %}
       {% include "_form_field.html" with field=form.allowed_hosts_override %}
 
       <p><label for="{{ form.logo.id_for_label }}">{{ form.logo.label }}</label></p>

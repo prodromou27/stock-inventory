@@ -35,6 +35,20 @@ class TestSettingsHubPermissions:
         assert response.status_code == 200
         assert b"Access & data" in response.content
 
+    def test_administrator_sees_timezone_and_smtp_cards(self, client, administrator):
+        client.force_login(administrator)
+        response = client.get(reverse("settings:hub"))
+        content = response.content.decode()
+        assert "Timezone" in content
+        assert "Email (SMTP)" in content
+
+    def test_stock_manager_does_not_see_timezone_and_smtp_cards(self, client, stock_manager):
+        client.force_login(stock_manager)
+        response = client.get(reverse("settings:hub"))
+        content = response.content.decode()
+        assert reverse("settings:timezone") not in content
+        assert reverse("settings:smtp") not in content
+
 
 @pytest.mark.django_db
 class TestSystemConfigurationView:
@@ -91,6 +105,28 @@ class TestSystemConfigurationView:
         assert response.status_code == 302
         assert SystemSettings.load().logo
 
+    def test_saves_a_valid_accent_color(self, client, administrator):
+        client.force_login(administrator)
+        response = client.post(
+            reverse("settings:system"),
+            {
+                "site_name": "Acme",
+                "allowed_hosts_override": "",
+                "accent_color": "#2563eb",
+            },
+        )
+        assert response.status_code == 302
+        assert SystemSettings.load().accent_color == "#2563eb"
+
+    def test_rejects_an_invalid_accent_color(self, client, administrator):
+        client.force_login(administrator)
+        response = client.post(
+            reverse("settings:system"),
+            {"site_name": "Acme", "allowed_hosts_override": "", "accent_color": "blue"},
+        )
+        assert response.status_code == 200
+        assert "#rrggbb" in response.content.decode()
+
 
 @pytest.mark.django_db
 class TestCertificateUploadView:
@@ -133,3 +169,78 @@ class TestCertificateUploadView:
         )
         assert response.status_code == 200
         assert "not a valid, matching pair" in response.content.decode()
+
+
+@pytest.mark.django_db
+class TestTimezoneConfigurationView:
+    def test_administrator_can_view(self, client, administrator):
+        client.force_login(administrator)
+        assert client.get(reverse("settings:timezone")).status_code == 200
+
+    def test_stock_manager_forbidden(self, client, stock_manager):
+        client.force_login(stock_manager)
+        assert client.get(reverse("settings:timezone")).status_code == 403
+
+    def test_saves_a_valid_timezone(self, client, administrator):
+        client.force_login(administrator)
+        response = client.post(reverse("settings:timezone"), {"timezone": "America/New_York"})
+        assert response.status_code == 302
+        assert SystemSettings.load().timezone == "America/New_York"
+
+    def test_rejects_an_unrecognized_timezone(self, client, administrator):
+        client.force_login(administrator)
+        response = client.post(reverse("settings:timezone"), {"timezone": "Not/AZone"})
+        assert response.status_code == 200
+
+
+@pytest.mark.django_db
+class TestSmtpConfigurationView:
+    def test_administrator_can_view(self, client, administrator):
+        client.force_login(administrator)
+        assert client.get(reverse("settings:smtp")).status_code == 200
+
+    def test_stock_manager_forbidden(self, client, stock_manager):
+        client.force_login(stock_manager)
+        assert client.get(reverse("settings:smtp")).status_code == 403
+
+    def test_saves_smtp_settings(self, client, administrator):
+        client.force_login(administrator)
+        response = client.post(
+            reverse("settings:smtp"),
+            {
+                "smtp_host": "smtp.example.com",
+                "smtp_port": "587",
+                "smtp_username": "bot@example.com",
+                "smtp_password": "hunter2",
+                "smtp_use_tls": "on",
+                "smtp_from_email": "noreply@example.com",
+            },
+            follow=True,
+        )
+        assert response.status_code == 200
+        settings_obj = SystemSettings.load()
+        assert settings_obj.smtp_host == "smtp.example.com"
+        assert "SMTP settings saved" in response.content.decode()
+
+    def test_saving_with_a_test_recipient_sends_and_reports_success(
+        self, client, administrator, settings, mailoutbox
+    ):
+        settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+        client.force_login(administrator)
+        response = client.post(
+            reverse("settings:smtp"),
+            {
+                "smtp_host": "smtp.example.com",
+                "smtp_port": "587",
+                "smtp_username": "bot@example.com",
+                "smtp_password": "hunter2",
+                "smtp_use_tls": "on",
+                "smtp_from_email": "noreply@example.com",
+                "test_email_recipient": "ops@example.com",
+            },
+            follow=True,
+        )
+        assert response.status_code == 200
+        assert "Test email sent" in response.content.decode()
+        assert len(mailoutbox) == 1
+        assert mailoutbox[0].to == ["ops@example.com"]

@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}Timezone — Stock Inventory{% endblock %}
+
+{% block content %}
+  <p><a href="{% url 'settings:hub' %}">&larr; All settings</a></p>
+  <div class="page-header">
+    <div>
+      <h1>Timezone</h1>
+      <div class="page-header__subtitle">
+        Drives "today" for arrival dates, dashboard "recent" windows, and every other
+        business-date default across the app. Existing stock and transaction dates are
+        never reinterpreted — this only changes what "today" resolves to going forward.
+      </div>
+    </div>
+  </div>
+
+  {% if form.non_field_errors %}
+    <p class="messages__item messages__item--error">{{ form.non_field_errors|join:" " }}</p>
+  {% endif %}
+
+  <form method="post" class="form-card">
+    {% csrf_token %}
+    <div class="card">
+      {% include "_form_field.html" with field=form.timezone %}
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn--primary">Save</button>
+    </div>
+  </form>
+{% endblock %}
