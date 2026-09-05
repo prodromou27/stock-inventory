@@ -862,3 +862,21 @@ class TestLinkedFindingResolutionFromAdminCorrectionViews:
             follow=True,
         )
         assert response.status_code == 200
+
+
+class TestDataQualityFindingAdmin:
+    """Findings are only ever written by run_detection() and resolved
+    through resolve_finding()/dismiss_finding() — never through Django
+    admin, same as every other ledger-adjacent admin registration in this
+    app (apps.inventory.admin, apps.audit.admin, etc.).
+    """
+
+    def test_cannot_add_change_or_delete_via_admin(self):
+        from django.contrib.admin.sites import AdminSite
+
+        from apps.dataquality.admin import DataQualityFindingAdmin
+
+        admin_instance = DataQualityFindingAdmin(DataQualityFinding, AdminSite())
+        assert admin_instance.has_add_permission(request=None) is False
+        assert admin_instance.has_change_permission(request=None) is False
+        assert admin_instance.has_delete_permission(request=None) is False

@@ -245,7 +245,7 @@ class AssetStatusHistory(UUIDPrimaryKeyModel, AppendOnlyModel):
     """
 
     unit_asset = models.ForeignKey(
-        UnitAsset, on_delete=models.CASCADE, related_name="status_history"
+        UnitAsset, on_delete=models.PROTECT, related_name="status_history"
     )
     transaction = models.ForeignKey(
         "InventoryTransaction", on_delete=models.PROTECT, related_name="asset_status_events"

@@ -625,6 +625,42 @@ class TestAssignAndDeliverViews:
         balance.refresh_from_db()
         assert balance.on_hand_quantity == 5
 
+    def test_deliver_malformed_quantity_rejected_not_silently_dropped(
+        self, client, stock_manager_with_room_access, quantity_product, location_tree
+    ):
+        """Regression test: a quantity that doesn't parse as an int (or is
+        negative) used to be silently skipped rather than rejected — the
+        rest of the submission still went through, and the operator saw a
+        success message for an incomplete delivery. Blank/zero is still a
+        legitimate "row not selected" and must not raise.
+        """
+        import json
+
+        receive_stock(
+            user=stock_manager_with_room_access,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=5,
+        )
+        balance = StockBalance.objects.get(product=quantity_product, location=location_tree["room"])
+
+        client.force_login(stock_manager_with_room_access)
+        response = client.post(
+            reverse("inventory:deliver"),
+            {
+                "final_customer": "Acme Malformed Corp",
+                "occurred_at": date.today().isoformat(),
+                "quantity_lines_json": json.dumps(
+                    [{"balance_id": str(balance.pk), "quantity": "not-a-number"}]
+                ),
+            },
+        )
+        assert response.status_code == 200
+        assert "Invalid quantity selection" in response.content.decode()
+        balance.refresh_from_db()
+        assert balance.on_hand_quantity == 5
+
     def test_deliver_manipulated_balance_id_outside_scope_rejected(
         self,
         client,

@@ -151,7 +151,11 @@ class SmtpConfigurationView(LoginRequiredMixin, RoleRequiredMixin, View):
                 "smtp_host": settings_obj.smtp_host,
                 "smtp_port": settings_obj.smtp_port,
                 "smtp_username": settings_obj.smtp_username,
-                "smtp_password": settings_obj.smtp_password,
+                # smtp_password deliberately never pre-filled — the saved
+                # password used to round-trip back into this field's HTML
+                # in cleartext on every GET (browser cache, view-source,
+                # screenshots). Left blank, it means "keep the current
+                # password" (see post() below), not "no password is set".
                 "smtp_use_tls": settings_obj.smtp_use_tls,
                 "smtp_from_email": settings_obj.smtp_from_email,
             }
@@ -164,13 +168,17 @@ class SmtpConfigurationView(LoginRequiredMixin, RoleRequiredMixin, View):
             return render(request, self.template_name, {"form": form})
 
         data = form.cleaned_data
+        # A blank submitted password means "leave it as-is", not "clear
+        # it" — the field is never pre-filled (see get()), so a save that
+        # isn't touching the password would otherwise wipe it.
+        smtp_password = data["smtp_password"] or SystemSettings.load().smtp_password
         try:
             update_smtp_settings(
                 user=request.user,
                 smtp_host=data["smtp_host"],
                 smtp_port=data["smtp_port"],
                 smtp_username=data["smtp_username"],
-                smtp_password=data["smtp_password"],
+                smtp_password=smtp_password,
                 smtp_use_tls=data["smtp_use_tls"],
                 smtp_from_email=data["smtp_from_email"],
             )

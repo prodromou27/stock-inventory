@@ -2032,12 +2032,22 @@ def _quantity_lines_from_balance_picker(request, user, *, location_key="location
         balance = balances.get(str(entry.get("balance_id")))
         if balance is None:
             raise ValidationError("One or more selected quantity rows could not be found.")
-        try:
-            quantity = int(entry.get("quantity") or 0)
-        except (TypeError, ValueError):
-            quantity = 0
-        if quantity <= 0:
+        raw_quantity = entry.get("quantity")
+        if not raw_quantity:
+            # Blank/zero legitimately means "this row wasn't touched" — the
+            # picker shows every eligible row, not just selected ones.
             continue
+        try:
+            quantity = int(raw_quantity)
+        except (TypeError, ValueError):
+            # Unlike a blank/zero quantity, a value that's present but
+            # doesn't parse (or a negative number, rejected just below) is
+            # never legitimate — silently dropping it used to let the rest
+            # of the submission through with no error, so the operator saw
+            # a success message for an incomplete transfer/issue.
+            raise ValidationError("Invalid quantity selection.")
+        if quantity <= 0:
+            raise ValidationError("Quantity must be positive.")
         require_location_access(user, balance.location)
         if quantity > balance.available_quantity:
             raise ValidationError(

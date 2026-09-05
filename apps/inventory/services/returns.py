@@ -192,11 +192,13 @@ def return_stock(
         remaining = available.get((product_id, purpose), 0)
         if requested_quantity > remaining:
             product = next(
-                entry["product"] for entry in quantity_lines if entry["product"].pk == product_id
+                (entry["product"] for entry in quantity_lines if entry["product"].pk == product_id),
+                None,
             )
+            product_label = product if product is not None else "the selected product"
             raise ValidationError(
-                f"Return quantity for {product} ({StockPurpose(purpose).label}) exceeds the "
-                f"{remaining} outstanding."
+                f"Return quantity for {product_label} ({StockPurpose(purpose).label}) exceeds "
+                f"the {remaining} outstanding."
             )
 
     txn = create_transaction_header(

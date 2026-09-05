@@ -242,6 +242,58 @@ class TestSmtpConfigurationView:
         assert settings_obj.smtp_host == "smtp.example.com"
         assert "SMTP settings saved" in response.content.decode()
 
+    def test_get_never_prefills_the_saved_password(self, client, administrator):
+        """Regression test: the SMTP password used to round-trip back into
+        this field's HTML in cleartext on every GET (render_value=True) —
+        sitting in browser cache/view-source/screenshots. It must render
+        blank regardless of what's saved.
+        """
+        client.force_login(administrator)
+        client.post(
+            reverse("settings:smtp"),
+            {
+                "smtp_host": "smtp.example.com",
+                "smtp_port": "587",
+                "smtp_username": "bot@example.com",
+                "smtp_password": "super-secret-password",
+                "smtp_use_tls": "on",
+                "smtp_from_email": "noreply@example.com",
+            },
+        )
+        response = client.get(reverse("settings:smtp"))
+        assert "super-secret-password" not in response.content.decode()
+        assert response.context["form"]["smtp_password"].value() in (None, "")
+
+    def test_blank_password_on_save_keeps_the_existing_one(self, client, administrator):
+        """Since the password is never pre-filled, a save that isn't
+        touching it would otherwise submit a blank value and wipe it."""
+        client.force_login(administrator)
+        client.post(
+            reverse("settings:smtp"),
+            {
+                "smtp_host": "smtp.example.com",
+                "smtp_port": "587",
+                "smtp_username": "bot@example.com",
+                "smtp_password": "keep-me",
+                "smtp_use_tls": "on",
+                "smtp_from_email": "noreply@example.com",
+            },
+        )
+        client.post(
+            reverse("settings:smtp"),
+            {
+                "smtp_host": "smtp.example.com",
+                "smtp_port": "587",
+                "smtp_username": "bot@example.com",
+                "smtp_password": "",
+                "smtp_use_tls": "on",
+                "smtp_from_email": "changed-from@example.com",
+            },
+        )
+        settings_obj = SystemSettings.load()
+        assert settings_obj.smtp_password == "keep-me"
+        assert settings_obj.smtp_from_email == "changed-from@example.com"
+
     def test_saving_with_a_test_recipient_sends_and_reports_success(
         self, client, administrator, settings, mailoutbox
     ):

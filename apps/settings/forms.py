@@ -81,7 +81,8 @@ class SmtpSettingsForm(forms.Form):
         max_length=255,
         required=False,
         label="Password",
-        widget=forms.PasswordInput(render_value=True),
+        help_text="Leave blank to keep the current password.",
+        widget=forms.PasswordInput(render_value=False),
     )
     smtp_use_tls = forms.BooleanField(required=False, initial=True, label="Use TLS")
     smtp_from_email = forms.CharField(max_length=255, required=False, label="From address")
