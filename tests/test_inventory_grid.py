@@ -425,6 +425,173 @@ class TestSavedGridViewAPI:
         )
         assert response.status_code == 400
 
+    def test_products_grid_key_is_valid(self, client, administrator):
+        """Was a live bug before grid_key became an open, registry-validated
+        field (apps.inventory.services.grid_views.VALID_GRID_KEYS) —
+        templates/catalog/product_list.html already posts grid_key='products'
+        even though it was never one of the old 2-value choices=.
+        """
+        client.force_login(administrator)
+        response = client.post(
+            self._list_create_url(grid_key="products"),
+            data=json.dumps({"name": "My product view", "state": {}}),
+            content_type="application/json",
+        )
+        assert response.status_code == 200
+        assert response.json()["name"] == "My product view"
+
+    def test_unknown_grid_key_is_still_rejected(self, client, administrator):
+        client.force_login(administrator)
+        response = client.post(
+            self._list_create_url(grid_key="not-a-real-grid"),
+            data=json.dumps({"name": "Nope", "state": {}}),
+            content_type="application/json",
+        )
+        assert response.status_code == 400
+        assert "Unknown grid" in response.json()["error"]
+
+    def test_create_as_default_unsets_the_previous_default(self, client, administrator):
+        client.force_login(administrator)
+        first = client.post(
+            self._list_create_url(),
+            data=json.dumps({"name": "First", "state": {}, "is_default": True}),
+            content_type="application/json",
+        ).json()
+        second = client.post(
+            self._list_create_url(),
+            data=json.dumps({"name": "Second", "state": {}, "is_default": True}),
+            content_type="application/json",
+        ).json()
+        assert second["is_default"] is True
+        assert not SavedGridView.objects.get(pk=first["id"]).is_default
+        assert SavedGridView.objects.get(pk=second["id"]).is_default
+
+
+@pytest.mark.django_db
+class TestSavedGridViewUpdateAPI:
+    """apps.inventory.views.SavedGridViewUpdateView / apps.inventory.services.
+    grid_views.update_saved_grid_view() — real rename/update-in-place,
+    replacing the old delete-and-recreate-only workflow.
+    """
+
+    def _update_url(self, pk):
+        return reverse("inventory:saved_grid_view_update", kwargs={"pk": pk})
+
+    def test_owner_can_rename(self, client, administrator):
+        view = SavedGridView.objects.create(
+            name="Old name",
+            grid_key="assets",
+            state={"density": "compact"},
+            created_by=administrator,
+            updated_by=administrator,
+        )
+        original_pk = view.pk
+        client.force_login(administrator)
+        response = client.post(
+            self._update_url(view.pk),
+            data=json.dumps({"name": "New name"}),
+            content_type="application/json",
+        )
+        assert response.status_code == 200
+        assert response.json()["id"] == str(original_pk)  # same row, not delete+recreate
+        assert response.json()["name"] == "New name"
+        view.refresh_from_db()
+        assert view.pk == original_pk
+        assert view.name == "New name"
+        assert view.state == {"density": "compact"}  # untouched when omitted
+
+    def test_owner_can_set_and_unset_default(self, client, administrator):
+        view = SavedGridView.objects.create(
+            name="Mine",
+            grid_key="assets",
+            state={},
+            created_by=administrator,
+            updated_by=administrator,
+        )
+        client.force_login(administrator)
+        response = client.post(
+            self._update_url(view.pk),
+            data=json.dumps({"is_default": True}),
+            content_type="application/json",
+        )
+        assert response.json()["is_default"] is True
+        view.refresh_from_db()
+        assert view.is_default is True
+
+        client.post(
+            self._update_url(view.pk),
+            data=json.dumps({"is_default": False}),
+            content_type="application/json",
+        )
+        view.refresh_from_db()
+        assert view.is_default is False
+
+    def test_setting_default_unsets_the_previous_one(self, client, administrator):
+        first = SavedGridView.objects.create(
+            name="First",
+            grid_key="assets",
+            state={},
+            is_default=True,
+            created_by=administrator,
+            updated_by=administrator,
+        )
+        second = SavedGridView.objects.create(
+            name="Second",
+            grid_key="assets",
+            state={},
+            created_by=administrator,
+            updated_by=administrator,
+        )
+        client.force_login(administrator)
+        client.post(
+            self._update_url(second.pk),
+            data=json.dumps({"is_default": True}),
+            content_type="application/json",
+        )
+        first.refresh_from_db()
+        second.refresh_from_db()
+        assert first.is_default is False
+        assert second.is_default is True
+
+    def test_non_owner_non_admin_cannot_update(
+        self, client, administrator, stock_manager_with_room_access
+    ):
+        view = SavedGridView.objects.create(
+            name="Not yours",
+            grid_key="assets",
+            state={},
+            is_shared=True,
+            created_by=administrator,
+            updated_by=administrator,
+        )
+        client.force_login(stock_manager_with_room_access)
+        response = client.post(
+            self._update_url(view.pk),
+            data=json.dumps({"name": "Hijacked"}),
+            content_type="application/json",
+        )
+        assert response.status_code == 403
+        view.refresh_from_db()
+        assert view.name == "Not yours"
+
+    def test_blank_name_is_rejected(self, client, administrator):
+        view = SavedGridView.objects.create(
+            name="Keep me",
+            grid_key="assets",
+            state={},
+            created_by=administrator,
+            updated_by=administrator,
+        )
+        client.force_login(administrator)
+        response = client.post(
+            self._update_url(view.pk),
+            data=json.dumps({"name": "   "}),
+            content_type="application/json",
+        )
+        assert response.status_code == 400
+        view.refresh_from_db()
+        assert view.name == "Keep me"
+
 
 @pytest.mark.django_db
 class TestStockBalanceGridDataView:

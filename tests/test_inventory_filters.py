@@ -207,6 +207,172 @@ class TestAssetListFilters:
 
 
 @pytest.mark.django_db
+class TestAssetListBulkExport:
+    """apps.core.csv_export.CSVExportMixin's ?ids= path — the Assets grid's
+    "Export selected (N)" bulk action (static/js/inventory_grid.js's
+    cross-page selectedById), distinct from "Export filtered CSV" which
+    exports whatever the grid's own filters currently match.
+    """
+
+    def test_exports_only_the_requested_ids(self, client, administrator, location_tree):
+        from apps.catalog.models import ItemCategory
+        from apps.catalog.services import create_product
+
+        fortinet = create_product(
+            user=administrator,
+            brand_name="Fortinet",
+            model="F1",
+            product_type_name="Firewall",
+            category=ItemCategory.SERIALIZED_ASSET,
+        )
+        cisco = create_product(
+            user=administrator,
+            brand_name="Cisco",
+            model="C1",
+            product_type_name="Switch",
+            category=ItemCategory.SERIALIZED_ASSET,
+        )
+        receive_stock(
+            user=administrator,
+            product=fortinet,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-BULK-KEEP",
+        )
+        receive_stock(
+            user=administrator,
+            product=cisco,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-BULK-DROP",
+        )
+        from apps.inventory.models import UnitAsset
+
+        keep = UnitAsset.objects.get(vendor_serial="SN-BULK-KEEP")
+
+        client.force_login(administrator)
+        response = client.get(
+            reverse("inventory:asset_list"), {"format": "csv", "ids": str(keep.pk)}
+        )
+        assert response.status_code == 200
+        body = response.content.decode()
+        assert "SN-BULK-KEEP" in body
+        assert "SN-BULK-DROP" not in body
+
+    def test_without_ids_exports_everything_in_scope(
+        self, client, administrator, unit_product, location_tree
+    ):
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-BULK-ALL",
+        )
+        client.force_login(administrator)
+        response = client.get(reverse("inventory:asset_list"), {"format": "csv"})
+        assert "SN-BULK-ALL" in response.content.decode()
+
+    def test_ids_outside_the_users_scope_are_not_exported(
+        self,
+        client,
+        administrator,
+        stock_manager_with_room_access,
+        unit_product,
+        other_location_tree,
+    ):
+        from apps.inventory.models import UnitAsset
+        from apps.locations.models import Location
+        from apps.locations.services import create_location
+
+        other_floor = create_location(
+            level=Location.Level.FLOOR,
+            name="Bulk Export Floor",
+            parent=other_location_tree["site"],
+            user=administrator,
+        )
+        other_room = create_location(
+            level=Location.Level.STORAGE_ROOM,
+            name="Bulk Export Room",
+            parent=other_floor,
+            user=administrator,
+        )
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=other_room,
+            occurred_at=date.today(),
+            vendor_serial="SN-OUT-OF-SCOPE-EXPORT",
+        )
+        out_of_scope = UnitAsset.objects.get(vendor_serial="SN-OUT-OF-SCOPE-EXPORT")
+
+        client.force_login(stock_manager_with_room_access)
+        response = client.get(
+            reverse("inventory:asset_list"), {"format": "csv", "ids": str(out_of_scope.pk)}
+        )
+        body = response.content.decode()
+        assert "SN-OUT-OF-SCOPE-EXPORT" not in body
+
+
+@pytest.mark.django_db
+class TestAssetListExportCurrentView:
+    """apps.core.csv_export.CSVExportMixin's dynamic ?columns= path — the
+    Assets grid's "Export current view" link sends the grid's own current
+    column layout (order/title/visibility) so the CSV matches what's on
+    screen, distinct from the fixed-column "Export filtered CSV".
+    """
+
+    def test_exports_only_the_requested_columns_in_order(
+        self, client, administrator, unit_product, location_tree
+    ):
+        import json
+
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-VIEW-COLS",
+        )
+        columns = json.dumps(
+            [
+                {"field": "serial", "title": "Serial #", "visible": True},
+                {"field": "brand", "title": "Brand", "visible": True},
+                {"field": "id", "title": "Internal ID", "visible": True},
+                {"field": "sku", "title": "SKU", "visible": False},
+            ]
+        )
+        client.force_login(administrator)
+        response = client.get(
+            reverse("inventory:asset_list"), {"format": "csv", "columns": columns}
+        )
+        body = response.content.decode()
+        lines = body.strip().splitlines()
+        # "id" dropped (structural, not a real column) and "sku" dropped
+        # (visible: False) — only serial and brand remain, in that order.
+        assert lines[0] == "Serial #,Brand"
+        assert any(line.startswith("SN-VIEW-COLS,") for line in lines[1:])
+
+    def test_without_columns_falls_back_to_the_fixed_export(
+        self, client, administrator, unit_product, location_tree
+    ):
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-VIEW-DEFAULT",
+        )
+        client.force_login(administrator)
+        response = client.get(reverse("inventory:asset_list"), {"format": "csv"})
+        body = response.content.decode()
+        assert body.strip().splitlines()[0] == (
+            "Brand,Model,SKU,Type,Serial,Status,Stock Purpose,Location,"
+            "Assigned To,Project Reference,Final Customer,Arrival Date,Removal Date"
+        )
+
+
+@pytest.mark.django_db
 class TestBalanceListFilters:
     def test_type_filter(self, client, administrator, quantity_product, location_tree):
         client.force_login(administrator)

@@ -560,19 +560,38 @@ class SavedGridView(UUIDPrimaryKeyModel, UserStampedModel):
     authenticated user may save their own (unshared) views; only an
     Administrator's may be shared with everyone, enforced in the service
     layer (apps.inventory.services.grid_views), not just the form.
+
+    `grid_key` is deliberately an open CharField, not a closed `choices=`
+    enum — apps.inventory.services.grid_views.VALID_GRID_KEYS is the one
+    place that knows which grids exist, so adding a new grid never needs a
+    migration here. (It used to be a 2-value `choices=` field that a third
+    grid, Products, was already calling with an unregistered "products" key
+    — a live "Unknown grid." error on that grid's Save/Load view controls,
+    fixed by broadening this rather than adding a third hardcoded choice.)
     """
 
     GRID_ASSETS = "assets"
     GRID_BALANCES = "balances"
-    GRID_CHOICES = [(GRID_ASSETS, "Assets"), (GRID_BALANCES, "Stock Balances")]
 
     name = models.CharField(max_length=120)
-    grid_key = models.CharField(max_length=20, choices=GRID_CHOICES)
+    grid_key = models.CharField(max_length=20)
     state = models.JSONField(default=dict, blank=True)
     is_shared = models.BooleanField(default=False)
+    is_default = models.BooleanField(
+        default=False,
+        help_text="Applied automatically when this grid loads, instead of the grid's own "
+        "built-in defaults. At most one default per (user, grid).",
+    )
 
     class Meta:
         ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["created_by", "grid_key"],
+                condition=models.Q(is_default=True),
+                name="savedgridview_one_default_per_user_per_grid",
+            ),
+        ]
 
     def __str__(self):
         return self.name

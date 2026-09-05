@@ -94,6 +94,7 @@ from .services.grid_views import (
     create_saved_grid_view,
     delete_saved_grid_view,
     list_saved_grid_views,
+    update_saved_grid_view,
 )
 from .services.purpose import reclassify_quantity_purpose, reclassify_unit_purpose
 from .services.receipts import (
@@ -689,6 +690,10 @@ class UnitAssetListView(LoginRequiredMixin, CSVExportMixin, SortableListMixin, L
     # Unset/unrecognized ?sort=: the long-standing default — most recently
     # received first — not one of the clickable columns itself.
     default_ordering = ("-created_at",)
+    # Real UnitAssetGridDataView._serialize() keys that aren't a real,
+    # single-value column a saved/current column layout would ever list —
+    # see CSVExportMixin's "Export Current View" docstring note.
+    csv_non_exportable_fields = frozenset({"id", "detail_url", "quick_actions"})
 
     def get_queryset(self):
         queryset = scope_queryset(
@@ -726,6 +731,21 @@ class UnitAssetListView(LoginRequiredMixin, CSVExportMixin, SortableListMixin, L
                 asset.arrival_date.isoformat() if asset.arrival_date else "",
                 asset.last_removal_date.isoformat() if asset.last_removal_date else "",
             ]
+
+    def csv_row_dict(self, asset):
+        """Backs "Export current view" — reuses UnitAssetGridDataView's own
+        per-row serialization so the CSV's values always match what the
+        grid itself displays, rather than a second hand-maintained mapping.
+        `assigned_to` is a nested dict there; CSVExportMixin only ever reads
+        a column's value as a plain scalar, so it's flattened to just the
+        name here.
+        """
+        if not hasattr(self, "_csv_breadcrumbs"):
+            self._csv_breadcrumbs = location_breadcrumb_map()
+        row = UnitAssetGridDataView._serialize(asset, self._csv_breadcrumbs, can_act=False)
+        assigned_to = row.pop("assigned_to", None)
+        row["assigned_to"] = assigned_to["name"] if assigned_to else ""
+        return row
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -857,7 +877,17 @@ class UnitAssetGridDataView(LoginRequiredMixin, View):
                 asset.last_removal_date.isoformat() if asset.last_removal_date else None
             ),
             "notes": asset.notes,
-            "last_movement": asset.last_movement_at.isoformat() if asset.last_movement_at else None,
+            # getattr, not a direct attribute access: only callers that
+            # .annotate(last_movement_at=...) (UnitAssetGridDataView.get())
+            # ever populate this — UnitAssetListView.csv_row_dict()'s
+            # unannotated queryset (the "Export current view" CSV path)
+            # reuses this same serializer without paying for that extra
+            # aggregate subquery on every plain page load.
+            "last_movement": (
+                asset.last_movement_at.isoformat()
+                if getattr(asset, "last_movement_at", None)
+                else None
+            ),
             "assigned_to": _assigned_to_block(asset.current_custody_transaction),
             "detail_url": asset.get_absolute_url(),
             "quick_actions": _quick_actions_for(asset) if can_act else [],
@@ -883,6 +913,7 @@ class SavedGridViewListCreateView(LoginRequiredMixin, View):
                         "name": view.name,
                         "state": view.state,
                         "is_shared": view.is_shared,
+                        "is_default": view.is_default,
                         "is_mine": view.created_by_id == request.user.id,
                     }
                     for view in views
@@ -903,6 +934,7 @@ class SavedGridViewListCreateView(LoginRequiredMixin, View):
                 grid_key=grid_key,
                 state=payload.get("state") or {},
                 is_shared=bool(payload.get("is_shared")),
+                is_default=bool(payload.get("is_default")),
             )
         except ValidationError as exc:
             return JsonResponse({"error": "; ".join(exc.messages)}, status=400)
@@ -913,6 +945,45 @@ class SavedGridViewListCreateView(LoginRequiredMixin, View):
                 "name": view.name,
                 "state": view.state,
                 "is_shared": view.is_shared,
+                "is_default": view.is_default,
+            }
+        )
+
+
+class SavedGridViewUpdateView(LoginRequiredMixin, View):
+    """Real rename/update-in-place — apps.inventory.services.grid_views.
+    update_saved_grid_view(), as opposed to SavedGridViewListCreateView's
+    POST, which always creates a new row (and therefore a new id).
+    """
+
+    def post(self, request, pk):
+        view = get_object_or_404(SavedGridView, pk=pk)
+        try:
+            payload = json.loads(request.body)
+        except (TypeError, ValueError):
+            return JsonResponse({"error": "Invalid request body."}, status=400)
+
+        try:
+            view = update_saved_grid_view(
+                view=view,
+                user=request.user,
+                name=payload.get("name"),
+                state=payload.get("state"),
+                is_shared=payload.get("is_shared"),
+                is_default=payload.get("is_default"),
+            )
+        except PermissionDenied as exc:
+            return JsonResponse({"error": str(exc)}, status=403)
+        except ValidationError as exc:
+            return JsonResponse({"error": "; ".join(exc.messages)}, status=400)
+
+        return JsonResponse(
+            {
+                "id": str(view.pk),
+                "name": view.name,
+                "state": view.state,
+                "is_shared": view.is_shared,
+                "is_default": view.is_default,
             }
         )
 
@@ -1900,7 +1971,7 @@ class TransferView(LoginRequiredMixin, RoleRequiredMixin, View):
     template_name = "inventory/transfer_form.html"
 
     def get(self, request):
-        form = TransferForm(user=request.user)
+        form = TransferForm(user=request.user, initial={"submission_token": new_submission_token()})
         eligible_statuses = [UnitStatus.IN_STOCK, UnitStatus.RESERVED]
         assets = _eligible_assets(request, eligible_statuses)
         return render(
@@ -1920,6 +1991,12 @@ class TransferView(LoginRequiredMixin, RoleRequiredMixin, View):
         assets = _eligible_assets(request, [UnitStatus.IN_STOCK, UnitStatus.RESERVED])
         if not form.is_valid():
             return render(request, self.template_name, {"form": form, "assets": assets})
+
+        if not claim_submission_token(request.POST.get("submission_token")):
+            messages.info(
+                request, "This transfer was already submitted — nothing was done a second time."
+            )
+            return redirect("inventory:movements_hub")
 
         data = form.cleaned_data
         quantity_lines = []
@@ -1955,7 +2032,7 @@ class ReserveView(LoginRequiredMixin, RoleRequiredMixin, View):
     template_name = "inventory/reserve_form.html"
 
     def get(self, request):
-        form = ReserveForm(user=request.user)
+        form = ReserveForm(user=request.user, initial={"submission_token": new_submission_token()})
         eligible_statuses = [UnitStatus.IN_STOCK]
         assets = _eligible_assets(request, eligible_statuses)
         return render(
@@ -1975,6 +2052,12 @@ class ReserveView(LoginRequiredMixin, RoleRequiredMixin, View):
         assets = _eligible_assets(request, [UnitStatus.IN_STOCK])
         if not form.is_valid():
             return render(request, self.template_name, {"form": form, "assets": assets})
+
+        if not claim_submission_token(request.POST.get("submission_token")):
+            messages.info(
+                request, "This reservation was already submitted — nothing was done a second time."
+            )
+            return redirect("inventory:movements_hub")
 
         data = form.cleaned_data
         try:
@@ -2049,7 +2132,7 @@ class AssignView(LoginRequiredMixin, RoleRequiredMixin, View):
     template_name = "inventory/assign_form.html"
 
     def get(self, request):
-        form = AssignForm(user=request.user)
+        form = AssignForm(user=request.user, initial={"submission_token": new_submission_token()})
         eligible_statuses = [UnitStatus.IN_STOCK, UnitStatus.RESERVED]
         assets = _eligible_assets(request, eligible_statuses)
         return render(
@@ -2073,6 +2156,12 @@ class AssignView(LoginRequiredMixin, RoleRequiredMixin, View):
             return render(
                 request, self.template_name, {"form": form, "assets": assets, "balances": balances}
             )
+
+        if not claim_submission_token(request.POST.get("submission_token")):
+            messages.info(
+                request, "This assignment was already submitted — nothing was done a second time."
+            )
+            return redirect("inventory:movements_hub")
 
         data = form.cleaned_data
         try:
@@ -2169,7 +2258,7 @@ class DeliverView(LoginRequiredMixin, RoleRequiredMixin, View):
     template_name = "inventory/deliver_form.html"
 
     def get(self, request):
-        form = DeliverForm(user=request.user)
+        form = DeliverForm(user=request.user, initial={"submission_token": new_submission_token()})
         eligible_statuses = [UnitStatus.IN_STOCK, UnitStatus.RESERVED]
         assets = _eligible_assets(request, eligible_statuses)
         return render(
@@ -2201,6 +2290,12 @@ class DeliverView(LoginRequiredMixin, RoleRequiredMixin, View):
                     "customer_choices": _customer_search_results(request.user),
                 },
             )
+
+        if not claim_submission_token(request.POST.get("submission_token")):
+            messages.info(
+                request, "This delivery was already submitted — nothing was done a second time."
+            )
+            return redirect("inventory:movements_hub")
 
         data = form.cleaned_data
         try:
@@ -2398,6 +2493,9 @@ class _DispositionView(LoginRequiredMixin, RoleRequiredMixin, View):
     service = None
     verb = ""
     page_title = ""
+    # Mark Damaged leaves this False (repairable, see RepairDamagedView);
+    # MarkLostView/DisposeView set it True — see DispositionForm's docstring.
+    requires_acknowledgement = False
 
     def _extra_service_kwargs(self, data):
         """Hook for a subclass whose form_class carries fields beyond the
@@ -2406,7 +2504,11 @@ class _DispositionView(LoginRequiredMixin, RoleRequiredMixin, View):
         return {}
 
     def get(self, request):
-        form = self.form_class(user=request.user)
+        form = self.form_class(
+            user=request.user,
+            require_acknowledgement=self.requires_acknowledgement,
+            initial={"submission_token": new_submission_token()},
+        )
         assets = _eligible_assets(request, self.eligible_statuses)
         return render(
             request,
@@ -2421,7 +2523,9 @@ class _DispositionView(LoginRequiredMixin, RoleRequiredMixin, View):
         )
 
     def post(self, request):
-        form = self.form_class(request.POST, user=request.user)
+        form = self.form_class(
+            request.POST, user=request.user, require_acknowledgement=self.requires_acknowledgement
+        )
         unit_asset_ids = request.POST.getlist("unit_asset_ids")
         assets = _eligible_assets(request, self.eligible_statuses)
         if not form.is_valid():
@@ -2430,6 +2534,12 @@ class _DispositionView(LoginRequiredMixin, RoleRequiredMixin, View):
                 self.template_name,
                 {"form": form, "assets": assets, "page_title": self.page_title},
             )
+
+        if not claim_submission_token(request.POST.get("submission_token")):
+            messages.info(
+                request, "This action was already submitted — nothing was done a second time."
+            )
+            return redirect("inventory:movements_hub")
 
         data = form.cleaned_data
         try:
@@ -2464,6 +2574,7 @@ class MarkLostView(_DispositionView):
     service = staticmethod(mark_lost)
     verb = "Marked lost"
     page_title = "Mark lost"
+    requires_acknowledgement = True
 
 
 class DisposeView(_DispositionView):
@@ -2478,6 +2589,7 @@ class DisposeView(_DispositionView):
     verb = "Disposed"
     page_title = "Dispose"
     form_class = DisposeForm
+    requires_acknowledgement = True
 
     def _extra_service_kwargs(self, data):
         return {"wipe_method": data["wipe_method"], "witness_name": data["witness_name"]}

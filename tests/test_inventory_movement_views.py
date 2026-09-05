@@ -170,6 +170,39 @@ class TestTransferView:
         response = client.get(reverse("inventory:transfer"))
         assert response.status_code == 403
 
+    def test_resubmitting_the_same_submission_token_does_not_transfer_twice(
+        self, client, stock_manager_with_room_access, unit_product, location_tree, rack
+    ):
+        from apps.inventory.models import InventoryTransaction
+
+        receive_stock(
+            user=stock_manager_with_room_access,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-TV-DUPTOKEN",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-TV-DUPTOKEN")
+
+        client.force_login(stock_manager_with_room_access)
+        get_response = client.get(reverse("inventory:transfer"))
+        token = get_response.context["form"]["submission_token"].value()
+        assert token
+
+        payload = {
+            "destination_location": rack.pk,
+            "occurred_at": date.today().isoformat(),
+            "unit_asset_ids": [str(asset.pk)],
+            "submission_token": token,
+        }
+        first = client.post(reverse("inventory:transfer"), payload)
+        assert first.status_code == 302
+
+        second = client.post(reverse("inventory:transfer"), payload)
+        assert second.status_code == 302
+        assert second.url == reverse("inventory:movements_hub")
+        assert InventoryTransaction.objects.filter(movement_type="transfer").count() == 1
+
     def test_manipulated_destination_location_outside_scope_rejected(
         self,
         client,
@@ -623,6 +656,66 @@ class TestDispositionViews:
         asset.refresh_from_db()
         assert asset.status == UnitStatus.DAMAGED
 
+    def test_mark_lost_without_acknowledgement_is_rejected(
+        self, client, stock_manager_with_room_access, unit_product, location_tree
+    ):
+        receive_stock(
+            user=stock_manager_with_room_access,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-MLV-NOACK",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-MLV-NOACK")
+
+        client.force_login(stock_manager_with_room_access)
+        response = client.post(
+            reverse("inventory:mark_lost"),
+            {
+                "occurred_at": date.today().isoformat(),
+                "unit_asset_ids": [str(asset.pk)],
+                "notes": "missing",
+            },
+        )
+        assert response.status_code == 200
+        assert "acknowledged" in response.context["form"].errors
+        asset.refresh_from_db()
+        assert asset.status == UnitStatus.IN_STOCK
+
+    def test_dispose_without_acknowledgement_is_rejected(
+        self, client, stock_manager_with_room_access, unit_product, location_tree
+    ):
+        receive_stock(
+            user=stock_manager_with_room_access,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-DPV-NOACK",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-DPV-NOACK")
+
+        client.force_login(stock_manager_with_room_access)
+        response = client.post(
+            reverse("inventory:dispose"),
+            {
+                "occurred_at": date.today().isoformat(),
+                "unit_asset_ids": [str(asset.pk)],
+                "notes": "eol",
+                "wipe_method": "software_wipe",
+            },
+        )
+        assert response.status_code == 200
+        assert "acknowledged" in response.context["form"].errors
+        asset.refresh_from_db()
+        assert asset.status == UnitStatus.IN_STOCK
+
+    def test_mark_damaged_has_no_acknowledgement_field(
+        self, client, stock_manager_with_room_access
+    ):
+        client.force_login(stock_manager_with_room_access)
+        response = client.get(reverse("inventory:mark_damaged"))
+        assert "acknowledged" not in response.context["form"].fields
+
     def test_mark_lost_view(
         self, client, stock_manager_with_room_access, unit_product, location_tree
     ):
@@ -642,6 +735,7 @@ class TestDispositionViews:
                 "occurred_at": date.today().isoformat(),
                 "unit_asset_ids": [str(asset.pk)],
                 "notes": "missing",
+                "acknowledged": "true",
             },
         )
         assert response.status_code == 302
@@ -668,6 +762,7 @@ class TestDispositionViews:
                 "unit_asset_ids": [str(asset.pk)],
                 "notes": "eol",
                 "wipe_method": "software_wipe",
+                "acknowledged": "true",
             },
         )
         assert response.status_code == 302
@@ -723,6 +818,7 @@ class TestDispositionViews:
                 "notes": "eol",
                 "wipe_method": "degaussed",
                 "witness_name": "J. Alvarez",
+                "acknowledged": "true",
             },
         )
         txn = InventoryTransaction.objects.get(movement_type="disposal")

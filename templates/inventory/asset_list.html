@@ -32,10 +32,13 @@
       </div>
       <button type="button" class="btn" id="asset-grid-more-filters-toggle" aria-expanded="false">More filters</button>
       <a class="btn" id="asset-grid-export-filtered" href="?format=csv">Export filtered CSV</a>
+      <a class="btn" id="asset-grid-export-current-view" href="?format=csv">Export current view</a>
       <span class="grid-views">
         <label class="sr-only" for="asset-grid-saved-views">Saved views</label>
         <select id="asset-grid-saved-views"><option value="">— Saved views —</option></select>
         <button type="button" class="btn" id="asset-grid-save-view">Save view</button>
+        <button type="button" class="btn btn--ghost" id="asset-grid-rename-view" hidden aria-label="Rename selected saved view">Rename</button>
+        <button type="button" class="btn btn--ghost" id="asset-grid-default-view" hidden aria-label="Set selected saved view as default">Set as default</button>
         <button type="button" class="btn btn--ghost" id="asset-grid-delete-view" hidden aria-label="Delete selected saved view">Delete</button>
       </span>
       <span id="asset-grid-selection-count" class="grid-selection-count" hidden></span>
@@ -305,19 +308,32 @@
         repair_damaged: "Return to stock",
       };
       const bulkActionsBar = document.getElementById("asset-grid-bulk-actions");
+      const ASSET_LIST_URL = "{% url 'inventory:asset_list' %}";
       function renderBulkActions(rows) {
         bulkActionsBar.innerHTML = "";
-        if (!canEditGrid || rows.length === 0) {
-          bulkActionsBar.hidden = true;
-          return;
-        }
-        const availableActions = new Set();
-        rows.forEach((row) => (ACTIONS_BY_STATUS[row.status] || []).forEach((a) => availableActions.add(a)));
-        if (availableActions.size === 0) {
+        if (rows.length === 0) {
           bulkActionsBar.hidden = true;
           return;
         }
         const ids = rows.map((row) => row.id);
+
+        // Export selected — read-only, so offered regardless of role/status
+        // (apps.core.csv_export.CSVExportMixin's ?ids= path, not gated on
+        // canEditGrid the way every mutating action below is).
+        const exportParams = new URLSearchParams({ format: "csv" });
+        ids.forEach((id) => exportParams.append("ids", id));
+        const exportLink = document.createElement("a");
+        exportLink.className = "btn btn--sm";
+        exportLink.href = `${ASSET_LIST_URL}?${exportParams.toString()}`;
+        exportLink.textContent = `Export selected (${ids.length})`;
+        bulkActionsBar.appendChild(exportLink);
+
+        if (!canEditGrid) {
+          bulkActionsBar.hidden = false;
+          return;
+        }
+        const availableActions = new Set();
+        rows.forEach((row) => (ACTIONS_BY_STATUS[row.status] || []).forEach((a) => availableActions.add(a)));
         availableActions.forEach((action) => {
           const link = document.createElement("a");
           link.className = "btn btn--sm";
@@ -347,6 +363,24 @@
         },
       });
 
+      // "Export current view" — same filters as "Export filtered CSV" above,
+      // plus the grid's own current column layout (order/title/visibility),
+      // so the CSV's columns always match what's on screen right now
+      // (apps.inventory.views.UnitAssetGridDataView's ?format=csv path).
+      G.initExportLink({
+        linkSelector: "#asset-grid-export-current-view",
+        table,
+        searchInputSelector: "#asset-grid-search",
+        extraParams: () => {
+          const values = {};
+          moreFiltersForm.querySelectorAll("[data-filter]").forEach((input) => {
+            values[input.dataset.filter] = input.type === "checkbox" ? (input.checked ? "1" : "") : input.value;
+          });
+          values.columns = JSON.stringify(table.getColumnLayout());
+          return values;
+        },
+      });
+
       G.initColumnsPanel({
         toggleSelector: "#asset-grid-columns-toggle",
         panelSelector: "#asset-grid-columns-panel",
@@ -366,10 +400,14 @@
       G.initSavedViews({
         selectSelector: "#asset-grid-saved-views",
         saveButtonSelector: "#asset-grid-save-view",
+        renameButtonSelector: "#asset-grid-rename-view",
+        defaultButtonSelector: "#asset-grid-default-view",
         deleteButtonSelector: "#asset-grid-delete-view",
         listUrl: "{% url 'inventory:saved_grid_view_list_create' grid_key='assets' %}",
+        updateUrlTemplate: "{% url 'inventory:saved_grid_view_update' pk='00000000-0000-0000-0000-000000000000' %}".replace("00000000-0000-0000-0000-000000000000", "__ID__"),
         deleteUrlTemplate: "{% url 'inventory:saved_grid_view_delete' pk='00000000-0000-0000-0000-000000000000' %}".replace("00000000-0000-0000-0000-000000000000", "__ID__"),
         canShare: {% if user_is_administrator %}true{% else %}false{% endif %},
+        applyDefaultOnLoad: true,
         onCapture: () =>
           G.captureGridState(table, document.getElementById("asset-grid-table"), document.getElementById("asset-grid-search"), captureExtraFilters),
         onApply: (state) => {

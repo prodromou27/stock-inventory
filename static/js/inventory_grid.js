@@ -315,7 +315,20 @@
 
   function applyGridState(table, container, searchInput, state, applyExtra) {
     if (!state) return;
-    if (state.columns) table.setColumnLayout(state.columns);
+    // Every per-item application below is wrapped so ONE stale reference —
+    // a saved column for a field that's since been removed, a header
+    // filter naming a value (e.g. a deactivated location) that no longer
+    // matches anything — degrades to "that one thing is skipped," never a
+    // thrown error that leaves the rest of the saved view (or the page)
+    // unapplied. Saved views are long-lived UI state; the grid/schema they
+    // describe isn't guaranteed to still match bit-for-bit.
+    if (state.columns) {
+      try {
+        table.setColumnLayout(state.columns);
+      } catch (error) {
+        /* a saved column no longer exists on this grid — ignore it */
+      }
+    }
     if (state.density) {
       container.classList.remove("tabulator-density-compact", "tabulator-density-comfortable");
       container.classList.add(`tabulator-density-${state.density}`);
@@ -328,8 +341,20 @@
       searchInput.value = state.search;
       searchInput.dispatchEvent(new Event("input"));
     }
-    (state.headerFilters || []).forEach((f) => table.setHeaderFilterValue(f.field, f.value));
-    if (state.sorters) table.setSort(state.sorters);
+    (state.headerFilters || []).forEach((f) => {
+      try {
+        table.setHeaderFilterValue(f.field, f.value);
+      } catch (error) {
+        /* saved filter references a field/value no longer offered — skip it */
+      }
+    });
+    if (state.sorters) {
+      try {
+        table.setSort(state.sorters);
+      } catch (error) {
+        /* saved sort references a field no longer sortable — skip it */
+      }
+    }
     if (applyExtra) applyExtra(state.extra || {});
   }
 
@@ -344,8 +369,32 @@
     const select = document.querySelector(options.selectSelector);
     const saveButton = document.querySelector(options.saveButtonSelector);
     const deleteButton = document.querySelector(options.deleteButtonSelector);
+    // Both optional — a page that doesn't pass these selectors just doesn't
+    // get rename/set-default controls, load/save/delete keep working as
+    // before (apps.inventory.services.grid_views.update_saved_grid_view()
+    // backs both; SavedGridView.is_default is what "default" means).
+    const renameButton = options.renameButtonSelector
+      ? document.querySelector(options.renameButtonSelector)
+      : null;
+    const defaultButton = options.defaultButtonSelector
+      ? document.querySelector(options.defaultButtonSelector)
+      : null;
     if (!select) return;
 
+    function updateActionButtons() {
+      const option = select.selectedOptions[0];
+      const hasSelection = Boolean(option && option.value);
+      const isMine = hasSelection && option.dataset.mine === "true";
+      if (deleteButton) deleteButton.hidden = !hasSelection;
+      if (renameButton) renameButton.hidden = !isMine;
+      if (defaultButton) {
+        defaultButton.hidden = !isMine;
+        defaultButton.textContent =
+          option && option.dataset.default === "true" ? "Unset default" : "Set as default";
+      }
+    }
+
+    let hasAppliedInitialDefault = false;
     function refresh(selectAfterId) {
       fetch(options.listUrl, { headers: { "X-Requested-With": "XMLHttpRequest" } })
         .then((r) => r.json())
@@ -354,19 +403,34 @@
           data.views.forEach((view) => {
             const option = document.createElement("option");
             option.value = view.id;
-            option.textContent = view.is_shared && !view.is_mine ? `${view.name} (shared)` : view.name;
+            const label = view.is_shared && !view.is_mine ? `${view.name} (shared)` : view.name;
+            option.textContent = view.is_default ? `${label} (default)` : label;
             option.dataset.state = JSON.stringify(view.state);
             option.dataset.mine = view.is_mine;
+            option.dataset.default = view.is_default;
             select.appendChild(option);
           });
           if (selectAfterId) select.value = selectAfterId;
+          // Applied once, only on this control's first load (page open) —
+          // never on a later refresh() (after save/rename/delete), which
+          // would otherwise silently discard whatever the operator is
+          // currently looking at.
+          if (options.applyDefaultOnLoad && !hasAppliedInitialDefault && !selectAfterId) {
+            const defaultView = data.views.find((view) => view.is_default);
+            if (defaultView) {
+              select.value = defaultView.id;
+              options.onApply(defaultView.state);
+            }
+          }
+          hasAppliedInitialDefault = true;
+          updateActionButtons();
         });
     }
     refresh();
 
     select.addEventListener("change", () => {
       const option = select.selectedOptions[0];
-      if (deleteButton) deleteButton.hidden = !select.value;
+      updateActionButtons();
       if (!option || !option.value) return;
       options.onApply(JSON.parse(option.dataset.state || "{}"));
     });
@@ -390,6 +454,46 @@
       });
     }
 
+    if (renameButton && options.updateUrlTemplate) {
+      renameButton.addEventListener("click", () => {
+        const option = select.selectedOptions[0];
+        if (!option || !option.value) return;
+        const currentName = option.textContent.replace(/ \(default\)$/, "").replace(/ \(shared\)$/, "");
+        const name = window.prompt("Rename view to:", currentName);
+        if (!name) return;
+        fetch(options.updateUrlTemplate.replace("__ID__", option.value), {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-CSRFToken": getCsrfToken() },
+          body: JSON.stringify({ name }),
+        })
+          .then((r) => r.json().then((body) => ({ ok: r.ok, body })))
+          .then(({ ok, body }) => {
+            if (!ok) throw new Error(body.error || "Couldn't rename view");
+            refresh(option.value);
+          })
+          .catch((error) => window.alert(error.message));
+      });
+    }
+
+    if (defaultButton && options.updateUrlTemplate) {
+      defaultButton.addEventListener("click", () => {
+        const option = select.selectedOptions[0];
+        if (!option || !option.value) return;
+        const makeDefault = option.dataset.default !== "true";
+        fetch(options.updateUrlTemplate.replace("__ID__", option.value), {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-CSRFToken": getCsrfToken() },
+          body: JSON.stringify({ is_default: makeDefault }),
+        })
+          .then((r) => r.json().then((body) => ({ ok: r.ok, body })))
+          .then(({ ok, body }) => {
+            if (!ok) throw new Error(body.error || "Couldn't update default view");
+            refresh(option.value);
+          })
+          .catch((error) => window.alert(error.message));
+      });
+    }
+
     if (deleteButton) {
       deleteButton.addEventListener("click", () => {
         if (!select.value || !window.confirm("Delete this saved view?")) return;
@@ -400,7 +504,6 @@
           .then((r) => r.json().then((body) => ({ ok: r.ok, body })))
           .then(({ ok, body }) => {
             if (!ok) throw new Error(body.error || "Couldn't delete view");
-            deleteButton.hidden = true;
             refresh();
           })
           .catch((error) => window.alert(error.message));

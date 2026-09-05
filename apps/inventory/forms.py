@@ -300,6 +300,12 @@ class _BaseMovementForm(forms.Form):
     )
     quantity_amount = forms.IntegerField(required=False, min_value=1, label="Quantity")
     notes = forms.CharField(required=False, widget=forms.Textarea)
+    # Round-trips through initial -> render -> (possibly invalid) re-render
+    # like ReceiveStockForm's own submission_token — apps.core.idempotency.
+    # claim_submission_token() is what actually rejects a reused one; every
+    # bulk-capable movement view (Transfer/Reserve/Assign/Deliver/Mark
+    # damaged/Mark lost/Dispose) shares this one field via this base class.
+    submission_token = forms.CharField(required=False, widget=forms.HiddenInput)
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -490,12 +496,27 @@ class ReturnAssessmentForm(forms.Form):
 class DispositionForm(_QuantityLocationMixin, _BaseMovementForm):
     """Shared shape for mark-damaged/mark-lost/dispose — notes doubles as the
     required reason (spec §9: "record the reason, notes, date...").
+
+    `require_acknowledgement` (set by the view — True for Mark Lost/Dispose,
+    False for Mark Damaged) adds a required typed-confirmation checkbox on
+    top of the browser-level data-confirm prompt disposition_form.html
+    already shows: Lost/Disposed are the two terminal, effectively
+    irreversible statuses (VALID_UNIT_TRANSITIONS has no way back out of
+    either short of an Administrator correction), so these two get a
+    server-validated acknowledgement, not just a JS confirm() dialog a
+    script could bypass.
     """
 
-    def __init__(self, *args, user=None, **kwargs):
+    def __init__(self, *args, user=None, require_acknowledgement=False, **kwargs):
         super().__init__(*args, user=user, **kwargs)
         self.fields["notes"].required = True
         self.fields["notes"].label = "Reason"
+        if require_acknowledgement:
+            self.fields["acknowledged"] = forms.BooleanField(
+                required=True,
+                label="I understand this cannot be easily undone and confirm the selected "
+                "item(s) should be marked accordingly.",
+            )
 
 
 class DisposeForm(DispositionForm):

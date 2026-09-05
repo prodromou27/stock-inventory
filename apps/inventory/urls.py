@@ -44,6 +44,11 @@ urlpatterns = [
         name="saved_grid_view_list_create",
     ),
     path(
+        "grid-views/<uuid:pk>/update/",
+        views.SavedGridViewUpdateView.as_view(),
+        name="saved_grid_view_update",
+    ),
+    path(
         "grid-views/<uuid:pk>/delete/",
         views.SavedGridViewDeleteView.as_view(),
         name="saved_grid_view_delete",
