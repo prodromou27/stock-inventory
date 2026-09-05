@@ -538,6 +538,20 @@ class TestReceiveStockBulk:
         balance = StockBalance.objects.get(product=quantity_product, location=location_tree["room"])
         assert balance.on_hand_quantity == 20
 
+    def test_unit_tracked_lines_allow_units_without_vendor_serials(
+        self, administrator, unit_product, location_tree
+    ):
+        txn = receive_stock_bulk(
+            user=administrator,
+            occurred_at=date.today(),
+            default_location=location_tree["room"],
+            lines=[{"product": unit_product, "vendor_serials": ["", ""]}],
+        )
+
+        assets = UnitAsset.objects.filter(product=unit_product, vendor_serial="")
+        assert assets.count() == 2
+        assert InventoryTransactionLine.objects.filter(transaction=txn).count() == 2
+
     def test_default_location_applied_and_per_row_override_wins(
         self, administrator, unit_product, quantity_product, location_tree, other_location_tree
     ):

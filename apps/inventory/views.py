@@ -28,7 +28,11 @@ from apps.core.authorization import (
     require_role,
 )
 from apps.core.csv_export import CSVExportMixin
-from apps.core.idempotency import claim_submission_token, new_submission_token
+from apps.core.idempotency import (
+    claim_submission_token,
+    new_submission_token,
+    release_submission_token,
+)
 from apps.core.recently_viewed import record_recently_viewed
 from apps.core.sorting import (
     SortableListMixin,
@@ -308,33 +312,6 @@ class ReceiveStockView(LoginRequiredMixin, RoleRequiredMixin, View):
             return redirect("inventory:movements_hub")
 
         data = form.cleaned_data
-        try:
-            product = resolve_or_create_product(
-                user=request.user,
-                brand_name=data["brand_name"],
-                model=data["model"],
-                sku=data["sku"],
-                product_type_name=data["product_type_name"],
-                category=data["category"],
-                duplicate_acknowledged=request.POST.get("duplicate_acknowledged") == "true",
-            )
-        except DuplicateProductError as exc:
-            return render(
-                request,
-                "inventory/receive_stock_form.html",
-                {
-                    "form": form,
-                    "duplicate_product_matches": exc.matches,
-                    "show_duplicate_product_warning": True,
-                    **_catalog_choices(),
-                },
-            )
-        except ValidationError as exc:
-            form.add_error(None, exc)
-            return render(
-                request, "inventory/receive_stock_form.html", {"form": form, **_catalog_choices()}
-            )
-
         tracking_method = CATEGORY_TRACKING_METHOD[data["category"]]
         common_fields = dict(
             location=data["location"],
@@ -350,37 +327,65 @@ class ReceiveStockView(LoginRequiredMixin, RoleRequiredMixin, View):
         )
         duplicate_serial_acknowledged = request.POST.get("duplicate_serial_acknowledged") == "true"
         try:
-            if tracking_method == TrackingMethod.QUANTITY:
-                txn = receive_stock(
-                    user=request.user, product=product, quantity=data["quantity"], **common_fields
+            # Product resolution/creation and receipt are one database unit:
+            # a failed receipt must not leave an orphan Product/Brand/Type.
+            with transaction.atomic():
+                product = resolve_or_create_product(
+                    user=request.user,
+                    brand_name=data["brand_name"],
+                    model=data["model"],
+                    sku=data["sku"],
+                    product_type_name=data["product_type_name"],
+                    category=data["category"],
+                    duplicate_acknowledged=request.POST.get("duplicate_acknowledged") == "true",
                 )
-                transactions = [txn]
-                created_serials = []
-            else:
-                serials = data["parsed_serials"]
-                unit_count = data["unit_count"]
-                if unit_count <= 1:
-                    vendor_serial = serials[0] if serials else ""
+                if tracking_method == TrackingMethod.QUANTITY:
                     txn = receive_stock(
                         user=request.user,
                         product=product,
-                        vendor_serial=vendor_serial,
-                        duplicate_serial_acknowledged=duplicate_serial_acknowledged,
+                        quantity=data["quantity"],
                         **common_fields,
                     )
                     transactions = [txn]
-                    created_serials = [vendor_serial] if vendor_serial else []
+                    created_serials = []
                 else:
-                    vendor_serials_list = serials if serials else [""] * unit_count
-                    transactions = receive_stock_units_atomic(
-                        user=request.user,
-                        product=product,
-                        vendor_serials=vendor_serials_list,
-                        duplicate_serial_acknowledged=duplicate_serial_acknowledged,
-                        **common_fields,
-                    )
-                    created_serials = [s for s in vendor_serials_list if s]
+                    serials = data["parsed_serials"]
+                    unit_count = data["unit_count"]
+                    if unit_count <= 1:
+                        vendor_serial = serials[0] if serials else ""
+                        txn = receive_stock(
+                            user=request.user,
+                            product=product,
+                            vendor_serial=vendor_serial,
+                            duplicate_serial_acknowledged=duplicate_serial_acknowledged,
+                            **common_fields,
+                        )
+                        transactions = [txn]
+                        created_serials = [vendor_serial] if vendor_serial else []
+                    else:
+                        vendor_serials_list = serials + [""] * (unit_count - len(serials))
+                        transactions = receive_stock_units_atomic(
+                            user=request.user,
+                            product=product,
+                            vendor_serials=vendor_serials_list,
+                            duplicate_serial_acknowledged=duplicate_serial_acknowledged,
+                            **common_fields,
+                        )
+                        created_serials = [s for s in vendor_serials_list if s]
+        except DuplicateProductError as exc:
+            release_submission_token(request.POST.get("submission_token"))
+            return render(
+                request,
+                "inventory/receive_stock_form.html",
+                {
+                    "form": form,
+                    "duplicate_product_matches": exc.matches,
+                    "show_duplicate_product_warning": True,
+                    **_catalog_choices(),
+                },
+            )
         except DuplicateSerialError as exc:
+            release_submission_token(request.POST.get("submission_token"))
             return render(
                 request,
                 "inventory/receive_stock_form.html",
@@ -392,6 +397,7 @@ class ReceiveStockView(LoginRequiredMixin, RoleRequiredMixin, View):
                 },
             )
         except ValidationError as exc:
+            release_submission_token(request.POST.get("submission_token"))
             form.add_error(None, exc)
             return render(
                 request, "inventory/receive_stock_form.html", {"form": form, **_catalog_choices()}
@@ -594,7 +600,10 @@ class ReceiveBulkView(LoginRequiredMixin, RoleRequiredMixin, View):
                 "notes": row.get("notes", ""),
             }
             if product.tracking_method == TrackingMethod.UNIT:
-                entry["vendor_serials"] = row.get("parsed_serials", [])
+                serials = row.get("parsed_serials", [])
+                entry["vendor_serials"] = serials + [""] * (
+                    row.get("unit_count", len(serials)) - len(serials)
+                )
                 entry["condition"] = row.get("condition")
                 entry["accessories"] = row.get("accessories", "")
                 entry["arrival_date"] = row.get("arrival_date_override") or None
@@ -2020,6 +2029,7 @@ class TransferView(LoginRequiredMixin, RoleRequiredMixin, View):
                 notes=data["notes"],
             )
         except ValidationError as exc:
+            release_submission_token(request.POST.get("submission_token"))
             form.add_error(None, exc)
             return render(request, self.template_name, {"form": form, "assets": assets})
 
@@ -2071,6 +2081,7 @@ class ReserveView(LoginRequiredMixin, RoleRequiredMixin, View):
                 notes=data["notes"],
             )
         except ValidationError as exc:
+            release_submission_token(request.POST.get("submission_token"))
             form.add_error(None, exc)
             return render(request, self.template_name, {"form": form, "assets": assets})
 
@@ -2181,6 +2192,7 @@ class AssignView(LoginRequiredMixin, RoleRequiredMixin, View):
                 notes=data["notes"],
             )
         except ValidationError as exc:
+            release_submission_token(request.POST.get("submission_token"))
             form.add_error(None, exc)
             return render(
                 request, self.template_name, {"form": form, "assets": assets, "balances": balances}
@@ -2314,6 +2326,7 @@ class DeliverView(LoginRequiredMixin, RoleRequiredMixin, View):
                 notes=data["notes"],
             )
         except ValidationError as exc:
+            release_submission_token(request.POST.get("submission_token"))
             form.add_error(None, exc)
             return render(
                 request,
@@ -2552,6 +2565,7 @@ class _DispositionView(LoginRequiredMixin, RoleRequiredMixin, View):
                 **self._extra_service_kwargs(data),
             )
         except ValidationError as exc:
+            release_submission_token(request.POST.get("submission_token"))
             form.add_error(None, exc)
             return render(
                 request,

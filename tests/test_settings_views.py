@@ -2,6 +2,7 @@ import pytest
 from django.urls import reverse
 
 from apps.settings.models import SystemSettings
+from apps.settings.services import MAX_CERTIFICATE_FILE_SIZE_BYTES
 
 from .test_settings_services import VALID_CERT_PEM, VALID_KEY_PEM, _png_upload
 
@@ -169,6 +170,25 @@ class TestCertificateUploadView:
         )
         assert response.status_code == 200
         assert "not a valid, matching pair" in response.content.decode()
+
+    def test_rejects_oversized_certificate_before_reading_it(
+        self, client, administrator, certs_dir
+    ):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        client.force_login(administrator)
+        response = client.post(
+            reverse("settings:certificates"),
+            {
+                "cert_file": SimpleUploadedFile(
+                    "fullchain.pem", b"x" * (MAX_CERTIFICATE_FILE_SIZE_BYTES + 1)
+                ),
+                "key_file": SimpleUploadedFile("privkey.pem", VALID_KEY_PEM),
+            },
+        )
+
+        assert response.status_code == 200
+        assert "5 MB or smaller" in response.content.decode()
 
 
 @pytest.mark.django_db

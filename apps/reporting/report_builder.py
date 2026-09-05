@@ -15,6 +15,8 @@ unrecognized key or a disallowed operator is silently dropped, never
 interpolated into `.filter(**{...})`.
 """
 
+from django.core.exceptions import ValidationError
+from django.db import models
 from django.db.models import Q
 
 from apps.inventory.access import (
@@ -98,6 +100,50 @@ REPORTABLE_FIELDS = {
     },
 }
 
+_BASE_MODEL_CLASSES = {
+    ReportBaseModel.UNIT_ASSET: UnitAsset,
+    ReportBaseModel.STOCK_BALANCE: StockBalance,
+    ReportBaseModel.TRANSACTION: InventoryTransaction,
+    ReportBaseModel.TRANSACTION_LINE: InventoryTransactionLine,
+    ReportBaseModel.STATUS_HISTORY: AssetStatusHistory,
+}
+
+
+def _report_field(base_model, field_key):
+    """Resolve an allow-listed report key to its concrete terminal model field."""
+    orm_path = REPORTABLE_FIELDS.get(base_model, {}).get(field_key)
+    model = _BASE_MODEL_CLASSES.get(base_model)
+    if orm_path is None or model is None:
+        raise ValidationError("Unknown report filter field.")
+    field = None
+    for component in orm_path.split("__"):
+        field = model._meta.get_field(component)
+        if field.is_relation:
+            model = field.related_model
+    return field
+
+
+def normalize_filter_value(*, base_model, field_key, op, value):
+    """Validate and coerce a filter before it reaches the database driver."""
+    field = _report_field(base_model, field_key)
+    if op == "icontains":
+        if not isinstance(field, (models.CharField, models.TextField)):
+            raise ValidationError("Contains filters can only be used with text fields.")
+        return str(value)
+
+    raw_values = (
+        [part.strip() for part in str(value).split(",") if part.strip()] if op == "in" else [value]
+    )
+    if not raw_values:
+        raise ValidationError("Enter at least one filter value.")
+    try:
+        normalized = [field.to_python(raw_value) for raw_value in raw_values]
+    except (TypeError, ValueError, ValidationError) as exc:
+        raise ValidationError(
+            f"'{value}' is not a valid value for {field_key.replace('_', ' ')}."
+        ) from exc
+    return normalized if op == "in" else normalized[0]
+
 
 def _scoped_base_queryset(base_model, user):
     if base_model == ReportBaseModel.UNIT_ASSET:
@@ -152,10 +198,14 @@ def build_queryset(*, user, base_model, selected_fields, filters):
         orm_path = fields.get(field_key)
         if orm_path is None or op not in ALLOWED_FILTER_OPS or value in (None, ""):
             continue
-        if op == "in":
-            value = [v.strip() for v in str(value).split(",") if v.strip()]
-            if not value:
-                continue
+        try:
+            value = normalize_filter_value(
+                base_model=base_model, field_key=field_key, op=op, value=value
+            )
+        except ValidationError:
+            # A legacy/corrupted SavedReport must degrade safely instead of
+            # raising a database conversion error and returning HTTP 500.
+            continue
         query &= Q(**{f"{orm_path}__{op}": value})
         has_filter = True
     if has_filter:

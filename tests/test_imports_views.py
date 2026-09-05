@@ -4,6 +4,7 @@ from django.urls import reverse
 
 from apps.imports import services
 from apps.imports.models import ImportBatchStatus, ImportRowOutcome
+from apps.imports.parsing import MAX_IMPORT_SIZE_BYTES
 
 COLUMNS = services.parsing.COLUMNS
 
@@ -68,6 +69,17 @@ class TestUploadAndPreview:
         response = client.post(reverse("imports:upload"), {"file": bad_file})
         assert response.status_code == 200
         assert "Only .xlsx or .csv" in response.content.decode()
+
+    def test_rejects_oversized_import_before_parsing(self, client, administrator):
+        client.force_login(administrator)
+        oversized = SimpleUploadedFile(
+            "oversized.csv", b"x" * (MAX_IMPORT_SIZE_BYTES + 1), content_type="text/csv"
+        )
+
+        response = client.post(reverse("imports:upload"), {"file": oversized})
+
+        assert response.status_code == 200
+        assert "25 MB or smaller" in response.content.decode()
 
     def test_preview_shows_resolved_arrival_date_for_a_blank_cell(
         self, client, administrator, location_tree

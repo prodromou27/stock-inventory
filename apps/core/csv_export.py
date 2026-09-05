@@ -3,6 +3,8 @@ import json
 
 from django.http import HttpResponse
 
+from apps.core.spreadsheets import spreadsheet_safe_row
+
 
 class CSVExportMixin:
     """Add to a ListView: `?format=csv` streams a normalized CSV export of
@@ -79,13 +81,13 @@ class CSVExportMixin:
         supports_dynamic_columns = type(self).csv_row_dict is not CSVExportMixin.csv_row_dict
         columns = self._requested_columns() if supports_dynamic_columns else None
         if columns is not None:
-            writer.writerow([title for _, title in columns])
+            writer.writerow(spreadsheet_safe_row(title for _, title in columns))
             for obj in queryset.iterator():
                 row = self.csv_row_dict(obj) or {}
-                writer.writerow([row.get(field) or "" for field, _ in columns])
+                writer.writerow(spreadsheet_safe_row(row.get(field) or "" for field, _ in columns))
             return response
 
-        writer.writerow(self.csv_headers)
+        writer.writerow(spreadsheet_safe_row(self.csv_headers))
         for row in self.csv_rows(queryset):
-            writer.writerow(row)
+            writer.writerow(spreadsheet_safe_row(row))
         return response

@@ -12,6 +12,7 @@ from apps.audit.services import record_event
 from apps.catalog.models import Brand, ItemCategory, Product, TrackingMethod
 from apps.catalog.services import check_duplicate_products, resolve_or_create_product
 from apps.core.authorization import ADMINISTRATOR, require_role
+from apps.core.spreadsheets import spreadsheet_safe_row
 from apps.inventory.models import StockPurpose
 from apps.inventory.services.receipts import receive_stock
 
@@ -46,6 +47,8 @@ def create_batch_from_upload(
     """
     require_role(user, ADMINISTRATOR)
 
+    if uploaded_file.size > parsing.MAX_IMPORT_SIZE_BYTES:
+        raise ValidationError("Import files must be 25 MB or smaller.")
     file_bytes = uploaded_file.read()
     checksum = parsing.compute_checksum(file_bytes)
     rows = parsing.parse_rows(filename=uploaded_file.name, file_bytes=file_bytes)
@@ -641,14 +644,16 @@ def build_results_csv(batch):
     writer.writerow(["Row", "Outcome", "Detail", "Brand", "Model", "Serial", "Stock Purpose"])
     for row in batch.rows.all():
         writer.writerow(
-            [
-                row.row_number,
-                row.get_outcome_display(),
-                row.outcome_detail,
-                row.normalized_data.get("brand_name", ""),
-                row.normalized_data.get("model", ""),
-                row.normalized_data.get("vendor_serial", ""),
-                row.normalized_data.get("stock_purpose", ""),
-            ]
+            spreadsheet_safe_row(
+                [
+                    row.row_number,
+                    row.get_outcome_display(),
+                    row.outcome_detail,
+                    row.normalized_data.get("brand_name", ""),
+                    row.normalized_data.get("model", ""),
+                    row.normalized_data.get("vendor_serial", ""),
+                    row.normalized_data.get("stock_purpose", ""),
+                ]
+            )
         )
     return buffer.getvalue()

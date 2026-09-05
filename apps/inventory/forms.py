@@ -733,9 +733,15 @@ class ReceiveBulkLineForm(forms.Form):
             serials = [
                 s.strip() for s in (cleaned.get("vendor_serials") or "").splitlines() if s.strip()
             ]
-            if not serials:
-                self.add_error("vendor_serials", "Enter at least one serial for this product.")
+            entered_quantity = cleaned.get("quantity")
+            if not serials and not entered_quantity:
+                self.add_error("quantity", "Enter a quantity, or list at least one serial.")
+            if entered_quantity and entered_quantity < len(serials):
+                self.add_error(
+                    "quantity", "Quantity cannot be less than the number of serials entered."
+                )
             cleaned["parsed_serials"] = serials
+            cleaned["unit_count"] = max(entered_quantity or 0, len(serials))
         elif tracking_method == TrackingMethod.QUANTITY and not cleaned.get("quantity"):
             self.add_error("quantity", "Quantity is required for quantity-tracked products.")
         return cleaned

@@ -8,10 +8,12 @@ from django.db.models import Q
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils.text import slugify
 from django.views import View
 from django.views.generic import ListView
 
 from apps.core.csv_export import CSVExportMixin
+from apps.core.spreadsheets import spreadsheet_safe_row
 from apps.inventory.models import UnitAsset
 from apps.locations.models import Location
 from apps.locations.scoping import accessible_locations
@@ -341,41 +343,49 @@ class ReorderSuggestionsView(LoginRequiredMixin, View):
         response["Content-Disposition"] = 'attachment; filename="reorder_suggestions.csv"'
         writer = csv.writer(response)
         writer.writerow(
-            [
-                "Product",
-                "Location",
-                "Available Quantity",
-                "Target Stock Level",
-                "Min Reorder Quantity",
-                "Suggested Quantity",
-                "Preferred Supplier",
-                "Last Receipt Date",
-                "Last Receipt Quantity",
-                "Last Invoice Number",
-            ]
+            spreadsheet_safe_row(
+                [
+                    "Product",
+                    "Location",
+                    "Available Quantity",
+                    "Target Stock Level",
+                    "Min Reorder Quantity",
+                    "Suggested Quantity",
+                    "Preferred Supplier",
+                    "Last Receipt Date",
+                    "Last Receipt Quantity",
+                    "Last Invoice Number",
+                ]
+            )
         )
         for row in rows:
             writer.writerow(
-                [
-                    str(row["product"]),
-                    str(row["location"]),
-                    row["available_quantity"],
-                    row["target_stock_level"] if row["target_stock_level"] is not None else "",
-                    row["min_reorder_quantity"] if row["min_reorder_quantity"] is not None else "",
-                    (
-                        row["suggested_quantity"]
-                        if row["suggested_quantity"] is not None
-                        else "Configuration required"
-                    ),
-                    row["preferred_supplier"],
-                    row["last_receipt_date"].isoformat() if row["last_receipt_date"] else "",
-                    (
-                        row["last_receipt_quantity"]
-                        if row["last_receipt_quantity"] is not None
-                        else ""
-                    ),
-                    row["last_invoice_number"],
-                ]
+                spreadsheet_safe_row(
+                    [
+                        str(row["product"]),
+                        str(row["location"]),
+                        row["available_quantity"],
+                        row["target_stock_level"] if row["target_stock_level"] is not None else "",
+                        (
+                            row["min_reorder_quantity"]
+                            if row["min_reorder_quantity"] is not None
+                            else ""
+                        ),
+                        (
+                            row["suggested_quantity"]
+                            if row["suggested_quantity"] is not None
+                            else "Configuration required"
+                        ),
+                        row["preferred_supplier"],
+                        row["last_receipt_date"].isoformat() if row["last_receipt_date"] else "",
+                        (
+                            row["last_receipt_quantity"]
+                            if row["last_receipt_quantity"] is not None
+                            else ""
+                        ),
+                        row["last_invoice_number"],
+                    ]
+                )
             )
         return response
 
@@ -521,11 +531,12 @@ class SavedReportRunView(LoginRequiredMixin, View):
 
     def _csv_response(self, report, columns, rows):
         response = HttpResponse(content_type="text/csv")
-        response["Content-Disposition"] = f'attachment; filename="{report.name}.csv"'
+        filename = slugify(report.name) or "report"
+        response["Content-Disposition"] = f'attachment; filename="{filename}.csv"'
         writer = csv.writer(response)
-        writer.writerow(columns)
+        writer.writerow(spreadsheet_safe_row(columns))
         for row in rows:
-            writer.writerow(row)
+            writer.writerow(spreadsheet_safe_row(row))
         return response
 
 

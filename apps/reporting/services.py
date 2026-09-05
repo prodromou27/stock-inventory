@@ -3,7 +3,7 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from apps.core.authorization import is_administrator
 
 from .models import SavedReport
-from .report_builder import ALLOWED_FILTER_OPS, REPORTABLE_FIELDS
+from .report_builder import ALLOWED_FILTER_OPS, REPORTABLE_FIELDS, normalize_filter_value
 
 
 def create_saved_report(*, user, name, base_model, selected_fields, filters, is_shared=False):
@@ -23,13 +23,15 @@ def create_saved_report(*, user, name, base_model, selected_fields, filters, is_
     if not clean_fields:
         raise ValidationError("Choose at least one field.")
 
-    clean_filters = [
-        {"field_key": row["field_key"], "op": row["op"], "value": row["value"]}
-        for row in filters
-        if row.get("field_key") in fields
-        and row.get("op") in ALLOWED_FILTER_OPS
-        and row.get("value")
-    ]
+    clean_filters = []
+    for row in filters:
+        field_key = row.get("field_key")
+        op = row.get("op")
+        value = row.get("value")
+        if field_key not in fields or op not in ALLOWED_FILTER_OPS or not value:
+            continue
+        normalize_filter_value(base_model=base_model, field_key=field_key, op=op, value=value)
+        clean_filters.append({"field_key": field_key, "op": op, "value": value})
 
     # Only an Administrator's reports can be shared with other users —
     # enforced here, not just hidden/disabled in the form, since the form

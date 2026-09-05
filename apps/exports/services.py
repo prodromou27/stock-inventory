@@ -10,6 +10,7 @@ from django.utils import timezone
 from apps.audit.models import AuditEvent
 from apps.audit.services import record_event
 from apps.core.authorization import ADMINISTRATOR, require_role
+from apps.core.spreadsheets import spreadsheet_safe_row
 from apps.inventory.models import StockBalance, UnitAsset
 
 from .models import ExportRunStatus, ExportSchedule, ExportSettings
@@ -102,20 +103,22 @@ def build_inventory_workbook():
     ).order_by("product__brand__name", "product__model", "vendor_serial")
     for asset in assets:
         assets_sheet.append(
-            [
-                asset.product.brand.name,
-                asset.product.model,
-                asset.product.sku,
-                asset.product.product_type.name,
-                asset.vendor_serial,
-                asset.get_status_display(),
-                str(asset.current_location or ""),
-                asset.project_reference,
-                asset.final_customer,
-                asset.supplier,
-                asset.arrival_date.isoformat() if asset.arrival_date else "",
-                asset.last_removal_date.isoformat() if asset.last_removal_date else "",
-            ]
+            spreadsheet_safe_row(
+                [
+                    asset.product.brand.name,
+                    asset.product.model,
+                    asset.product.sku,
+                    asset.product.product_type.name,
+                    asset.vendor_serial,
+                    asset.get_status_display(),
+                    str(asset.current_location or ""),
+                    asset.project_reference,
+                    asset.final_customer,
+                    asset.supplier,
+                    asset.arrival_date.isoformat() if asset.arrival_date else "",
+                    asset.last_removal_date.isoformat() if asset.last_removal_date else "",
+                ]
+            )
         )
 
     balances_sheet = workbook.create_sheet("Stock Balances")
@@ -125,16 +128,18 @@ def build_inventory_workbook():
     ).order_by("product__brand__name", "product__model", "location__name")
     for balance in balances:
         balances_sheet.append(
-            [
-                balance.product.brand.name,
-                balance.product.model,
-                balance.product.sku,
-                balance.product.product_type.name,
-                str(balance.location),
-                balance.on_hand_quantity,
-                balance.reserved_quantity,
-                balance.available_quantity,
-            ]
+            spreadsheet_safe_row(
+                [
+                    balance.product.brand.name,
+                    balance.product.model,
+                    balance.product.sku,
+                    balance.product.product_type.name,
+                    str(balance.location),
+                    balance.on_hand_quantity,
+                    balance.reserved_quantity,
+                    balance.available_quantity,
+                ]
+            )
         )
 
     return workbook

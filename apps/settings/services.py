@@ -13,6 +13,7 @@ from apps.core.authorization import ADMINISTRATOR, require_role
 from .models import SystemSettings
 
 MAX_LOGO_SIZE_BYTES = 2 * 1024 * 1024
+MAX_CERTIFICATE_FILE_SIZE_BYTES = 5 * 1024 * 1024
 _LOGO_SIGNATURES = (
     (b"\x89PNG\r\n\x1a\n", "image/png"),
     (b"\xff\xd8\xff", "image/jpeg"),
@@ -224,6 +225,11 @@ def update_certificate(*, user, cert_file, key_file):
     security trade-off not worth making for this.
     """
     require_role(user, ADMINISTRATOR)
+
+    if cert_file.size > MAX_CERTIFICATE_FILE_SIZE_BYTES:
+        raise ValidationError("Certificate files must be 5 MB or smaller.")
+    if key_file.size > MAX_CERTIFICATE_FILE_SIZE_BYTES:
+        raise ValidationError("Private key files must be 5 MB or smaller.")
 
     cert_bytes = cert_file.read()
     key_bytes = key_file.read()

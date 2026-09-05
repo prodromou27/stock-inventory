@@ -7,7 +7,7 @@ permissions" the same way list screens do).
 
 from datetime import timedelta
 
-from django.db.models import Count, F, Sum
+from django.db.models import Count, F, OuterRef, Subquery, Sum
 from django.utils import timezone
 
 from apps.inventory.access import scope_asset_status_history_queryset, scope_transaction_queryset
@@ -238,13 +238,21 @@ def reorder_suggestions(user, location=None):
     labeled a *suggestion* — this is not a purchase order, supplier
     ordering, or invoicing feature, and creates nothing on its own.
 
-    The per-row last-receipt lookup is an N+1 by design, not an oversight:
-    the base set is already threshold-filtered down to a small result (the
-    same tradeoff low_stock_balances() accepts), so one extra indexed query
-    per row is cheap here in a way it wouldn't be over the full balance
-    table.
+    Receipt metadata is annotated with correlated subqueries so query count
+    remains bounded when many products are below threshold.
     """
-    balances = list(low_stock_balances(user, location=location))
+    last_receipt = InventoryTransactionLine.objects.filter(
+        product_id=OuterRef("product_id"),
+        to_location_id=OuterRef("location_id"),
+        transaction__movement_type=MovementType.RECEIPT,
+    ).order_by("-transaction__occurred_at", "-transaction__created_at")
+    balances = list(
+        low_stock_balances(user, location=location).annotate(
+            last_receipt_date=Subquery(last_receipt.values("transaction__occurred_at")[:1]),
+            last_receipt_quantity=Subquery(last_receipt.values("quantity_delta")[:1]),
+            last_invoice_number=Subquery(last_receipt.values("invoice_number_snapshot")[:1]),
+        )
+    )
     if not balances:
         return []
 
@@ -273,17 +281,6 @@ def reorder_suggestions(user, location=None):
         available = balance.available_quantity
         suggested_quantity = None if target is None else max(target - available, min_reorder or 0)
 
-        last_receipt_line = (
-            InventoryTransactionLine.objects.filter(
-                product=balance.product,
-                to_location=balance.location,
-                transaction__movement_type=MovementType.RECEIPT,
-            )
-            .select_related("transaction")
-            .order_by("-transaction__occurred_at", "-transaction__created_at")
-            .first()
-        )
-
         rows.append(
             {
                 "balance": balance,
@@ -295,15 +292,9 @@ def reorder_suggestions(user, location=None):
                 "preferred_supplier": supplier,
                 "suggested_quantity": suggested_quantity,
                 "configuration_required": target is None,
-                "last_receipt_date": (
-                    last_receipt_line.transaction.occurred_at if last_receipt_line else None
-                ),
-                "last_receipt_quantity": (
-                    last_receipt_line.quantity_delta if last_receipt_line else None
-                ),
-                "last_invoice_number": (
-                    last_receipt_line.invoice_number_snapshot if last_receipt_line else ""
-                ),
+                "last_receipt_date": balance.last_receipt_date,
+                "last_receipt_quantity": balance.last_receipt_quantity,
+                "last_invoice_number": balance.last_invoice_number or "",
             }
         )
     return rows

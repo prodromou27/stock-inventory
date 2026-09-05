@@ -98,6 +98,21 @@ class TestBuildInventoryWorkbook:
         rows = list(balances_sheet.iter_rows(min_row=2, values_only=True))
         assert any(row[5] == 9 for row in rows)
 
+    def test_untrusted_text_is_not_exported_as_a_formula(
+        self, administrator, unit_product, location_tree
+    ):
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial='=HYPERLINK("https://example.invalid")',
+        )
+
+        workbook = build_inventory_workbook()
+        serials = [row[4] for row in workbook["Unit Assets"].iter_rows(min_row=2, values_only=True)]
+        assert '\'=HYPERLINK("https://example.invalid")' in serials
+
 
 @pytest.mark.django_db
 class TestRunExport:

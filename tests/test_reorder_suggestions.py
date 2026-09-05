@@ -26,6 +26,23 @@ def _configure_reorder(product, administrator, **kwargs):
 
 @pytest.mark.django_db
 class TestReorderSuggestionsQuery:
+    def test_query_count_does_not_grow_per_result(
+        self, django_assert_num_queries, administrator, quantity_product, location_tree
+    ):
+        _configure_reorder(
+            quantity_product, administrator, low_stock_threshold=10, target_stock_level=20
+        )
+        receive_stock(
+            user=administrator,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=3,
+        )
+
+        with django_assert_num_queries(3):
+            assert len(reorder_suggestions(administrator)) == 1
+
     def test_configuration_required_when_no_target_is_set(
         self, administrator, quantity_product, location_tree
     ):

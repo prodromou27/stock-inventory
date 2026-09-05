@@ -123,3 +123,10 @@ class RecentlyViewed(models.Model):
             )
         ]
         indexes = [models.Index(fields=["user", "-viewed_at"], name="recentlyviewed_user_idx")]
+
+
+class SubmissionClaim(models.Model):
+    """Single-use stock-form token shared by every application worker."""
+
+    token = models.UUIDField(unique=True)
+    claimed_at = models.DateTimeField(auto_now_add=True, db_index=True)

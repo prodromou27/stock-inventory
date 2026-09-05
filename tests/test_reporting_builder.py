@@ -238,6 +238,19 @@ class TestBuildQueryset:
             assert columns
             list(queryset)  # doesn't raise for any of the five models
 
+    def test_invalid_legacy_typed_filter_is_ignored_instead_of_raising_500(
+        self, administrator, in_scope_asset
+    ):
+        columns, queryset = build_queryset(
+            user=administrator,
+            base_model=ReportBaseModel.UNIT_ASSET,
+            selected_fields=["serial"],
+            filters=[{"field_key": "arrival_date", "op": "gte", "value": "not-a-date"}],
+        )
+
+        assert columns == ["serial"]
+        assert list(queryset)
+
 
 @pytest.mark.django_db
 class TestCreateSavedReport:
@@ -318,6 +331,26 @@ class TestCreateSavedReport:
             ],
         )
         assert report.filters == [{"field_key": "serial", "op": "icontains", "value": "SN"}]
+
+    def test_invalid_typed_filter_is_rejected_before_report_is_saved(self, administrator):
+        with pytest.raises(ValidationError, match="not a valid value"):
+            create_saved_report(
+                user=administrator,
+                name="Invalid date",
+                base_model=ReportBaseModel.UNIT_ASSET,
+                selected_fields=["serial"],
+                filters=[{"field_key": "arrival_date", "op": "gte", "value": "not-a-date"}],
+            )
+
+    def test_contains_filter_is_rejected_for_non_text_field(self, administrator):
+        with pytest.raises(ValidationError, match="text fields"):
+            create_saved_report(
+                user=administrator,
+                name="Invalid operator",
+                base_model=ReportBaseModel.STOCK_BALANCE,
+                selected_fields=["on_hand_quantity"],
+                filters=[{"field_key": "on_hand_quantity", "op": "icontains", "value": "1"}],
+            )
 
 
 @pytest.mark.django_db
@@ -461,6 +494,24 @@ class TestReportBuilderViews:
         )
         assert response.status_code == 200
         assert response["Content-Type"] == "text/csv"
+        assert "SN-REPORT-IN-SCOPE" in response.content.decode()
+
+    def test_legacy_report_with_invalid_typed_filter_does_not_return_500(
+        self, client, administrator, in_scope_asset
+    ):
+        report = SavedReport.objects.create(
+            name="Legacy invalid date",
+            base_model=ReportBaseModel.UNIT_ASSET,
+            selected_fields=["serial"],
+            filters=[{"field_key": "arrival_date", "op": "gte", "value": "not-a-date"}],
+            created_by=administrator,
+            updated_by=administrator,
+        )
+        client.force_login(administrator)
+
+        response = client.get(reverse("reporting:saved_report_run", args=[report.pk]))
+
+        assert response.status_code == 200
         assert "SN-REPORT-IN-SCOPE" in response.content.decode()
 
     def test_list_view_shows_own_and_shared_not_others_private(

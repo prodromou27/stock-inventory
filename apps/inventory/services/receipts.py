@@ -440,10 +440,12 @@ def receive_stock_bulk(
             raise ValidationError(f"Line {index}: cannot receive stock for an inactive product.")
 
         if product.tracking_method == TrackingMethod.UNIT:
-            serials = [s.strip() for s in raw_line.get("vendor_serials", []) if s.strip()]
+            serials = [s.strip() for s in raw_line.get("vendor_serials", [])]
             if not serials:
-                raise ValidationError(f"Line {index}: at least one serial is required.")
+                raise ValidationError(f"Line {index}: at least one unit is required.")
             for serial in serials:
+                if not serial:
+                    continue
                 normalized = " ".join(serial.split()).upper()
                 if normalized in seen_serials:
                     raise ValidationError(

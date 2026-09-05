@@ -11,6 +11,8 @@ import io
 import openpyxl
 from django.core.exceptions import ValidationError
 
+MAX_IMPORT_SIZE_BYTES = 25 * 1024 * 1024
+
 # Canonical column order also used by the downloadable template (services.py).
 COLUMNS = [
     "BRAND",

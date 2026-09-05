@@ -4,6 +4,7 @@ import pytest
 from django.urls import reverse
 from django.utils import timezone
 
+from apps.catalog.models import Product
 from apps.inventory.models import StockBalance, UnitAsset
 from apps.inventory.services.receipts import receive_stock
 
@@ -151,6 +152,74 @@ class TestReceiveStockView:
         assert response.status_code == 200
         assert response.context["show_duplicate_warning"] is True
         assert UnitAsset.objects.filter(vendor_serial="SN-VIEW-DUP").count() == 1
+
+    def test_duplicate_serial_acknowledgement_can_retry_the_same_token(
+        self, client, stock_manager_with_room_access, unit_product, location_tree
+    ):
+        receive_stock(
+            user=stock_manager_with_room_access,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-ACK-RETRY",
+        )
+        client.force_login(stock_manager_with_room_access)
+        token = (
+            client.get(reverse("inventory:receive_stock"))
+            .context["form"]["submission_token"]
+            .value()
+        )
+        payload = {
+            "brand_name": unit_product.brand.name,
+            "model": unit_product.model,
+            "sku": unit_product.sku,
+            "product_type_name": unit_product.product_type.name,
+            "category": unit_product.category,
+            "confirmed": "true",
+            "submission_token": token,
+            "location": location_tree["room"].pk,
+            "occurred_at": date.today().isoformat(),
+            "vendor_serials": "SN-ACK-RETRY",
+        }
+
+        warning = client.post(reverse("inventory:receive_stock"), payload)
+        assert warning.context["show_duplicate_warning"] is True
+        payload["duplicate_serial_acknowledged"] = "true"
+        accepted = client.post(reverse("inventory:receive_stock"), payload)
+
+        assert accepted.status_code == 200
+        assert UnitAsset.objects.filter(vendor_serial="SN-ACK-RETRY").count() == 2
+
+    def test_failed_receipt_rolls_back_new_product_creation(
+        self, client, stock_manager_with_room_access, unit_product, location_tree
+    ):
+        receive_stock(
+            user=stock_manager_with_room_access,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-ATOMIC-PRODUCT",
+        )
+        client.force_login(stock_manager_with_room_access)
+
+        response = client.post(
+            reverse("inventory:receive_stock"),
+            {
+                "brand_name": "Rollback Brand",
+                "model": "Rollback Model",
+                "product_type_name": "Router",
+                "category": unit_product.category,
+                "confirmed": "true",
+                "location": location_tree["room"].pk,
+                "occurred_at": date.today().isoformat(),
+                "vendor_serials": "SN-ATOMIC-PRODUCT",
+            },
+        )
+
+        assert response.context["show_duplicate_warning"] is True
+        assert not Product.objects.filter(
+            brand__name="Rollback Brand", model="Rollback Model"
+        ).exists()
 
     def test_arrival_date_defaults_to_todays_business_date(
         self, client, stock_manager_with_room_access, location_tree

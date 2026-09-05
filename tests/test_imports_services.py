@@ -473,6 +473,14 @@ class TestDownloads:
         assert "SN-RESULT" in content
         assert "Imported" in content
 
+    def test_results_csv_escapes_spreadsheet_formulas(self, administrator, location_tree):
+        upload = _csv_upload([_base_row(LOCATION="Room A", **{"S/N": "=1+1"})])
+        batch, _ = services.create_batch_from_upload(uploaded_file=upload, user=administrator)
+
+        content = services.build_results_csv(batch)
+
+        assert "'=1+1" in content
+
     def test_template_xlsx_round_trips_through_the_parser(self, administrator, location_tree):
         import openpyxl
 

@@ -3,6 +3,8 @@ from django import forms
 from apps.inventory.models import StockPurpose
 from apps.locations.models import Location
 
+from .parsing import MAX_IMPORT_SIZE_BYTES
+
 
 class ImportUploadForm(forms.Form):
     file = forms.FileField(label="Excel (.xlsx) or CSV (.csv) file")
@@ -26,6 +28,8 @@ class ImportUploadForm(forms.Form):
         name = (uploaded.name or "").lower()
         if not (name.endswith(".xlsx") or name.endswith(".csv")):
             raise forms.ValidationError("Only .xlsx or .csv files are supported.")
+        if uploaded.size > MAX_IMPORT_SIZE_BYTES:
+            raise forms.ValidationError("Import files must be 25 MB or smaller.")
         return uploaded
 
     def clean(self):
