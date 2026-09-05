@@ -22,6 +22,7 @@
   <form method="post" class="card"
         data-confirm="Apply this correction directly? Prefer the normal workflow screens whenever they cover the situation.">
     {% csrf_token %}
+    {% if finding_id %}<input type="hidden" name="finding" value="{{ finding_id }}">{% endif %}
     {% for field in form %}
       {% include "_form_field.html" with field=field %}
     {% endfor %}

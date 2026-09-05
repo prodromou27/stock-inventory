@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% load ui_extras %}
+
+{% block title %}Data Quality Centre — Stock Inventory{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>Data Quality Centre</h1>
+      <div class="page-header__subtitle">
+        Detected issues across inventory, products, and locations — never auto-corrects anything;
+        every fix here is an audited, explicit action.
+      </div>
+    </div>
+    <div class="page-header__actions">
+      <form method="post" action="{% url 'dataquality:run_detection' %}">
+        {% csrf_token %}
+        <button type="submit" class="btn btn--primary">Refresh scan</button>
+      </form>
+      <a class="btn" href="?{{ request.GET.urlencode }}{% if request.GET %}&{% else %}?{% endif %}format=csv">Export CSV</a>
+    </div>
+  </div>
+
+  <div class="card-grid">
+    <div class="card"><strong>{{ counts.open }}</strong> open</div>
+    <div class="card"><strong>{{ counts.resolved }}</strong> resolved</div>
+    <div class="card"><strong>{{ counts.dismissed }}</strong> dismissed</div>
+  </div>
+
+  <form method="get" class="toolbar">
+    <label>Status
+      <select name="status">
+        <option value="open" {% if selected_status == "open" %}selected{% endif %}>Open</option>
+        <option value="resolved" {% if selected_status == "resolved" %}selected{% endif %}>Resolved</option>
+        <option value="dismissed" {% if selected_status == "dismissed" %}selected{% endif %}>Dismissed</option>
+        <option value="all" {% if selected_status == "all" %}selected{% endif %}>All</option>
+      </select>
+    </label>
+    <label>Severity
+      <select name="severity">
+        <option value="">Any severity</option>
+        {% for value, label in severities %}
+          <option value="{{ value }}" {% if filters.severity == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Issue type
+      <select name="issue_type">
+        <option value="">Any issue type</option>
+        {% for value, label in issue_types %}
+          <option value="{{ value }}" {% if filters.issue_type == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Country
+      <select name="country">
+        <option value="">Any country</option>
+        {% for country in countries %}
+          <option value="{{ country }}" {% if filters.country == country %}selected{% endif %}>{{ country }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit" class="btn btn--primary">Filter</button>
+  </form>
+
+  {% if findings %}
+    <div class="table-scroll" tabindex="0">
+      <table class="dense-table">
+        <thead>
+          <tr>
+            <th>Severity</th>
+            <th>Issue type</th>
+            <th>Record</th>
+            <th>Country</th>
+            <th>Location</th>
+            <th>Explanation</th>
+            <th>Recommended correction</th>
+            <th>Detected</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for finding in findings %}
+            <tr>
+              <td><span class="badge {{ finding.severity|badge_class }}">{{ finding.get_severity_display }}</span></td>
+              <td>{{ finding.get_issue_type_display }}</td>
+              <td>{{ finding.object_type }} ({{ finding.object_id|truncatechars:8 }})</td>
+              <td>{{ finding.country|default:"—" }}</td>
+              <td>{{ finding.location_label|default:"—" }}</td>
+              <td>{{ finding.explanation }}</td>
+              <td>{{ finding.recommended_correction|default:"—" }}</td>
+              <td>{{ finding.detected_at|date:"Y-m-d" }}</td>
+              <td>
+                <span class="badge {{ finding.status|badge_class }}">{{ finding.get_status_display }}</span>
+                {% if finding.status == "resolved" or finding.status == "dismissed" %}
+                  <div class="text-muted">{{ finding.resolution_note }}</div>
+                {% endif %}
+              </td>
+              <td class="actions-cell">
+                {% if finding.status == "open" %}
+                  {% if finding.correction_url %}
+                    <a class="btn btn--sm" href="{{ finding.correction_url }}">Correct</a>
+                  {% endif %}
+                  {% if finding.object_url %}
+                    <a class="btn btn--sm btn--ghost" href="{{ finding.object_url }}">View record</a>
+                  {% endif %}
+                  <form method="post" action="{% url 'dataquality:resolve_finding' pk=finding.pk %}" class="inline-form">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn--sm btn--ghost">Mark resolved</button>
+                  </form>
+                  <form method="post" action="{% url 'dataquality:dismiss_finding' pk=finding.pk %}" class="inline-form">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn--sm btn--ghost">Dismiss</button>
+                  </form>
+                {% elif finding.object_url %}
+                  <a class="btn btn--sm btn--ghost" href="{{ finding.object_url }}">View record</a>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if is_paginated %}
+      <nav class="pagination">
+        {% if page_obj.has_previous %}<a href="{% querystring page=page_obj.previous_page_number %}">Previous</a>{% endif %}
+        <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+        {% if page_obj.has_next %}<a href="{% querystring page=page_obj.next_page_number %}">Next</a>{% endif %}
+      </nav>
+    {% endif %}
+  {% else %}
+    <p class="empty-state">No findings for this filter.</p>
+  {% endif %}
+{% endblock %}

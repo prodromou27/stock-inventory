@@ -168,6 +168,52 @@ def correct_balance(
 
 
 @transaction.atomic
+def correct_reference_fields(
+    *, user, unit_asset, reason, project_reference=None, final_customer=None
+):
+    """Administrator-only. Directly edits project_reference/final_customer
+    — a plain descriptive-field correction, not a ledger movement (status/
+    location are untouched), used by apps.dataquality's "customer stock
+    missing customer/project reference" finding. Unlike the ordinary inline
+    grid-field edit (apps.inventory.views.AssetGridFieldUpdateView), this
+    requires a reason and is always an ADMIN_CORRECTION audit event — a
+    correction taken from the Data Quality Centre gets the same
+    accountability trail as every other administrator correction, not the
+    lighter-weight RECORD_UPDATED a routine edit gets.
+    """
+    require_role(user, ADMINISTRATOR)
+    if not reason:
+        raise ValidationError("A reason is required for an administrator correction.")
+
+    asset = UnitAsset.objects.select_for_update().get(pk=unit_asset.pk)
+    old_values = {
+        "project_reference": asset.project_reference,
+        "final_customer": asset.final_customer,
+    }
+    if project_reference is not None:
+        asset.project_reference = project_reference
+    if final_customer is not None:
+        asset.final_customer = final_customer
+    asset.updated_by = user
+    asset.full_clean(exclude=["normalized_serial"])
+    asset.save()
+
+    new_values = {
+        "project_reference": asset.project_reference,
+        "final_customer": asset.final_customer,
+    }
+    record_event(
+        actor=user,
+        event_type=AuditEvent.EventType.ADMIN_CORRECTION,
+        obj=asset,
+        summary=f"Administrator correction: {asset} reference fields updated ({reason})",
+        old_values=old_values,
+        new_values=new_values,
+    )
+    return asset
+
+
+@transaction.atomic
 def reverse_transaction(*, user, original_transaction, occurred_at, reason):
     """Administrator-only. Undoes the *effect* of a specific completed
     transaction by writing a new transaction that restores every line's

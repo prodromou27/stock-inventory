@@ -35,6 +35,7 @@ INSTALLED_APPS = [
     "apps.imports",
     "apps.exports",
     "apps.settings",
+    "apps.dataquality",
 ]
 
 MIDDLEWARE = [

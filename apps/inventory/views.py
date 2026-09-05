@@ -2639,6 +2639,32 @@ class RepairDamagedView(LoginRequiredMixin, RoleRequiredMixin, View):
         )
 
 
+def _resolve_linked_finding(request, *, reason):
+    """Data Quality Centre correction links (templates/dataquality/*) carry
+    a `finding` id so completing the correction here also resolves that
+    finding in the same request, per that app's "not just on next rescan"
+    requirement — a plain visit to this same correction page (the existing,
+    unrelated flow) simply has no `finding` param and this is a no-op.
+    Never lets a finding-resolution problem undo an already-successful
+    correction: any failure here is swallowed, not raised.
+    """
+    finding_id = request.POST.get("finding")
+    if not finding_id:
+        return
+    from apps.dataquality.models import DataQualityFinding, DataQualityStatus
+    from apps.dataquality.services import resolve_finding
+
+    finding = DataQualityFinding.objects.filter(
+        pk=finding_id, status=DataQualityStatus.OPEN
+    ).first()
+    if finding is None:
+        return
+    try:
+        resolve_finding(finding=finding, user=request.user, resolution_note=reason)
+    except (ValidationError, PermissionDenied):
+        pass
+
+
 class AdminCorrectUnitView(LoginRequiredMixin, RoleRequiredMixin, View):
     allowed_roles = (ADMINISTRATOR,)
     template_name = "inventory/admin_correct_unit_form.html"
@@ -2648,7 +2674,11 @@ class AdminCorrectUnitView(LoginRequiredMixin, RoleRequiredMixin, View):
         form = AdminCorrectUnitForm(
             initial={"to_status": asset.status, "to_location": asset.current_location}
         )
-        return render(request, self.template_name, {"form": form, "asset": asset})
+        return render(
+            request,
+            self.template_name,
+            {"form": form, "asset": asset, "finding_id": request.GET.get("finding", "")},
+        )
 
     def post(self, request, pk):
         asset = get_object_or_404(UnitAsset, pk=pk)
@@ -2671,6 +2701,9 @@ class AdminCorrectUnitView(LoginRequiredMixin, RoleRequiredMixin, View):
             form.add_error(None, exc)
             return render(request, self.template_name, {"form": form, "asset": asset})
 
+        _resolve_linked_finding(
+            request, reason=f"Corrected via administrator correction: {data['reason']}"
+        )
         messages.success(request, "Correction applied.")
         return redirect(asset.get_absolute_url())
 
@@ -2682,7 +2715,11 @@ class AdminCorrectBalanceView(LoginRequiredMixin, RoleRequiredMixin, View):
     def get(self, request, pk):
         balance = get_object_or_404(StockBalance, pk=pk)
         form = AdminCorrectBalanceForm(initial={"new_on_hand_quantity": balance.on_hand_quantity})
-        return render(request, self.template_name, {"form": form, "balance": balance})
+        return render(
+            request,
+            self.template_name,
+            {"form": form, "balance": balance, "finding_id": request.GET.get("finding", "")},
+        )
 
     def post(self, request, pk):
         balance = get_object_or_404(StockBalance, pk=pk)
@@ -2705,6 +2742,9 @@ class AdminCorrectBalanceView(LoginRequiredMixin, RoleRequiredMixin, View):
             form.add_error(None, exc)
             return render(request, self.template_name, {"form": form, "balance": balance})
 
+        _resolve_linked_finding(
+            request, reason=f"Corrected via administrator correction: {data['reason']}"
+        )
         messages.success(request, "Correction applied.")
         return redirect(balance.get_absolute_url())
 

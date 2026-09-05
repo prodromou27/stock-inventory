@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block title %}Correct Reference Fields — Stock Inventory{% endblock %}
+
+{% block content %}
+  <p><a href="{% url 'dataquality:workspace' %}">&larr; Data Quality Centre</a></p>
+  <div class="page-header">
+    <div>
+      <h1>Correct reference fields</h1>
+      <div class="page-header__subtitle">{{ finding.explanation }}</div>
+    </div>
+  </div>
+
+  {% if form.non_field_errors %}
+    <p class="messages__item messages__item--error">{{ form.non_field_errors|join:" " }}</p>
+  {% endif %}
+
+  <form method="post" class="card">
+    {% csrf_token %}
+    {% for field in form %}
+      {% include "_form_field.html" with field=field %}
+    {% endfor %}
+    <div class="form-actions">
+      <button type="submit" class="btn btn--primary">Apply correction</button>
+    </div>
+  </form>
+{% endblock %}

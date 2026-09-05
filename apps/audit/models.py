@@ -41,6 +41,10 @@ class AuditEvent(UUIDPrimaryKeyModel, AppendOnlyModel):
             "component_association_changed",
             "Component association changed",
         )
+        DATA_QUALITY_FINDING_RESOLVED = (
+            "data_quality_finding_resolved",
+            "Data quality finding resolved",
+        )
 
     occurred_at = models.DateTimeField(auto_now_add=True)
     actor = models.ForeignKey(

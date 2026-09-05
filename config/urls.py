@@ -31,5 +31,6 @@ urlpatterns = [
     path("imports/", include("apps.imports.urls")),
     path("exports/", include("apps.exports.urls")),
     path("settings/", include("apps.settings.urls")),
+    path("data-quality/", include("apps.dataquality.urls")),
     path("", include("apps.core.urls")),
 ]
