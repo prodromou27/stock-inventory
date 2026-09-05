@@ -68,7 +68,8 @@ class AuditEvent(UUIDPrimaryKeyModel, AppendOnlyModel):
         ordering = ["-occurred_at"]
         indexes = [
             models.Index(fields=["object_type", "object_id"], name="audit_object_idx"),
-            models.Index(fields=["actor"], name="audit_actor_idx"),
+            # actor's own single-column index dropped — redundant with
+            # Django's automatic FK index.
             models.Index(fields=["event_type"], name="audit_event_type_idx"),
             models.Index(fields=["occurred_at"], name="audit_occurred_at_idx"),
         ]

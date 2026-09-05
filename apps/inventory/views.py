@@ -1775,6 +1775,15 @@ def _preselected_ids(request):
     return set(request.GET.getlist("unit_asset_ids"))
 
 
+# The real UI for both pickers is the paginated, remote-filtered Tabulator
+# grid (AssetPickerDataView/BalancePickerDataView, capped at 200/page
+# already) — this no-JS fallback table exists only so the form still works
+# without JavaScript. Rendering every eligible row into it uncapped meant
+# several MB of HTML on every GET of Transfer/Reserve/Assign/Deliver/
+# Return/Dispose/Damage/Lost once there are thousands of eligible rows.
+_PICKER_FALLBACK_LIMIT = 200
+
+
 def _eligible_assets(request, statuses):
     queryset = scope_queryset(
         request.user,
@@ -1785,7 +1794,7 @@ def _eligible_assets(request, statuses):
     product_id = request.GET.get("product")
     if product_id:
         queryset = queryset.filter(product_id=product_id)
-    return queryset.order_by("product__brand__name", "product__model")
+    return queryset.order_by("product__brand__name", "product__model")[:_PICKER_FALLBACK_LIMIT]
 
 
 def _status_param(statuses):
@@ -1920,6 +1929,16 @@ def _eligible_balances(request):
     return queryset.order_by("product__brand__name", "product__model")
 
 
+def _eligible_balances_for_fallback(request):
+    """_eligible_balances(), capped for the picker's no-JS fallback table
+    (see _PICKER_FALLBACK_LIMIT) — a plain slice, not applied inside
+    _eligible_balances() itself, since BalancePickerDataView (the real,
+    paginated grid data source) further filters/sorts/paginates that same
+    queryset, which a slice would make immutable to.
+    """
+    return _eligible_balances(request)[:_PICKER_FALLBACK_LIMIT]
+
+
 BALANCE_PICKER_SORT_FIELDS = {
     "brand": "product__brand__name",
     "model": "product__model",
@@ -2051,7 +2070,7 @@ class TransferView(LoginRequiredMixin, RoleRequiredMixin, View):
             {
                 "form": form,
                 "assets": assets,
-                "balances": _eligible_balances(request),
+                "balances": _eligible_balances_for_fallback(request),
                 "preselected_ids": _preselected_ids(request),
                 "eligible_statuses": _status_param(eligible_statuses),
             },
@@ -2061,7 +2080,7 @@ class TransferView(LoginRequiredMixin, RoleRequiredMixin, View):
         form = TransferForm(request.POST, user=request.user)
         unit_asset_ids = request.POST.getlist("unit_asset_ids")
         assets = _eligible_assets(request, [UnitStatus.IN_STOCK, UnitStatus.RESERVED])
-        balances = _eligible_balances(request)
+        balances = _eligible_balances_for_fallback(request)
         if not form.is_valid():
             return render(
                 request, self.template_name, {"form": form, "assets": assets, "balances": balances}
@@ -2111,7 +2130,7 @@ class ReserveView(LoginRequiredMixin, RoleRequiredMixin, View):
             {
                 "form": form,
                 "assets": assets,
-                "balances": _eligible_balances(request),
+                "balances": _eligible_balances_for_fallback(request),
                 "preselected_ids": _preselected_ids(request),
                 "eligible_statuses": _status_param(eligible_statuses),
             },
@@ -2121,7 +2140,7 @@ class ReserveView(LoginRequiredMixin, RoleRequiredMixin, View):
         form = ReserveForm(request.POST, user=request.user)
         unit_asset_ids = request.POST.getlist("unit_asset_ids")
         assets = _eligible_assets(request, [UnitStatus.IN_STOCK])
-        balances = _eligible_balances(request)
+        balances = _eligible_balances_for_fallback(request)
         if not form.is_valid():
             return render(
                 request, self.template_name, {"form": form, "assets": assets, "balances": balances}
@@ -2218,7 +2237,7 @@ class AssignView(LoginRequiredMixin, RoleRequiredMixin, View):
             {
                 "form": form,
                 "assets": assets,
-                "balances": _eligible_balances(request),
+                "balances": _eligible_balances_for_fallback(request),
                 "preselected_ids": _preselected_ids(request),
                 "eligible_statuses": _status_param(eligible_statuses),
             },
@@ -2228,7 +2247,7 @@ class AssignView(LoginRequiredMixin, RoleRequiredMixin, View):
         form = AssignForm(request.POST, user=request.user)
         unit_asset_ids = request.POST.getlist("unit_asset_ids")
         assets = _eligible_assets(request, [UnitStatus.IN_STOCK, UnitStatus.RESERVED])
-        balances = _eligible_balances(request)
+        balances = _eligible_balances_for_fallback(request)
         if not form.is_valid():
             return render(
                 request, self.template_name, {"form": form, "assets": assets, "balances": balances}
@@ -2344,7 +2363,7 @@ class DeliverView(LoginRequiredMixin, RoleRequiredMixin, View):
             {
                 "form": form,
                 "assets": assets,
-                "balances": _eligible_balances(request),
+                "balances": _eligible_balances_for_fallback(request),
                 "preselected_ids": _preselected_ids(request),
                 "eligible_statuses": _status_param(eligible_statuses),
                 "customer_choices": _customer_search_results(request.user),
@@ -2355,7 +2374,7 @@ class DeliverView(LoginRequiredMixin, RoleRequiredMixin, View):
         form = DeliverForm(request.POST, user=request.user)
         unit_asset_ids = request.POST.getlist("unit_asset_ids")
         assets = _eligible_assets(request, [UnitStatus.IN_STOCK, UnitStatus.RESERVED])
-        balances = _eligible_balances(request)
+        balances = _eligible_balances_for_fallback(request)
         if not form.is_valid():
             return render(
                 request,
@@ -2618,7 +2637,7 @@ class _DispositionView(LoginRequiredMixin, RoleRequiredMixin, View):
             {
                 "form": form,
                 "assets": assets,
-                "balances": _eligible_balances(request),
+                "balances": _eligible_balances_for_fallback(request),
                 "page_title": self.page_title,
                 "preselected_ids": _preselected_ids(request),
                 "eligible_statuses": _status_param(self.eligible_statuses),
@@ -2631,7 +2650,7 @@ class _DispositionView(LoginRequiredMixin, RoleRequiredMixin, View):
         )
         unit_asset_ids = request.POST.getlist("unit_asset_ids")
         assets = _eligible_assets(request, self.eligible_statuses)
-        balances = _eligible_balances(request)
+        balances = _eligible_balances_for_fallback(request)
         if not form.is_valid():
             return render(
                 request,

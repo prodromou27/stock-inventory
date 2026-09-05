@@ -158,8 +158,8 @@ class Product(UUIDPrimaryKeyModel, UserStampedModel):
             models.Index(
                 fields=["normalized_model", "normalized_sku"], name="product_normalized_idx"
             ),
-            models.Index(fields=["brand"], name="product_brand_idx"),
-            models.Index(fields=["product_type"], name="product_type_idx"),
+            # brand/product_type dropped their own single-column indexes —
+            # redundant with Django's automatic FK index.
             models.Index(fields=["is_active"], name="product_active_idx"),
             # Trigram indexes backing GlobalSearchView's TrigramSimilarity ranking —
             # see Brand.Meta's index for why icontains alone can't use these.

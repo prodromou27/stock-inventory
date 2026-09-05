@@ -389,6 +389,32 @@ class TestCheckOrphanedTransactionReference:
             issue_type="orphaned_transaction_reference"
         ).exists()
 
+    def test_query_count_does_not_scale_with_asset_count(
+        self, administrator, unit_product, location_tree, django_assert_max_num_queries
+    ):
+        """Regression test: this check used to issue one AssetStatusHistory
+        query per UnitAsset (8,000+ queries at production scale, inside
+        the single @transaction.atomic block run_detection() wraps the
+        whole scan in). The latest-history lookup is now one correlated
+        subquery per page of assets, not per asset — query count must stay
+        flat as the number of assets grows, not scale linearly with it.
+        """
+        from apps.dataquality.checks import check_orphaned_transaction_reference
+        from apps.locations.scoping import location_breadcrumb_map
+
+        for i in range(15):
+            receive_stock(
+                user=administrator,
+                product=unit_product,
+                location=location_tree["room"],
+                occurred_at=date.today(),
+                vendor_serial=f"SN-QCOUNT-{i}",
+            )
+
+        breadcrumbs = location_breadcrumb_map()
+        with django_assert_max_num_queries(5):
+            list(check_orphaned_transaction_reference(breadcrumbs))
+
 
 @pytest.mark.django_db
 class TestRunDetectionLifecycle:

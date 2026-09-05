@@ -1,3 +1,4 @@
+import io
 from datetime import date
 
 import openpyxl
@@ -67,6 +68,20 @@ class TestUpdateSettings:
         assert ExportSettings.objects.count() == 1
 
 
+def _reload_readable(workbook):
+    """build_inventory_workbook() returns a write_only=True Workbook (streamed
+    straight to disk-backed temp storage — see its docstring for why), which
+    openpyxl doesn't support reading back from directly. Save to an in-memory
+    buffer and reopen in read mode, same as every other write_only-workbook
+    test in this codebase (e.g. tests/test_reporting_builder.py's XLSX
+    export test).
+    """
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    buffer.seek(0)
+    return openpyxl.load_workbook(buffer, read_only=True)
+
+
 @pytest.mark.django_db
 class TestBuildInventoryWorkbook:
     def test_includes_units_and_balances(
@@ -87,7 +102,7 @@ class TestBuildInventoryWorkbook:
             quantity=9,
         )
 
-        workbook = build_inventory_workbook()
+        workbook = _reload_readable(build_inventory_workbook())
         assert workbook.sheetnames == ["Unit Assets", "Stock Balances"]
 
         assets_sheet = workbook["Unit Assets"]
@@ -109,7 +124,7 @@ class TestBuildInventoryWorkbook:
             vendor_serial='=HYPERLINK("https://example.invalid")',
         )
 
-        workbook = build_inventory_workbook()
+        workbook = _reload_readable(build_inventory_workbook())
         serials = [row[4] for row in workbook["Unit Assets"].iter_rows(min_row=2, values_only=True)]
         assert '\'=HYPERLINK("https://example.invalid")' in serials
 

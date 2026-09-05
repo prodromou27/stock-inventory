@@ -183,7 +183,12 @@ class UnitAsset(UUIDPrimaryKeyModel, UserStampedModel):
             models.Index(fields=["product", "status"], name="unitasset_product_status_idx"),
             models.Index(fields=["status"], name="unitasset_status_idx"),
             models.Index(fields=["stock_purpose"], name="unitasset_stock_purpose_idx"),
-            models.Index(fields=["current_location"], name="unitasset_location_idx"),
+            # current_location dropped its own single-column index — Django
+            # already creates one for every ForeignKey, so this duplicated it
+            # (pure write overhead, never chosen by the planner over the
+            # automatic one). created_at is the grid's default sort and had
+            # no index of its own.
+            models.Index(fields=["created_at"], name="unitasset_created_at_idx"),
             models.Index(fields=["project_reference"], name="unitasset_project_ref_idx"),
             models.Index(fields=["final_customer"], name="unitasset_final_customer_idx"),
             models.Index(fields=["arrival_date"], name="unitasset_arrival_date_idx"),
@@ -263,7 +268,15 @@ class AssetStatusHistory(UUIDPrimaryKeyModel, AppendOnlyModel):
 
     class Meta:
         ordering = ["occurred_at"]
-        indexes = [models.Index(fields=["unit_asset"], name="assetstatus_unit_asset_idx")]
+        # unit_asset's own single-column index dropped — redundant with the
+        # automatic FK index — in favor of a composite covering the asset
+        # timeline's actual query shape (filter by asset, sort by
+        # occurred_at); the plain occurred_at index backs the "Complete
+        # asset movement history" report's own ordering.
+        indexes = [
+            models.Index(fields=["occurred_at"], name="assetstatus_occurred_at_idx"),
+            models.Index(fields=["unit_asset", "occurred_at"], name="assetstatus_asset_occ_idx"),
+        ]
         verbose_name_plural = "asset status history"
 
 
@@ -313,7 +326,9 @@ class StockBalance(UUIDPrimaryKeyModel):
                 name="stockbalance_reserved_lte_on_hand",
             ),
         ]
-        indexes = [models.Index(fields=["location"], name="stockbalance_location_idx")]
+        # location's own single-column index dropped — redundant with
+        # Django's automatic FK index — and the unique constraint above
+        # already covers (product, location, stock_purpose) lookups.
 
     def __str__(self):
         return f"{self.product} @ {self.location}: {self.on_hand_quantity}"
@@ -386,10 +401,15 @@ class InventoryTransaction(UUIDPrimaryKeyModel, AppendOnlyModel):
     class Meta:
         indexes = [
             models.Index(fields=["movement_type"], name="txn_movement_type_idx"),
-            models.Index(fields=["performed_by"], name="txn_performed_by_idx"),
-            models.Index(fields=["occurred_at"], name="txn_occurred_at_idx"),
-            models.Index(fields=["source_location"], name="txn_source_location_idx"),
-            models.Index(fields=["destination_location"], name="txn_destination_location_idx"),
+            # performed_by/source_location/destination_location dropped
+            # their own single-column indexes — redundant with Django's
+            # automatic FK index. occurred_at's single-column index is
+            # replaced by a composite with created_at: every hub/report
+            # query here orders by (occurred_at, created_at) as a tie-
+            # breaker, and the composite still serves an occurred_at-only
+            # query via its leading column, so keeping both would itself
+            # have been redundant.
+            models.Index(fields=["occurred_at", "created_at"], name="txn_occurred_created_idx"),
             models.Index(fields=["project_reference"], name="txn_project_ref_idx"),
             models.Index(fields=["final_customer"], name="txn_final_customer_idx"),
         ]
@@ -455,6 +475,7 @@ class StockReservation(UUIDPrimaryKeyModel):
             ),
             models.Index(fields=["project_reference"], name="reservation_project_ref_idx"),
             models.Index(fields=["final_customer"], name="reservation_final_cust_idx"),
+            models.Index(fields=["created_at"], name="reservation_created_at_idx"),
         ]
         constraints = [
             models.CheckConstraint(
@@ -521,10 +542,9 @@ class InventoryTransactionLine(UUIDPrimaryKeyModel, AppendOnlyModel):
 
     class Meta:
         ordering = ["transaction", "line_number"]
+        # transaction/unit_asset/product each dropped their own single-
+        # column index — redundant with Django's automatic FK index.
         indexes = [
-            models.Index(fields=["transaction"], name="txnline_transaction_idx"),
-            models.Index(fields=["unit_asset"], name="txnline_unit_asset_idx"),
-            models.Index(fields=["product"], name="txnline_product_idx"),
             models.Index(fields=["project_reference_snapshot"], name="txnline_project_ref_idx"),
             models.Index(fields=["final_customer_snapshot"], name="txnline_final_customer_idx"),
         ]

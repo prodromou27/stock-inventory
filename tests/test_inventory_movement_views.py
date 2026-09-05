@@ -152,6 +152,30 @@ class TestTransferView:
         assert "quantity_product" not in response.context["form"].fields
         assert "quantity_amount" not in response.context["form"].fields
 
+    def test_asset_picker_fallback_table_is_capped(
+        self, client, stock_manager_with_room_access, unit_product, location_tree, monkeypatch
+    ):
+        """Regression test: the no-JS fallback table used to render every
+        eligible asset (the real UI is the paginated Tabulator grid, which
+        already caps at 200/page) — at thousands of eligible assets that
+        was several MB of HTML on every GET of a movement form.
+        """
+        import apps.inventory.views as inventory_views
+
+        monkeypatch.setattr(inventory_views, "_PICKER_FALLBACK_LIMIT", 2)
+        for i in range(4):
+            receive_stock(
+                user=stock_manager_with_room_access,
+                product=unit_product,
+                location=location_tree["room"],
+                occurred_at=date.today(),
+                vendor_serial=f"SN-CAP-{i}",
+            )
+
+        client.force_login(stock_manager_with_room_access)
+        response = client.get(reverse("inventory:transfer"))
+        assert len(response.context["assets"]) == 2
+
     def test_full_flow(
         self, client, stock_manager_with_room_access, unit_product, location_tree, rack
     ):

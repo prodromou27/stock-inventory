@@ -22,6 +22,19 @@ def granted_location_paths(user):
     user, unlike accessible_locations()'s full expanded set, which is why
     apps.inventory.access uses this directly for its own multi-field OR
     query rather than iterating every accessible Location).
+
+    Deliberately uncached, recomputed fresh on every call: a location-access
+    grant/revoke must take effect on the very next call, not just the next
+    request (tests/test_scoping.py::
+    test_revoking_country_access_immediately_blocks_all_descendants tests
+    exactly this and documents the same guarantee). A per-instance or
+    per-request memoization scheme was considered for the N+1 this causes
+    in per-asset loops (apps.inventory.access.require_asset_access /
+    require_location_access, called once per asset in every movement
+    service) but rejected: within a single service call an already-fetched
+    `user` object can have its access revoked and re-checked against
+    (exactly what that test does), and any cache scoped to that object's
+    lifetime would serve the stale answer.
     """
     from apps.accounts.models import UserLocationAccess
 

@@ -80,6 +80,7 @@ def _search_results(user, query, limit):
     # Imported here, not at module level, for the same reason HomeView's
     # dashboard_summary import is local — apps.core stays dependency-free.
     from django.contrib.postgres.search import TrigramSimilarity
+    from django.db import connection
     from django.db.models import Q
 
     from apps.catalog.models import Product
@@ -90,20 +91,36 @@ def _search_results(user, query, limit):
     if not query:
         return {"products": [], "assets": [], "transactions": []}
 
+    # Summing three TrigramSimilarity() calls and filtering on the total
+    # (the previous approach) can't use any of the GIN trigram indexes on
+    # these fields — Postgres has to compute similarity for every row. The
+    # `%` operator (Django's __trigram_similar lookup) is what the index
+    # actually accelerates, so that's the filter now; TrigramSimilarity
+    # stays, unchanged, purely for order_by() ranking of the already-
+    # narrowed result. `%` reads its threshold from the pg_trgm.
+    # similarity_threshold session GUC rather than taking one per call, so
+    # it's set here to match TRIGRAM_THRESHOLD — safe to set on every
+    # search request since no other query in this app uses a trigram
+    # operator at a different threshold.
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT set_limit(%s)", [TRIGRAM_THRESHOLD])
+
     products = list(
         Product.objects.select_related("brand", "product_type")
         .filter(is_active=True)
-        .annotate(
-            similarity=TrigramSimilarity("model", query)
-            + TrigramSimilarity("sku", query)
-            + TrigramSimilarity("brand__name", query)
-        )
         .filter(
-            Q(similarity__gt=TRIGRAM_THRESHOLD)
+            Q(model__trigram_similar=query)
+            | Q(sku__trigram_similar=query)
+            | Q(brand__name__trigram_similar=query)
             | Q(brand__name__icontains=query)
             | Q(model__icontains=query)
             | Q(sku__icontains=query)
             | Q(product_type__name__icontains=query)
+        )
+        .annotate(
+            similarity=TrigramSimilarity("model", query)
+            + TrigramSimilarity("sku", query)
+            + TrigramSimilarity("brand__name", query)
         )
         .order_by("-similarity", "brand__name", "model")[:limit]
     )
@@ -113,16 +130,18 @@ def _search_results(user, query, limit):
             UnitAsset.objects.select_related("product", "product__brand", "current_location"),
             location_field="current_location",
         )
+        .filter(
+            Q(normalized_serial__trigram_similar=query.upper())
+            | Q(project_reference__trigram_similar=query)
+            | Q(final_customer__trigram_similar=query)
+            | Q(normalized_serial__icontains=query.upper())
+            | Q(project_reference__icontains=query)
+            | Q(final_customer__icontains=query)
+        )
         .annotate(
             similarity=TrigramSimilarity("normalized_serial", query.upper())
             + TrigramSimilarity("project_reference", query)
             + TrigramSimilarity("final_customer", query)
-        )
-        .filter(
-            Q(similarity__gt=TRIGRAM_THRESHOLD)
-            | Q(normalized_serial__icontains=query.upper())
-            | Q(project_reference__icontains=query)
-            | Q(final_customer__icontains=query)
         )
         .order_by("-similarity", "-created_at")[:limit]
     )

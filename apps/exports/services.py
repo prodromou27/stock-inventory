@@ -92,15 +92,26 @@ def build_inventory_workbook():
     asset (any status) and every stock balance — as an .xlsx workbook. Not
     scoped by location like the interactive reports: this is a system-level
     backup an Administrator configured, not a user-facing report.
-    """
-    workbook = openpyxl.Workbook()
 
-    assets_sheet = workbook.active
-    assets_sheet.title = "Unit Assets"
+    write_only=True + .iterator(chunk_size=1000) (same pattern
+    apps.reporting.views.SavedReportRunView already uses for its own
+    exports) — the plain-mode Workbook this used to build materializes
+    every row into memory as Cell objects before write, and the full
+    querysets were fetched in one pass; at 8,000+ assets that's real
+    memory pressure in the cron worker. write_only mode streams rows
+    straight to disk-backed temp storage as they're appended.
+    """
+    workbook = openpyxl.Workbook(write_only=True)
+
+    assets_sheet = workbook.create_sheet("Unit Assets")
     assets_sheet.append(ASSET_HEADERS)
-    assets = UnitAsset.objects.select_related(
-        "product", "product__brand", "product__product_type", "current_location"
-    ).order_by("product__brand__name", "product__model", "vendor_serial")
+    assets = (
+        UnitAsset.objects.select_related(
+            "product", "product__brand", "product__product_type", "current_location"
+        )
+        .order_by("product__brand__name", "product__model", "vendor_serial")
+        .iterator(chunk_size=1000)
+    )
     for asset in assets:
         assets_sheet.append(
             spreadsheet_safe_row(
@@ -123,9 +134,13 @@ def build_inventory_workbook():
 
     balances_sheet = workbook.create_sheet("Stock Balances")
     balances_sheet.append(BALANCE_HEADERS)
-    balances = StockBalance.objects.select_related(
-        "product", "product__brand", "product__product_type", "location"
-    ).order_by("product__brand__name", "product__model", "location__name")
+    balances = (
+        StockBalance.objects.select_related(
+            "product", "product__brand", "product__product_type", "location"
+        )
+        .order_by("product__brand__name", "product__model", "location__name")
+        .iterator(chunk_size=1000)
+    )
     for balance in balances:
         balances_sheet.append(
             spreadsheet_safe_row(

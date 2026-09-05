@@ -14,6 +14,8 @@ auto-change stock/history" requirement.
 missing location, missing custodian. The other 9 are new.
 """
 
+from django.db.models import OuterRef, Subquery
+
 from apps.catalog.models import ItemCategory, Product
 from apps.inventory.filters import duplicate_serial_values
 from apps.inventory.models import (
@@ -327,19 +329,32 @@ def check_orphaned_transaction_reference(breadcrumbs):
     doesn't match what its own most recent AssetStatusHistory line says it
     should be — the denormalized fields (apps.inventory.services.ledger's
     write_unit_line()) have drifted from the ledger's own record.
+
+    The latest history row per asset is fetched via a correlated subquery
+    (same pattern as apps.reporting.queries.reorder_suggestions()) rather
+    than one query per asset — at 8,000+ assets that was 8,000+ queries
+    inside the single @transaction.atomic block run_detection() wraps the
+    whole scan in.
     """
-    assets = UnitAsset.objects.select_related("product", "product__brand", "current_location")
+    latest_history = AssetStatusHistory.objects.filter(unit_asset_id=OuterRef("pk")).order_by(
+        "-transaction__occurred_at", "-transaction__created_at", "-occurred_at"
+    )
+    assets = UnitAsset.objects.select_related(
+        "product", "product__brand", "current_location"
+    ).annotate(
+        latest_to_status=Subquery(latest_history.values("to_status")[:1]),
+        latest_to_location_id=Subquery(latest_history.values("to_location_id")[:1]),
+        latest_to_location_name=Subquery(latest_history.values("to_location__name")[:1]),
+    )
     for asset in assets:
-        latest = (
-            AssetStatusHistory.objects.filter(unit_asset=asset)
-            .select_related("to_location")
-            .order_by("-transaction__occurred_at", "-transaction__created_at", "-occurred_at")
-            .first()
-        )
-        if latest is None:
+        if asset.latest_to_status is None:
             continue
-        if latest.to_status != asset.status or latest.to_location_id != asset.current_location_id:
+        if (
+            asset.latest_to_status != asset.status
+            or asset.latest_to_location_id != asset.current_location_id
+        ):
             country, location_label = _location_context(breadcrumbs, asset.current_location)
+            latest_status_label = UnitStatus(asset.latest_to_status).label
             yield {
                 "issue_type": DataQualityIssueType.ORPHANED_TRANSACTION_REFERENCE,
                 "severity": DataQualitySeverity.HIGH,
@@ -349,7 +364,7 @@ def check_orphaned_transaction_reference(breadcrumbs):
                 "location_label": location_label,
                 "explanation": f'Currently "{asset.get_status_display()}" at '
                 f"{asset.current_location or '—'}, but its own last recorded ledger line says "
-                f'"{latest.get_to_status_display()}" at {latest.to_location or "—"}.',
+                f'"{latest_status_label}" at {asset.latest_to_location_name or "—"}.',
                 "recommended_correction": "Investigate what changed this asset outside its own "
                 "ledger history, then use an Administrator correction to reconcile it.",
             }
