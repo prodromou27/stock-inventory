@@ -54,6 +54,7 @@ MIDDLEWARE = [
     "apps.accounts.middleware.RequirePasswordChangeMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "apps.core.csp.ContentSecurityPolicyMiddleware",
     # Must be last — inspects the response of every request, including ones
     # AxesStandaloneBackend already blocked (doc 08's login throttling).
     "axes.middleware.AxesMiddleware",

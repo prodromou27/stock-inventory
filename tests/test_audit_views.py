@@ -65,3 +65,12 @@ class TestAuditLogListView:
         client.force_login(administrator)
         response = client.get(reverse("audit:log"), {"actor": "nonexistent-user-xyz"})
         assert response.context["events"].count() == 0
+
+    def test_malformed_date_filter_is_ignored_not_a_500(self, client, administrator):
+        """Regression test: an unparseable ?after=/?before= used to reach
+        the ORM directly and raise, a 500 instead of a working page with
+        that one filter simply not applied.
+        """
+        client.force_login(administrator)
+        response = client.get(reverse("audit:log"), {"after": "not-a-date", "before": "also-bad"})
+        assert response.status_code == 200

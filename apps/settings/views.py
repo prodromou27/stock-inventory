@@ -1,3 +1,5 @@
+import logging
+
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import ValidationError
@@ -22,6 +24,8 @@ from .services import (
     update_system_settings,
     update_timezone_settings,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class SettingsHubView(LoginRequiredMixin, View):
@@ -104,8 +108,15 @@ class CertificateUploadView(LoginRequiredMixin, RoleRequiredMixin, View):
         except ValidationError as exc:
             form.add_error(None, "; ".join(exc.messages))
             return render(request, self.template_name, {"form": form})
-        except OSError as exc:
-            form.add_error(None, f"Could not write certificate files: {exc}")
+        except OSError:
+            # The full exception (which can include the server's absolute
+            # CERTS_DIR filesystem path — a deployment detail, not
+            # something the Administrator typed and already knows) goes to
+            # the logs only; the form gets a safe, generic summary.
+            logger.exception("Failed to write uploaded TLS certificate files")
+            form.add_error(
+                None, "Could not write the certificate files — check the server logs for detail."
+            )
             return render(request, self.template_name, {"form": form})
 
         messages.success(
@@ -191,6 +202,13 @@ class SmtpConfigurationView(LoginRequiredMixin, RoleRequiredMixin, View):
             try:
                 send_test_email(recipient=data["test_email_recipient"])
             except Exception as exc:  # broad: any SMTP/network failure, reported as-is
+                # Detail shown to the Administrator here is about the SMTP
+                # host/credentials *they* just typed into this same form —
+                # unlike the certificate path above, this isn't a server-
+                # internal detail, so it stays in the message (it's what
+                # makes the feature debuggable); still logged for a
+                # durable record.
+                logger.warning("SMTP test email failed: %s", exc)
                 messages.error(request, f"Settings saved, but the test email failed: {exc}")
             else:
                 messages.success(request, f"Test email sent to {data['test_email_recipient']}.")

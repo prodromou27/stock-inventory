@@ -171,6 +171,37 @@ class TestCertificateUploadView:
         assert response.status_code == 200
         assert "not a valid, matching pair" in response.content.decode()
 
+    def test_write_failure_shows_a_safe_message_not_the_raw_path(
+        self, client, administrator, certs_dir, monkeypatch
+    ):
+        """Regression test: an OSError while writing the certificate files
+        used to be shown to the Administrator verbatim, including the
+        server's absolute CERTS_DIR filesystem path — a deployment detail,
+        not something typed into this form. Full detail now goes to the
+        logs only; the form gets a safe, generic message.
+        """
+        import os
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        def failing_chmod(*args, **kwargs):
+            raise OSError(f"simulated failure writing to {certs_dir}")
+
+        monkeypatch.setattr(os, "chmod", failing_chmod)
+
+        client.force_login(administrator)
+        response = client.post(
+            reverse("settings:certificates"),
+            {
+                "cert_file": SimpleUploadedFile("fullchain.pem", VALID_CERT_PEM),
+                "key_file": SimpleUploadedFile("privkey.pem", VALID_KEY_PEM),
+            },
+        )
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert certs_dir not in content
+        assert "check the server logs" in content
+
     def test_rejects_oversized_certificate_before_reading_it(
         self, client, administrator, certs_dir
     ):

@@ -119,6 +119,18 @@ class TestTransactionListView:
         numbers = {t.transaction_number for t in response.context["transactions"]}
         assert assign_txn.transaction_number not in numbers
 
+    def test_malformed_date_filter_is_ignored_not_a_500(self, client, administrator):
+        """Regression test: an unparseable occurred_after/before used to
+        reach the ORM directly and raise — a 500 instead of a working page
+        with that one filter simply not applied.
+        """
+        client.force_login(administrator)
+        response = client.get(
+            reverse("inventory:transaction_list"),
+            {"occurred_after": "not-a-date", "occurred_before": "also-bad"},
+        )
+        assert response.status_code == 200
+
     def test_sort_by_number_ascending(self, client, administrator, unit_product, location_tree):
         receive_stock(
             user=administrator,

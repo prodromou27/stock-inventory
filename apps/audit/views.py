@@ -2,6 +2,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.views.generic import ListView
 
 from apps.core.authorization import ADMINISTRATOR, RoleRequiredMixin
+from apps.core.dates import parse_date_param
 
 from .models import AuditEvent
 
@@ -26,9 +27,9 @@ class AuditLogListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
             queryset = queryset.filter(actor__username__icontains=actor)
         if object_type := self.request.GET.get("object_type", "").strip():
             queryset = queryset.filter(object_type__icontains=object_type)
-        if after := self.request.GET.get("after", "").strip():
+        if after := parse_date_param(self.request.GET.get("after", "").strip()):
             queryset = queryset.filter(occurred_at__date__gte=after)
-        if before := self.request.GET.get("before", "").strip():
+        if before := parse_date_param(self.request.GET.get("before", "").strip()):
             queryset = queryset.filter(occurred_at__date__lte=before)
 
         return queryset

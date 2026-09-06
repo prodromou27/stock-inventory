@@ -28,6 +28,7 @@ from apps.core.authorization import (
     require_role,
 )
 from apps.core.csv_export import CSVExportMixin
+from apps.core.dates import parse_date_param
 from apps.core.idempotency import (
     claim_submission_token,
     new_submission_token,
@@ -1693,9 +1694,9 @@ class TransactionListView(LoginRequiredMixin, SortableListMixin, ListView):
             queryset = queryset.filter(project_reference__icontains=project_reference)
         if final_customer := self.request.GET.get("final_customer", "").strip():
             queryset = queryset.filter(final_customer__icontains=final_customer)
-        if occurred_after := self.request.GET.get("occurred_after", "").strip():
+        if occurred_after := parse_date_param(self.request.GET.get("occurred_after", "").strip()):
             queryset = queryset.filter(occurred_at__gte=occurred_after)
-        if occurred_before := self.request.GET.get("occurred_before", "").strip():
+        if occurred_before := parse_date_param(self.request.GET.get("occurred_before", "").strip()):
             queryset = queryset.filter(occurred_at__lte=occurred_before)
         return self.apply_sort(queryset)
 

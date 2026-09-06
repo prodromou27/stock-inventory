@@ -6,6 +6,7 @@ across the inventory list screens and the reporting app.
 
 from django.db.models import Count, Q
 
+from apps.core.dates import parse_date_param
 from apps.locations.models import Location
 
 
@@ -70,13 +71,13 @@ def filter_unit_assets(queryset, params):
     if invoice_number := _get(params, "invoice_number"):
         queryset = queryset.filter(invoice_number__icontains=invoice_number)
 
-    if arrival_after := _get(params, "arrival_after"):
+    if arrival_after := parse_date_param(_get(params, "arrival_after")):
         queryset = queryset.filter(arrival_date__gte=arrival_after)
-    if arrival_before := _get(params, "arrival_before"):
+    if arrival_before := parse_date_param(_get(params, "arrival_before")):
         queryset = queryset.filter(arrival_date__lte=arrival_before)
-    if removal_after := _get(params, "removal_after"):
+    if removal_after := parse_date_param(_get(params, "removal_after")):
         queryset = queryset.filter(last_removal_date__gte=removal_after)
-    if removal_before := _get(params, "removal_before"):
+    if removal_before := parse_date_param(_get(params, "removal_before")):
         queryset = queryset.filter(last_removal_date__lte=removal_before)
 
     queryset = _filter_by_location(queryset, params, location_field="current_location")

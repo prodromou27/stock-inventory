@@ -135,6 +135,29 @@ class TestAssetListFilters:
         serials = {a.vendor_serial for a in response.context["assets"]}
         assert serials == {"SN-OLD"}
 
+    def test_malformed_date_range_filter_is_ignored_not_a_500(
+        self, client, administrator, unit_product, location_tree
+    ):
+        """Regression test: an unparseable arrival_after/before (or
+        removal_after/before) used to reach the ORM directly and raise —
+        a 500 instead of the rest of the list page still working.
+        """
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-BADDATE",
+        )
+        client.force_login(administrator)
+        response = client.get(
+            reverse("inventory:asset_list"),
+            {"arrival_after": "not-a-date", "removal_before": "also-bad"},
+        )
+        assert response.status_code == 200
+        serials = {a.vendor_serial for a in response.context["assets"]}
+        assert "SN-BADDATE" in serials
+
     def test_duplicate_serial_filter(self, client, administrator, unit_product, location_tree):
         receive_stock(
             user=administrator,

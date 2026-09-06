@@ -1,3 +1,4 @@
+import logging
 import os
 from datetime import datetime
 from datetime import timezone as dt_timezone
@@ -14,6 +15,8 @@ from apps.core.spreadsheets import spreadsheet_safe_row
 from apps.inventory.models import StockBalance, UnitAsset
 
 from .models import ExportRunStatus, ExportSchedule, ExportSettings
+
+logger = logging.getLogger(__name__)
 
 ASSET_HEADERS = [
     "Brand",
@@ -187,6 +190,11 @@ def run_export(*, user=None):
         target = os.path.join(settings_obj.export_path, _timestamped_filename())
         workbook.save(target)
     except OSError as exc:
+        # Deliberately still surfaced to the Administrator in full (see
+        # docstring) — export_path is their own configured value, not a
+        # server-internal detail — but also logged here for a searchable
+        # record independent of whoever next opens the settings screen.
+        logger.error("Scheduled inventory export failed: %s", exc)
         settings_obj.last_run_at = now
         settings_obj.last_run_status = ExportRunStatus.FAILED
         settings_obj.last_run_detail = str(exc)
