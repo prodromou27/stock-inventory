@@ -16,7 +16,9 @@ def _import_upload_path(instance, filename):
 
 
 class ImportBatchStatus(models.TextChoices):
-    UPLOADED = "uploaded", "Uploaded"
+    # No separate "uploaded" state — create_batch_from_upload() parses and
+    # stages every row synchronously in the same request, so a batch is
+    # already fully previewed by the time it exists at all.
     PREVIEWED = "previewed", "Previewed"
     EXECUTING = "executing", "Executing"
     COMPLETED = "completed", "Completed"
@@ -64,7 +66,7 @@ class ImportBatch(UUIDPrimaryKeyModel, TimestampedModel):
         max_length=20, choices=StockPurpose.choices, default=StockPurpose.INTERNAL
     )
     status = models.CharField(
-        max_length=20, choices=ImportBatchStatus.choices, default=ImportBatchStatus.UPLOADED
+        max_length=20, choices=ImportBatchStatus.choices, default=ImportBatchStatus.PREVIEWED
     )
     executed_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
