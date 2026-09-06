@@ -115,9 +115,17 @@ class NotificationSubscriptionForm(forms.ModelForm):
         self.fields["country"].queryset = Location.objects.filter(
             level=LocationLevel.COUNTRY, is_active=True
         ).order_by("name")
-        self.fields["recipient"].queryset = (
-            self.fields["recipient"].queryset.filter(is_active=True).order_by("username")
-        )
+        recipient_qs = self.fields["recipient"].queryset.filter(is_active=True)
+        if self.instance.pk and self.instance.recipient_id:
+            # Editing an existing subscription must not lose access to its
+            # already-set recipient if they were deactivated since — e.g. an
+            # Administrator simply wants to turn the subscription off after
+            # the employee leaves. A brand-new subscription still only ever
+            # offers active users.
+            recipient_qs = recipient_qs | self.fields["recipient"].queryset.filter(
+                pk=self.instance.recipient_id
+            )
+        self.fields["recipient"].queryset = recipient_qs.order_by("username")
 
     def clean_recipient(self):
         recipient = self.cleaned_data["recipient"]

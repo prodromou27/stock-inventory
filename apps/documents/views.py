@@ -13,7 +13,12 @@ from django.http import (
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
 
-from apps.core.authorization import ADMINISTRATOR, STOCK_MANAGER, RoleRequiredMixin
+from apps.core.authorization import (
+    ADMINISTRATOR,
+    STOCK_MANAGER,
+    RoleRequiredMixin,
+    is_administrator,
+)
 from apps.inventory.access import require_transaction_access
 from apps.inventory.models import InventoryTransaction
 from apps.locations.models import Location, LocationLevel
@@ -207,7 +212,7 @@ class DocumentTemplateHubView(LoginRequiredMixin, RoleRequiredMixin, View):
         return render(
             request,
             "documents/template_hub.html",
-            {"rows": rows, "can_edit": request.user.groups.filter(name=ADMINISTRATOR).exists()},
+            {"rows": rows, "can_edit": is_administrator(request.user)},
         )
 
 

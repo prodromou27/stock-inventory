@@ -72,6 +72,50 @@ class TestHub:
         response = client.get(reverse("documents:template_edit", args=["not-a-real-type"]))
         assert response.status_code == 404
 
+    def test_country_branding_link_hidden_from_stock_manager(self, client, stock_manager):
+        """Regression test: the "Country branding" button was shown
+        unconditionally (unlike the per-row "Edit" link, correctly gated
+        behind {% if can_edit %}) — a Stock Manager legitimately on this
+        hub to preview templates saw an actionable button that 403'd on
+        click, since CountryBrandingListView is Administrator-only.
+        """
+        client.force_login(stock_manager)
+        response = client.get(reverse("documents:template_hub"))
+        assert response.status_code == 200
+        assert "Country branding" not in response.content.decode()
+
+    def test_country_branding_link_shown_to_administrator(self, client, administrator):
+        client.force_login(administrator)
+        response = client.get(reverse("documents:template_hub"))
+        assert "Country branding" in response.content.decode()
+
+    def test_pending_review_status_gets_its_own_badge_not_lumped_with_draft(
+        self, client, administrator, second_administrator
+    ):
+        """Regression test: the hub's status column only distinguished
+        Published from everything else — a template Pending review looked
+        identical to a plain Draft, so the second Administrator who needs
+        to approve it had no way to notice from this list view.
+        """
+        from apps.documents.template_services import submit_for_review, update_template
+
+        update_template(
+            user=administrator,
+            document_type="delivery",
+            html_source="<html><body><h1>{{ document_number }}</h1></body></html>",
+            document_title="Delivery form",
+            company_name="Acme Corp",
+            logo_intentionally_omitted=True,
+            preview_confirmed=True,
+        )
+        submit_for_review(user=administrator, document_type="delivery")
+
+        client.force_login(second_administrator)
+        response = client.get(reverse("documents:template_hub"))
+        content = response.content.decode()
+        assert "Pending review" in content
+        assert "Custom — Draft" not in content
+
 
 @pytest.mark.django_db
 class TestEditView:

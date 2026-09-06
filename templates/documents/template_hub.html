@@ -12,9 +12,11 @@
         the packaged default until you save an override here.
       </div>
     </div>
-    <div class="page-header__actions">
-      <a class="btn btn--sm" href="{% url 'documents:branding_list' %}">Country branding</a>
-    </div>
+    {% if can_edit %}
+      <div class="page-header__actions">
+        <a class="btn btn--sm" href="{% url 'documents:branding_list' %}">Country branding</a>
+      </div>
+    {% endif %}
   </div>
 
   <table>
@@ -29,6 +31,8 @@
             {% if row.template_obj %}
               {% if row.template_obj.status == "published" %}
                 <span class="badge badge--success">Custom — Published</span>
+              {% elif row.template_obj.status == "pending_review" %}
+                <span class="badge badge--info">Pending review</span>
               {% else %}
                 <span class="badge badge--warning">Custom — Draft</span>
               {% endif %}

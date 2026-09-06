@@ -72,6 +72,47 @@ class TestNotificationSubscriptions:
         client.force_login(administrator)
         assert client.get(reverse("settings:notifications")).status_code == 200
 
+    def test_editing_a_subscription_survives_the_recipients_deactivation(
+        self, client, administrator, stock_manager, location_tree
+    ):
+        """Regression test: NotificationSubscriptionForm.recipient's
+        queryset only ever included active users — fine for creating a new
+        subscription, but editing an *existing* one (e.g. simply to turn it
+        off) failed Django's "not a valid choice" validation the moment its
+        recipient was deactivated, exactly the scenario an Administrator
+        most needs to handle (an employee leaves, is deactivated, but their
+        standing digest subscription can no longer be turned off).
+        """
+        from apps.accounts.services import grant_location_access, set_user_active
+
+        stock_manager.email = "manager@example.com"
+        stock_manager.save(update_fields=["email"])
+        grant_location_access(
+            user=stock_manager, location=location_tree["country"], granted_by=administrator
+        )
+        subscription = _subscription(
+            administrator, location_tree["country"], recipient=stock_manager
+        )
+
+        set_user_active(user=stock_manager, is_active=False, changed_by=administrator)
+
+        client.force_login(administrator)
+        response = client.post(
+            reverse("settings:notification_edit", kwargs={"pk": subscription.pk}),
+            {
+                "recipient": stock_manager.pk,
+                "country": location_tree["country"].pk,
+                "is_active": "",  # turning it off is exactly the point of this test
+                "notify_low_stock": "on",
+                "notify_overdue_assignments": "on",
+                "notify_import_export_failures": "on",
+                "notify_data_quality": "on",
+            },
+        )
+        assert response.status_code == 302
+        subscription.refresh_from_db()
+        assert subscription.is_active is False
+
 
 @pytest.mark.django_db
 class TestDailyDigests:

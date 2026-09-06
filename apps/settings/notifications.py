@@ -43,16 +43,18 @@ def save_notification_subscription(*, user, subscription=None, **values):
 
     old_values = (
         {
-            field: getattr(subscription, field)
-            for field in (
-                "recipient_id",
-                "country_id",
-                "is_active",
-                "notify_low_stock",
-                "notify_overdue_assignments",
-                "notify_import_export_failures",
-                "notify_data_quality",
-            )
+            "recipient_id": subscription.recipient_id,
+            "country_id": str(subscription.country_id),
+            **{
+                field: getattr(subscription, field)
+                for field in (
+                    "is_active",
+                    "notify_low_stock",
+                    "notify_overdue_assignments",
+                    "notify_import_export_failures",
+                    "notify_data_quality",
+                )
+            },
         }
         if subscription.pk
         else {}
