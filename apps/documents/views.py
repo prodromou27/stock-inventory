@@ -10,7 +10,14 @@ from apps.inventory.access import require_transaction_access
 from apps.inventory.models import InventoryTransaction
 
 from .forms import AttachmentUploadForm, DocumentTemplateStyleForm
-from .models import Attachment, DocumentTemplateVersion, DocumentType, GeneratedDocument
+from .layout import SECTIONS
+from .models import (
+    REPORT_COLUMNS,
+    Attachment,
+    DocumentTemplateVersion,
+    DocumentType,
+    GeneratedDocument,
+)
 from .pdf import render_pdf, render_styleable_source, sample_document_context
 from .services import delete_attachment, generate_document, regenerate_document, upload_attachment
 from .template_services import (
@@ -78,8 +85,14 @@ class DocumentDownloadView(LoginRequiredMixin, View):
         if not document.pdf_file:
             raise Http404("No PDF file stored for this document.")
 
+        try:
+            pdf_file = document.pdf_file.open("rb")
+        except FileNotFoundError as exc:
+            raise Http404(
+                "The stored PDF is missing. An Administrator can restore it from backup."
+            ) from exc
         return FileResponse(
-            document.pdf_file.open("rb"),
+            pdf_file,
             as_attachment=False,
             filename=f"{document.document_number}.pdf",
             content_type="application/pdf",
@@ -279,6 +292,7 @@ class DocumentTemplateEditView(LoginRequiredMixin, RoleRequiredMixin, View):
             **template_obj.layout_config,
         }
         initial["column_order"] = ",".join(template_obj.layout_config.get("column_order") or [])
+        initial["section_order"] = ",".join(template_obj.layout_config.get("section_order") or [])
         initial["column_labels"] = "\n".join(
             f"{key}:{label}"
             for key, label in (template_obj.layout_config.get("column_labels") or {}).items()
@@ -294,6 +308,8 @@ class DocumentTemplateEditView(LoginRequiredMixin, RoleRequiredMixin, View):
                 "document_type": document_type,
                 "document_type_label": dict(DocumentType.choices)[document_type],
                 "template_obj": template_obj,
+                "editor_columns": REPORT_COLUMNS,
+                "editor_sections": SECTIONS,
                 "other_document_types": [
                     (value, label)
                     for value, label in DocumentType.choices
@@ -329,6 +345,8 @@ class DocumentTemplatePreviewView(LoginRequiredMixin, RoleRequiredMixin, View):
                 document_type=document_type,
                 html_source=html_source,
                 logo_file=data.get("logo"),
+                remove_logo=data.get("remove_logo", False),
+                output_format="html" if request.GET.get("format") == "html" else "pdf",
                 layout_config=form.layout_config(),
                 accent_color=data["accent_color"],
                 **_style_kwargs(data),
@@ -337,7 +355,10 @@ class DocumentTemplatePreviewView(LoginRequiredMixin, RoleRequiredMixin, View):
             return HttpResponseBadRequest(
                 "; ".join(exc.messages) if hasattr(exc, "messages") else str(exc)
             )
-        return HttpResponse(pdf_bytes, content_type="application/pdf")
+        return HttpResponse(
+            pdf_bytes,
+            content_type="text/html" if request.GET.get("format") == "html" else "application/pdf",
+        )
 
 
 class DocumentTemplateResetView(LoginRequiredMixin, RoleRequiredMixin, View):

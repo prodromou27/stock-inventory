@@ -1,0 +1,9 @@
+{% if notes %}
+    <div class="notes"><strong>Notes:</strong> {{ notes }}</div>
+  {% endif %}
+
+  {% if notes_text %}
+    <div class="notes">{{ notes_text|linebreaksbr }}</div>
+  {% endif %}
+
+  <p style="margin-top: 1.5em;">Prepared by: {{ prepared_by }}</p>

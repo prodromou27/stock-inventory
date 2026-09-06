@@ -1,3 +1,5 @@
+import logging
+
 from django.core.exceptions import ValidationError
 from django.core.files.base import ContentFile
 from django.db import connection, transaction
@@ -15,6 +17,8 @@ from .pdf import (
     build_document_context,
     render_pdf,
 )
+
+logger = logging.getLogger(__name__)
 
 # --- Document generation ---------------------------------------------------
 
@@ -111,9 +115,18 @@ def generate_document(*, txn, user, supersedes=None):
                 ),
             )
         return document
-    except Exception:
+    except Exception as exc:
         if stored_file and storage:
-            storage.delete(stored_file)
+            try:
+                storage.delete(stored_file)
+            except OSError:
+                logger.exception("Could not clean up unsuccessful document file")
+        if isinstance(exc, OSError):
+            logger.exception("Could not store generated PDF")
+            raise ValidationError(
+                "The PDF could not be saved. Ask an Administrator to check document storage "
+                "permissions and available disk space, then try again."
+            ) from exc
         raise
 
 

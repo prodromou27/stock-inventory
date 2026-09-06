@@ -1,0 +1,9 @@
+<div class="meta">
+    <p>Document number: {{ document_number }}</p>
+    <p>Transaction number: {{ transaction_number }}</p>
+    <p>Date: {{ occurred_at }}</p>
+    {% if employee_name %}<p>Employee: {{ employee_name }}</p>{% endif %}
+    {% if final_customer %}<p>Final customer: {{ final_customer }}</p>{% endif %}
+    {% if project_reference %}<p>Project reference: {{ project_reference }}</p>{% endif %}
+    <p>Source location(s): {% if source_locations %}{{ source_locations|join:", " }}{% else %}—{% endif %}</p>
+  </div>

@@ -6,7 +6,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 
 from apps.audit.models import AuditEvent
 from apps.documents.models import DocumentTemplate, DocumentType, FontChoice, PageMargin
-from apps.documents.pdf import default_template_source, render_styleable_source
+from apps.documents.pdf import default_template_source, layout_context, render_styleable_source
 from apps.documents.services import generate_document
 from apps.documents.template_services import (
     get_template,
@@ -131,6 +131,25 @@ class TestUpdateTemplate:
             remove_logo=True,
         )
         assert not updated.logo
+
+    def test_replacing_a_logo_removes_the_old_file(self, administrator):
+        template_obj = update_template(
+            user=administrator,
+            document_type=DocumentType.DELIVERY,
+            html_source=VALID_HTML,
+            logo=_png_upload("old.png"),
+        )
+        old_name = template_obj.logo.name
+
+        updated = update_template(
+            user=administrator,
+            document_type=DocumentType.DELIVERY,
+            html_source=VALID_HTML,
+            logo=_png_upload("new.png"),
+        )
+
+        assert updated.logo.name != old_name
+        assert not updated.logo.storage.exists(old_name)
 
     def test_requires_administrator(self, stock_manager):
         with pytest.raises(PermissionDenied):
@@ -408,6 +427,33 @@ class TestLayoutConfig:
             user=administrator, document_type=DocumentType.DELIVERY, html_source=VALID_HTML
         )
         assert updated.layout_config["header_text"] == "Keep me"
+
+    def test_structured_section_order_and_typography_are_preserved(self, administrator):
+        template_obj = update_template(
+            user=administrator,
+            document_type=DocumentType.DELIVERY,
+            html_source=render_styleable_source(
+                logo_position="left",
+                accent_color="#123456",
+                font_choice=FontChoice.SANS,
+                page_margin=PageMargin.NORMAL,
+            ),
+            layout_config={
+                "section_order": ["heading", "items", "details"],
+                "body_font_size": 11,
+                "heading_font_size": 22,
+                "table_font_size": 10,
+                "table_cell_padding": 8,
+                "signature_left_label": "Issued by",
+                "signature_right_label": "Accepted by",
+            },
+        )
+
+        context = layout_context(template_obj)
+        assert context["section_order"][:3] == ["heading", "items", "details"]
+        assert context["body_font_size"] == 11
+        assert context["signature_right_label"] == "Accepted by"
+        assert "{% for section_key in section_order %}" in template_obj.html_source
 
 
 @pytest.mark.django_db

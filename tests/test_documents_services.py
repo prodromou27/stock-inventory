@@ -9,12 +9,14 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from apps.audit.models import AuditEvent
 from apps.catalog.services import update_product
 from apps.documents.models import Attachment, GeneratedDocument
+from apps.documents.pdf import render_styleable_source
 from apps.documents.services import (
     delete_attachment,
     generate_document,
     regenerate_document,
     upload_attachment,
 )
+from apps.documents.template_services import publish_template, update_template
 from apps.inventory.models import UnitAsset
 from apps.inventory.services.assignments import assign_to_employee, deliver_to_customer
 from apps.inventory.services.disposition import dispose
@@ -111,6 +113,31 @@ class TestGenerateDocument:
         content = document.pdf_file.open("rb").read()
         assert content[:4] == b"%PDF"
         assert len(content) > 100
+
+    def test_generates_a_pdf_with_a_published_structured_template(
+        self, administrator, assignment_txn
+    ):
+        template_obj = update_template(
+            user=administrator,
+            document_type="assignment",
+            html_source=render_styleable_source(
+                logo_position="left",
+                accent_color="#123456",
+                font_choice="sans",
+                page_margin="normal",
+            ),
+            layout_config={
+                "section_order": ["heading", "items", "details"],
+                "signature_left_label": "Handed over by",
+                "signature_right_label": "Accepted by",
+            },
+        )
+        publish_template(user=administrator, document_type="assignment")
+
+        document = generate_document(txn=assignment_txn, user=administrator)
+
+        assert document.template_id == template_obj.pk
+        assert document.pdf_file.open("rb").read()[:4] == b"%PDF"
 
     def test_document_number_is_sequential(self, administrator, unit_product, location_tree):
         receive_stock(

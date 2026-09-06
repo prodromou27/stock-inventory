@@ -160,6 +160,10 @@ def build_inventory_workbook():
             )
         )
 
+    # Finish the XML generators before handing ownership to the caller.
+    # A failed destination write must not leave suspended worksheet writers.
+    for sheet in workbook.worksheets:
+        sheet.close()
     return workbook
 
 
@@ -185,8 +189,8 @@ def run_export(*, user=None):
 
     now = datetime.now(dt_timezone.utc)
     try:
-        workbook = build_inventory_workbook()
         os.makedirs(settings_obj.export_path, exist_ok=True)
+        workbook = build_inventory_workbook()
         target = os.path.join(settings_obj.export_path, _timestamped_filename())
         workbook.save(target)
     except OSError as exc:

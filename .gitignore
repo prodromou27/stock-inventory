@@ -30,3 +30,4 @@ deploy/backups/
 # produces it.
 node_modules/
 static/css/app.css
+.qa-screenshots/

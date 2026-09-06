@@ -1,0 +1,7 @@
+{% if wipe_method_display %}
+    <div class="disposal-certificate">
+      <p><strong>Certificate of Disposal</strong></p>
+      <p>Storage media disposition: {{ wipe_method_display }}</p>
+      {% if witness_name %}<p>Witnessed by: {{ witness_name }}</p>{% endif %}
+    </div>
+  {% endif %}

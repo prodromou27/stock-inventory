@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block title %}{{ document_type_label }} Template — Stock Inventory{% endblock %}
 
@@ -29,7 +30,7 @@
 
   <div class="template-editor-layout">
     <div>
-      <form method="post" enctype="multipart/form-data" id="template-style-form">
+      <form method="post" enctype="multipart/form-data" id="template-style-form" data-preview-url="{% url 'documents:template_preview' document_type %}">
         {% csrf_token %}
         <div class="card">
           <p><label for="{{ form.logo.id_for_label }}">{{ form.logo.label }}</label></p>
@@ -148,7 +149,22 @@
           </p>
         </div>
 
-        <div class="form-actions">
+        <div class="card">
+          <h2>Visual layout</h2>
+          <p>Drag sections and columns to reorder them, or use the up/down buttons. Rename columns directly below.</p>
+          {% include "_form_field.html" with field=form.section_order %}
+          <div id="section-layout"></div>
+          <h3>Line-item columns</h3>
+          <div id="column-layout"></div>
+          <h3>Typography and signatures</h3>
+          {% include "_form_field.html" with field=form.body_font_size %}
+          {% include "_form_field.html" with field=form.heading_font_size %}
+          {% include "_form_field.html" with field=form.table_font_size %}
+          {% include "_form_field.html" with field=form.table_cell_padding %}
+          {% include "_form_field.html" with field=form.signature_left_label %}
+          {% include "_form_field.html" with field=form.signature_right_label %}
+        </div>
+        <div class="form-actions template-save-actions">
           <button type="submit" class="btn btn--primary">Save</button>
         </div>
       </form>
@@ -216,96 +232,29 @@
     <div>
       <div class="card">
         <h2>Live preview</h2>
-        <p class="text-muted">A sample PDF rendered with the settings on the left — updates as you change them, before you save.</p>
+        <p class="text-muted">Layout preview updates as you edit. Open the PDF to verify page breaks before publishing.</p>
         <div class="form-actions">
           <button type="button" class="btn btn--sm" id="template-preview-refresh">Refresh preview</button>
+          <button type="button" class="btn btn--sm" id="template-preview-pdf">Open PDF preview</button>
         </div>
         <div class="template-preview-frame-wrap">
-          <iframe id="template-preview-frame" title="Document template preview" hidden></iframe>
+          <iframe id="template-preview-frame" title="Document template preview" sandbox="" hidden></iframe>
           <p class="empty-state" id="template-preview-empty">Loading preview…</p>
         </div>
       </div>
 
       <aside class="template-field-reference">
-        <h2>How this works</h2>
-        <p>No HTML or template syntax to learn — everything here is branding. The document itself (document number,
-          transaction details, the line-item table, notes, and signature lines) is always laid out automatically and
-          filled in with the real transaction's data every time a PDF is generated; you can't break that layout from
-          this screen.</p>
-        <p>What you control:</p>
-        <ul>
-          <li><strong>Logo</strong> — shown at the top of every generated PDF.</li>
-          <li><strong>Logo position</strong> — left, center, or right of the title.</li>
-          <li><strong>Accent color</strong> — used for the title and the rule under the header.</li>
-          <li><strong>Font</strong> — applied to the whole document.</li>
-          <li><strong>Page margins</strong> — how much blank space surrounds the page content.</li>
-          <li><strong>Page size / orientation</strong> — A4 or Letter, portrait or landscape.</li>
-          <li><strong>Page numbers / signature block</strong> — toggle either on or off.</li>
-          <li><strong>Header / footer text</strong> — a short line repeated on every page.</li>
-          <li><strong>Standing notes / terms</strong> — fixed text shown on every document, separate from that
-            delivery's own notes.</li>
-          <li><strong>Hidden columns / order / labels</strong> — remove, reorder, or rename line-item columns.</li>
-          <li><strong>Section spacing</strong> — compact, normal, or spacious gaps between sections.</li>
-          <li><strong>Heading / table header colors</strong> — independent of the accent color if you want them
-            different.</li>
-          <li><strong>Document title</strong> — overrides the default heading (e.g. "Customer delivery").</li>
-          <li><strong>Company name / address / tax ID</strong> — shown above the logo when set.</li>
-        </ul>
-        <p>Save validates the result by rendering two sample PDFs first — a normal one and a heavier one with many
-          line items — so a problem is reported here, never discovered the next time someone prints a real
-          document. Use the live preview as often as you like before saving.</p>
-        <p>A brand-new template saves as <strong>Draft</strong>: it's fully previewable, but real "Generate Document"
-          clicks keep using the packaged default (or the previously Published template) until you click
-          <strong>Publish this draft</strong>. Every save keeps its full version history below, with one-click
-          restore.</p>
+        <h2>Publishing and history</h2>
+        <p>New templates start as drafts. Save, inspect the PDF, then publish. Changes to an already published template apply to new documents when saved.</p>
+        <p>Generated PDFs remain unchanged. Restore creates a new version; it never erases earlier versions.</p>
+        <p>Section order, columns, labels, typography, branding, notes and signature wording are customizable. Transaction values come from the recorded movement.</p>
       </aside>
     </div>
   </div>
 {% endblock %}
 
 {% block extra_scripts %}
-  <script defer>
-    document.addEventListener("DOMContentLoaded", () => {
-      const form = document.getElementById("template-style-form");
-      const frame = document.getElementById("template-preview-frame");
-      const emptyState = document.getElementById("template-preview-empty");
-      const refreshButton = document.getElementById("template-preview-refresh");
-      if (!form || !frame) return;
-
-      let currentObjectUrl = null;
-
-      function refreshPreview() {
-        emptyState.textContent = "Loading preview…";
-        emptyState.hidden = false;
-        frame.hidden = true;
-
-        const formData = new FormData(form);
-        fetch("{% url 'documents:template_preview' document_type %}", {
-          method: "POST",
-          headers: { "X-CSRFToken": formData.get("csrfmiddlewaretoken") },
-          body: formData,
-        })
-          .then((response) => (response.ok ? response.blob() : Promise.reject(response)))
-          .then((blob) => {
-            if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
-            currentObjectUrl = URL.createObjectURL(blob);
-            frame.src = currentObjectUrl;
-            frame.hidden = false;
-            emptyState.hidden = true;
-          })
-          .catch(async (response) => {
-            const detail = response && response.text ? await response.text() : "";
-            emptyState.textContent = detail || "Couldn't render a preview — check the fields above for errors.";
-            emptyState.hidden = false;
-          });
-      }
-
-      refreshButton.addEventListener("click", refreshPreview);
-      // "Refreshes on save": Save is a normal full-page POST/redirect back to
-      // this same view, so the page reload that follows a successful save
-      // re-runs this exact initial call against the just-saved values —
-      // no separate "after save" code path needed.
-      refreshPreview();
-    });
-  </script>
+  {{ editor_columns|json_script:"editor-columns" }}
+  {{ editor_sections|json_script:"editor-sections" }}
+  <script src="{% static 'js/document_editor.js' %}" defer></script>
 {% endblock %}

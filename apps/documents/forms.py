@@ -2,6 +2,7 @@ import re
 
 from django import forms
 
+from .layout import LAYOUT_DEFAULTS
 from .models import (
     REPORT_COLUMNS,
     FontChoice,
@@ -56,13 +57,13 @@ class DocumentTemplateStyleForm(forms.Form):
         max_length=7,
         required=False,
         label="Heading text color (optional — defaults to the accent color)",
-        widget=forms.TextInput(attrs={"type": "color"}),
+        widget=forms.TextInput(attrs={"placeholder": "Default accent color or #rrggbb"}),
     )
     table_header_bg_color = forms.CharField(
         max_length=7,
         required=False,
         label="Table header background (optional — defaults to light grey)",
-        widget=forms.TextInput(attrs={"type": "color"}),
+        widget=forms.TextInput(attrs={"placeholder": "Default light grey or #rrggbb"}),
     )
     document_title = forms.CharField(
         max_length=120,
@@ -123,6 +124,17 @@ class DocumentTemplateStyleForm(forms.Form):
         label="Custom column labels (optional)",
         help_text='One override per line as "key:Label", e.g. "sku:Part Number".',
     )
+
+    section_order = forms.CharField(required=False, label="Section order")
+    body_font_size = forms.IntegerField(required=False, min_value=8, max_value=16, initial=10)
+    heading_font_size = forms.IntegerField(required=False, min_value=12, max_value=32, initial=16)
+    table_font_size = forms.IntegerField(required=False, min_value=7, max_value=14, initial=9)
+    table_cell_padding = forms.IntegerField(required=False, min_value=2, max_value=12, initial=4)
+    signature_left_label = forms.CharField(required=False, max_length=120)
+    signature_right_label = forms.CharField(required=False, max_length=120)
+
+    def clean_section_order(self):
+        return [key.strip() for key in self.cleaned_data["section_order"].split(",") if key.strip()]
 
     def clean_accent_color(self):
         value = self.cleaned_data["accent_color"]
@@ -186,4 +198,7 @@ class DocumentTemplateStyleForm(forms.Form):
         """
         from .models import LAYOUT_CONFIG_DEFAULTS
 
-        return {key: self.cleaned_data[key] for key in LAYOUT_CONFIG_DEFAULTS}
+        return {
+            key: self.cleaned_data.get(key, default)
+            for key, default in {**LAYOUT_CONFIG_DEFAULTS, **LAYOUT_DEFAULTS}.items()
+        }

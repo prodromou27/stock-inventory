@@ -1,0 +1,7 @@
+{% if company_name or company_address or company_tax_id %}
+    <div class="company-info">
+      {% if company_name %}<p><strong>{{ company_name }}</strong></p>{% endif %}
+      {% if company_address %}<p>{{ company_address|linebreaksbr }}</p>{% endif %}
+      {% if company_tax_id %}<p>Tax ID: {{ company_tax_id }}</p>{% endif %}
+    </div>
+  {% endif %}

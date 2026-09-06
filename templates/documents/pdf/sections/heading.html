@@ -1,0 +1,4 @@
+<div class="letterhead __LOGO_POSITION_CLASS__">
+    {% if logo_data_uri %}<img src="{{ logo_data_uri }}" class="letterhead__logo">{% endif %}
+    <h1>{% if document_title %}{{ document_title }}{% else %}{{ movement_type_display }}{% endif %}</h1>
+  </div>

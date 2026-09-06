@@ -13,6 +13,7 @@ from django.template import Context, Template, engines
 from django.template.loader import render_to_string
 from weasyprint import HTML
 
+from .layout import SECTIONS, clean_presentation
 from .models import (
     LAYOUT_CONFIG_DEFAULTS,
     REPORT_COLUMNS,
@@ -66,7 +67,7 @@ def build_document_context(*, transaction, document_number):
     """
     lines = list(
         transaction.lines.filter(stock_reservation=None)
-        .select_related("unit_asset")
+        .select_related("unit_asset", "from_location")
         .order_by("line_number")
     )
 
@@ -181,6 +182,24 @@ def render_styleable_source(*, logo_position, accent_color, font_choice, page_ma
     """
     django_engine = engines["django"]
     source = django_engine.get_template(STYLEABLE_TEMPLATE_NAME).template.source
+    # Freeze the section markup into the saved source/version, rather than
+    # allowing later packaged partial edits to change an existing template.
+    section_source = "{% for section_key in section_order %}"
+    for key, _ in SECTIONS:
+        section_source += '{% if section_key == "' + key + '" %}'
+        section_source += django_engine.get_template(
+            f"documents/pdf/sections/{key}.html"
+        ).template.source
+        section_source += "{% endif %}"
+    section_source += "{% endfor %}"
+    section_placeholder = "\n".join(
+        (
+            "{% for section_template in document_sections %}",
+            "    {% include section_template %}",
+            "  {% endfor %}",
+        )
+    )
+    source = source.replace(section_placeholder, section_source)
     return (
         source.replace("__FONT_STACK__", _FONT_STACKS[font_choice])
         .replace("__PAGE_MARGIN_CM__", _PAGE_MARGINS_CM[page_margin])
@@ -220,6 +239,8 @@ def file_to_data_uri(file_obj):
 def build_logo_data_uri(document_template):
     if document_template is None or not document_template.logo:
         return ""
+    if not document_template.logo._committed:
+        return file_to_data_uri(document_template.logo.file)
     with document_template.logo.open("rb") as f:
         return file_to_data_uri(f)
 
@@ -296,6 +317,10 @@ def layout_context(template_obj):
     """
     config = {**_default_layout_config(), **(template_obj.layout_config if template_obj else {})}
     context = {key: config.get(key, default) for key, default in LAYOUT_CONFIG_DEFAULTS.items()}
+    context.update(clean_presentation(config))
+    context["document_sections"] = [
+        f"documents/pdf/sections/{key}.html" for key in context["section_order"]
+    ]
     context["header_text"] = sanitize_css_content_text(context["header_text"])
     context["footer_text"] = sanitize_css_content_text(context["footer_text"])
     context["report_columns"] = visible_report_columns(

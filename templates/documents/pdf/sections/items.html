@@ -1,0 +1,24 @@
+<table>
+    <thead>
+      <tr>
+        {% for key, label in report_columns %}<th>{{ label }}</th>{% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for line in lines %}
+        <tr>
+          {% for key, label in report_columns %}
+            {% if key == "brand" %}<td>{{ line.brand }}</td>
+            {% elif key == "model" %}<td>{{ line.model }}</td>
+            {% elif key == "sku" %}<td>{{ line.sku }}</td>
+            {% elif key == "type" %}<td>{{ line.type }}{% if line.description %} — {{ line.description }}{% endif %}</td>
+            {% elif key == "serial" %}<td>{{ line.serial }}</td>
+            {% elif key == "quantity" %}<td>{{ line.quantity }}</td>
+            {% elif key == "condition" %}<td>{{ line.condition }}</td>
+            {% elif key == "accessories" %}<td>{{ line.accessories }}</td>
+            {% endif %}
+          {% endfor %}
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>

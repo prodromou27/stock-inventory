@@ -1,0 +1,14 @@
+{% if show_signature_block %}
+    <table class="signatures">
+      <tr>
+        <td>
+          <div class="signature-line"></div>
+          <div class="signature-caption">{% if signature_left_label %}{{ signature_left_label }}{% elif wipe_method_display %}Disposed by (signature){% else %}Delivered by (signature){% endif %} — Date: ______________</div>
+        </td>
+        <td>
+          <div class="signature-line"></div>
+          <div class="signature-caption">{% if signature_right_label %}{{ signature_right_label }}{% elif wipe_method_display %}Witnessed by (signature){% else %}Received by (signature){% endif %} — Date: ______________</div>
+        </td>
+      </tr>
+    </table>
+  {% endif %}

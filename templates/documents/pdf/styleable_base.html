@@ -11,8 +11,8 @@
     {% if footer_text %}@bottom-left { content: "{{ footer_text }}"; font-size: 8pt; color: #666; }{% endif %}
     {% if show_page_numbers %}@bottom-right { content: "Page " counter(page) " of " counter(pages); font-size: 8pt; color: #666; }{% endif %}
   }
-  body { font-family: __FONT_STACK__; font-size: 10.5pt; color: #111; }
-  h1 { font-size: 16pt; margin: 0; color: {{ heading_text_color }}; }
+  body { font-family: __FONT_STACK__; font-size: {{ body_font_size }}pt; color: #111; }
+  h1 { font-size: {{ heading_font_size }}pt; margin: 0; color: {{ heading_text_color }}; }
   .letterhead {
     display: flex;
     align-items: center;
@@ -36,7 +36,7 @@
      lose their header (or slice a row in half) on every page after it. */
   thead { display: table-header-group; }
   tr { break-inside: avoid; }
-  th, td { border: 1px solid #444; padding: 4px 6px; text-align: left; font-size: 9pt; vertical-align: top; }
+  th, td { border: 1px solid #444; padding: {{ table_cell_padding }}px; text-align: left; font-size: {{ table_font_size }}pt; vertical-align: top; }
   th { background: {{ table_header_bg_color }}; }
   .notes { margin-top: var(--section-gap, 1em); }
   .terms { margin-top: var(--section-gap, 1em); font-size: 8.5pt; color: #333; }
@@ -50,87 +50,8 @@
 </style>
 </head>
 <body>
-  {% if company_name or company_address or company_tax_id %}
-    <div class="company-info">
-      {% if company_name %}<p><strong>{{ company_name }}</strong></p>{% endif %}
-      {% if company_address %}<p>{{ company_address|linebreaksbr }}</p>{% endif %}
-      {% if company_tax_id %}<p>Tax ID: {{ company_tax_id }}</p>{% endif %}
-    </div>
-  {% endif %}
-  <div class="letterhead __LOGO_POSITION_CLASS__">
-    {% if logo_data_uri %}<img src="{{ logo_data_uri }}" class="letterhead__logo">{% endif %}
-    <h1>{% if document_title %}{{ document_title }}{% else %}{{ movement_type_display }}{% endif %}</h1>
-  </div>
-  <div class="meta">
-    <p>Document number: {{ document_number }}</p>
-    <p>Transaction number: {{ transaction_number }}</p>
-    <p>Date: {{ occurred_at }}</p>
-    {% if employee_name %}<p>Employee: {{ employee_name }}</p>{% endif %}
-    {% if final_customer %}<p>Final customer: {{ final_customer }}</p>{% endif %}
-    {% if project_reference %}<p>Project reference: {{ project_reference }}</p>{% endif %}
-    <p>Source location(s): {% if source_locations %}{{ source_locations|join:", " }}{% else %}—{% endif %}</p>
-  </div>
-
-  <table>
-    <thead>
-      <tr>
-        {% for key, label in report_columns %}<th>{{ label }}</th>{% endfor %}
-      </tr>
-    </thead>
-    <tbody>
-      {% for line in lines %}
-        <tr>
-          {% for key, label in report_columns %}
-            {% if key == "brand" %}<td>{{ line.brand }}</td>
-            {% elif key == "model" %}<td>{{ line.model }}</td>
-            {% elif key == "sku" %}<td>{{ line.sku }}</td>
-            {% elif key == "type" %}<td>{{ line.type }}{% if line.description %} — {{ line.description }}{% endif %}</td>
-            {% elif key == "serial" %}<td>{{ line.serial }}</td>
-            {% elif key == "quantity" %}<td>{{ line.quantity }}</td>
-            {% elif key == "condition" %}<td>{{ line.condition }}</td>
-            {% elif key == "accessories" %}<td>{{ line.accessories }}</td>
-            {% endif %}
-          {% endfor %}
-        </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-
-  {% if wipe_method_display %}
-    <div class="disposal-certificate">
-      <p><strong>Certificate of Disposal</strong></p>
-      <p>Storage media disposition: {{ wipe_method_display }}</p>
-      {% if witness_name %}<p>Witnessed by: {{ witness_name }}</p>{% endif %}
-    </div>
-  {% endif %}
-
-  {% if notes %}
-    <div class="notes"><strong>Notes:</strong> {{ notes }}</div>
-  {% endif %}
-
-  {% if notes_text %}
-    <div class="notes">{{ notes_text|linebreaksbr }}</div>
-  {% endif %}
-
-  <p style="margin-top: 1.5em;">Prepared by: {{ prepared_by }}</p>
-
-  {% if show_signature_block %}
-    <table class="signatures">
-      <tr>
-        <td>
-          <div class="signature-line"></div>
-          <div class="signature-caption">{% if wipe_method_display %}Disposed by (signature){% else %}Delivered by (signature){% endif %} — Date: ______________</div>
-        </td>
-        <td>
-          <div class="signature-line"></div>
-          <div class="signature-caption">{% if wipe_method_display %}Witnessed by (signature){% else %}Received by (signature){% endif %} — Date: ______________</div>
-        </td>
-      </tr>
-    </table>
-  {% endif %}
-
-  {% if terms_text %}
-    <div class="terms">{{ terms_text|linebreaksbr }}</div>
-  {% endif %}
+  {% for section_template in document_sections %}
+    {% include section_template %}
+  {% endfor %}
 </body>
 </html>

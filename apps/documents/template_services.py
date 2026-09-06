@@ -1,11 +1,13 @@
 from django.core.exceptions import ValidationError
 from django.core.files.base import ContentFile
 from django.db import transaction
+from django.template import Context, Template
 
 from apps.audit.models import AuditEvent
 from apps.audit.services import record_event
 from apps.core.authorization import ADMINISTRATOR, require_role
 
+from .layout import clean_presentation
 from .models import REPORT_COLUMNS, DocumentTemplate, DocumentTemplateVersion, TemplateStatus
 from .pdf import (
     _default_layout_config,
@@ -48,7 +50,7 @@ def get_template(document_type):
     return DocumentTemplate.objects.filter(document_type=document_type, is_active=True).first()
 
 
-def _validate_template_renders(html_source):
+def _validate_template_renders(html_source, template_obj=None):
     """Renders the submitted source against sample data before it's ever
     saved — a broken template must fail loudly on the settings screen, not
     silently the next time a Stock Manager tries to print a real document.
@@ -60,12 +62,26 @@ def _validate_template_renders(html_source):
     exception, not merely a visually-tight page) under realistic volume.
     """
     try:
-        render_pdf_from_source(html_source, sample_document_context())
+        render_pdf_from_source(
+            html_source,
+            {
+                **sample_document_context(),
+                **layout_context(template_obj),
+                "logo_data_uri": build_logo_data_uri(template_obj),
+            },
+        )
     except Exception as exc:  # noqa: BLE001 - any render failure becomes a clear form error
         raise ValidationError(f"Template failed to render: {exc}") from exc
 
     try:
-        render_pdf_from_source(html_source, _stress_document_context())
+        render_pdf_from_source(
+            html_source,
+            {
+                **_stress_document_context(),
+                **layout_context(template_obj),
+                "logo_data_uri": build_logo_data_uri(template_obj),
+            },
+        )
     except Exception as exc:  # noqa: BLE001 - see above
         raise ValidationError(
             f"Template failed to render with a larger, more realistic document: {exc}"
@@ -136,6 +152,7 @@ def _clean_layout_config(layout_config):
     cleaned["hidden_columns"] = hidden
     cleaned["column_order"] = order
     cleaned["column_labels"] = labels
+    cleaned.update(clean_presentation(layout_config))
     return cleaned
 
 
@@ -200,13 +217,17 @@ def update_template(
     """
     require_role(user, ADMINISTRATOR)
 
-    _validate_template_renders(html_source)
     if logo is not None:
         _validate_logo(logo)
 
     template_obj = get_template(document_type)
     is_new = template_obj is None
     old_html = template_obj.html_source if template_obj else None
+    old_logo = (
+        template_obj.logo
+        if template_obj and template_obj.logo and (logo is not None or remove_logo)
+        else None
+    )
 
     if is_new:
         template_obj = DocumentTemplate(document_type=document_type, status=TemplateStatus.DRAFT)
@@ -238,13 +259,15 @@ def update_template(
     if logo is not None:
         template_obj.logo = logo
     elif remove_logo and template_obj.logo:
-        template_obj.logo.delete(save=False)
         template_obj.logo = None
     if layout_config is not None:
         template_obj.layout_config = _clean_layout_config(layout_config)
     template_obj.version = 1 if is_new else template_obj.version + 1
     template_obj.full_clean()
+    _validate_template_renders(html_source, template_obj)
     template_obj.save()
+    if old_logo:
+        old_logo.delete(save=False)
     _record_version(template_obj=template_obj, user=user)
 
     record_event(
@@ -277,6 +300,7 @@ def publish_template(*, user, document_type):
     if template_obj.status == TemplateStatus.PUBLISHED:
         return template_obj
 
+    _validate_template_renders(template_obj.html_source, template_obj)
     template_obj.status = TemplateStatus.PUBLISHED
     template_obj.save(update_fields=["status"])
     record_event(
@@ -409,7 +433,16 @@ def restore_template_version(*, user, version_obj):
     return template_obj
 
 
-def render_preview_pdf(*, document_type, html_source, logo_file=None, layout_config=None, **style):
+def render_preview_pdf(
+    *,
+    document_type,
+    html_source,
+    logo_file=None,
+    remove_logo=False,
+    layout_config=None,
+    output_format="pdf",
+    **style,
+):
     """Used by the settings screen's Preview button — renders the
     in-progress (not-yet-saved) template text against sample data. A newly
     chosen logo file takes precedence for this preview only; otherwise the
@@ -430,7 +463,7 @@ def render_preview_pdf(*, document_type, html_source, logo_file=None, layout_con
     if logo_file is not None:
         _validate_logo(logo_file)
         context["logo_data_uri"] = file_to_data_uri(logo_file)
-    else:
+    elif not remove_logo:
         context["logo_data_uri"] = build_logo_data_uri(saved_template)
 
     # A throwaway, unsaved DocumentTemplate carries the in-progress style
@@ -444,6 +477,8 @@ def render_preview_pdf(*, document_type, html_source, logo_file=None, layout_con
     )
     context.update(layout_context(preview_template))
     try:
+        if output_format == "html":
+            return Template(html_source).render(Context(context))
         return render_pdf_from_source(html_source, context)
     except ValidationError:
         raise
