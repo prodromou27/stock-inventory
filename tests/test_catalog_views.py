@@ -452,3 +452,40 @@ class TestProductUpdateView:
         assert response.status_code == 302
         unit_product.refresh_from_db()
         assert unit_product.description == "updated"
+
+    def test_locked_context_survives_a_rejected_category_change(
+        self, client, administrator, unit_product, location_tree
+    ):
+        """Regression test: ProductUpdateView.post() computed "locked" on
+        the success path but dropped it from both re-render branches (a
+        plain form error, and update_product()'s ValidationError) — exactly
+        when a Stock Manager needs the explanatory banner most, since it
+        exists specifically to explain the rule they just tripped.
+        """
+        from datetime import date
+
+        from apps.catalog.models import ItemCategory
+        from apps.inventory.services.receipts import receive_stock
+
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-LOCKED-1",
+        )
+        assert unit_product.has_movements()
+
+        client.force_login(administrator)
+        response = client.post(
+            reverse("catalog:product_update", kwargs={"pk": unit_product.pk}),
+            {
+                "brand_name": unit_product.brand.name,
+                "model": unit_product.model,
+                "product_type_name": unit_product.product_type.name,
+                "category": ItemCategory.QUANTITY_STOCK,
+            },
+        )
+        assert response.status_code == 200
+        assert response.context["locked"] is True
+        assert "already has recorded movements" in response.content.decode()

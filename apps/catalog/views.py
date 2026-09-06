@@ -428,7 +428,12 @@ class ProductUpdateView(LoginRequiredMixin, RoleRequiredMixin, View):
             return render(
                 request,
                 "catalog/product_form.html",
-                {"form": form, "product": product, **_catalog_choices()},
+                {
+                    "form": form,
+                    "product": product,
+                    "locked": product.has_movements(),
+                    **_catalog_choices(),
+                },
             )
 
         data = form.cleaned_data
@@ -456,7 +461,12 @@ class ProductUpdateView(LoginRequiredMixin, RoleRequiredMixin, View):
             return render(
                 request,
                 "catalog/product_form.html",
-                {"form": form, "product": product, **_catalog_choices()},
+                {
+                    "form": form,
+                    "product": product,
+                    "locked": product.has_movements(),
+                    **_catalog_choices(),
+                },
             )
 
         messages.success(request, f"Updated product '{product}'.")
