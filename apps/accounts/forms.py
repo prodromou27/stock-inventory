@@ -2,7 +2,8 @@ from django import forms
 from django.contrib.auth import get_user_model, password_validation
 
 from apps.core.authorization import ADMINISTRATOR, READ_ONLY_USER, STOCK_MANAGER
-from apps.locations.models import Location
+from apps.locations.forms import LocationChoiceField
+from apps.locations.models import Location, order_by_hierarchy
 
 User = get_user_model()
 
@@ -14,12 +15,22 @@ ROLE_CHOICES = [
 
 
 class GrantAccessForm(forms.Form):
+    """`location` accepts any active location, any level — not just Country.
+    The backend (grant_location_access()/apps.locations.scoping.scope_queryset())
+    already scopes correctly at any granularity via path__descendant_or_self;
+    this form used to hard-restrict the picker to Country-level only, which
+    meant granting someone access to a single Storage Room (a normal,
+    supported scenario — see tests.conftest.stock_manager_with_room_access)
+    was only possible by calling grant_location_access() directly, never
+    through this screen.
+    """
+
     user = forms.ModelChoiceField(queryset=User.objects.order_by("username"))
-    location = forms.ModelChoiceField(
-        queryset=Location.objects.filter(is_active=True, level=Location.Level.COUNTRY).order_by(
-            "name"
-        ),
-        help_text="Country access automatically includes all locations below it.",
+    location = LocationChoiceField(
+        queryset=order_by_hierarchy(Location.objects.filter(is_active=True)),
+        help_text="Access to a location automatically includes everything below it — e.g. a "
+        "Country grant includes every site and room beneath it; a Storage Room grant includes "
+        "its racks and shelves.",
     )
 
 

@@ -3,7 +3,7 @@ from django.forms import formset_factory
 from django.utils import timezone
 
 from apps.catalog.models import CATEGORY_TRACKING_METHOD, ItemCategory, Product, TrackingMethod
-from apps.locations.models import Location, LocationLevel
+from apps.locations.models import Location, LocationLevel, order_by_hierarchy
 from apps.locations.scoping import accessible_locations, require_room_or_below, scope_queryset
 
 from .models import Condition, Customer, StockPurpose, UnitAsset, UnitStatus, WipeMethod
@@ -25,7 +25,7 @@ def _scoped_location_queryset(user):
     needs; was hand-copied in every form's __init__ before being factored
     out here.
     """
-    return accessible_locations(user).filter(is_active=True).order_by("level", "name")
+    return order_by_hierarchy(accessible_locations(user).filter(is_active=True))
 
 
 def _apply_scoped_location(field, user):
@@ -598,9 +598,9 @@ class AdminCorrectUnitForm(forms.Form):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["to_location"].queryset = Location.objects.filter(
-            is_active=True, level__in=ROOM_OR_BELOW_LEVELS
-        ).order_by("level", "name")
+        self.fields["to_location"].queryset = order_by_hierarchy(
+            Location.objects.filter(is_active=True, level__in=ROOM_OR_BELOW_LEVELS)
+        )
 
     def clean_to_location(self):
         return _validate_room_or_below(self.cleaned_data["to_location"])

@@ -13,6 +13,7 @@ from apps.accounts.services import (
 )
 from apps.audit.models import AuditEvent
 from apps.core.authorization import ADMINISTRATOR, READ_ONLY_USER, STOCK_MANAGER
+from apps.locations.models import Location
 
 User = get_user_model()
 
@@ -98,16 +99,50 @@ class TestGrantAndRevokeViews:
         assert response.status_code == 302
         assert not UserLocationAccess.objects.filter(pk=access.pk).exists()
 
-    def test_grant_form_only_accepts_country_scope(
+    def test_grant_form_accepts_a_storage_room_not_just_country_scope(
         self, client, administrator, stock_manager, location_tree
     ):
+        """Regression test: GrantAccessForm.location used to be hard-
+        restricted to Country-level locations only, even though the
+        backend (grant_location_access()/apps.locations.scoping) already
+        scopes correctly at any granularity — granting someone access to a
+        single Storage Room (a normal, supported scenario, see conftest's
+        stock_manager_with_room_access) was only ever possible by calling
+        the service directly, never through this screen.
+        """
         client.force_login(administrator)
         response = client.post(
             reverse("accounts:grant_access"),
             {"user": stock_manager.pk, "location": location_tree["room"].pk},
         )
-        assert response.status_code == 200
-        assert "Select a valid choice" in response.content.decode()
+        assert response.status_code == 302
+        assert UserLocationAccess.objects.filter(
+            user=stock_manager, location=location_tree["room"]
+        ).exists()
+
+    def test_grant_form_option_labels_disambiguate_same_named_locations(
+        self, client, administrator, location_tree, other_location_tree
+    ):
+        """Two different countries' "Room A"-named rooms must not look
+        identical in the picker — each option is labeled with its full
+        breadcrumb and level.
+        """
+        from apps.locations.services import create_location
+
+        create_location(
+            level=Location.Level.STORAGE_ROOM,
+            name="Room A",
+            parent=other_location_tree["floor"],
+            user=administrator,
+        )
+        client.force_login(administrator)
+        response = client.get(reverse("accounts:grant_access"))
+        content = response.content.decode()
+        assert f"{location_tree['country'].name} &gt; {location_tree['site'].name} &gt; " in content
+        assert (
+            f"{other_location_tree['country'].name} &gt; {other_location_tree['site'].name} &gt; "
+            in content
+        )
 
     def test_stock_manager_cannot_revoke_access(
         self, client, administrator, stock_manager, location_tree

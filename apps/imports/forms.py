@@ -1,7 +1,7 @@
 from django import forms
 
 from apps.inventory.models import StockPurpose
-from apps.locations.models import Location, LocationLevel
+from apps.locations.models import Location, LocationLevel, order_by_hierarchy
 
 from .parsing import MAX_IMPORT_SIZE_BYTES
 
@@ -58,6 +58,6 @@ class RowLocationOverrideForm(forms.Form):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["location"].queryset = Location.objects.filter(
-            is_active=True, level__in=_ROOM_OR_BELOW_LEVELS
-        ).order_by("level", "name")
+        self.fields["location"].queryset = order_by_hierarchy(
+            Location.objects.filter(is_active=True, level__in=_ROOM_OR_BELOW_LEVELS)
+        )

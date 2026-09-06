@@ -18,7 +18,7 @@ from django.views.generic import ListView
 from apps.core.csv_export import CSVExportMixin
 from apps.core.spreadsheets import spreadsheet_safe_row
 from apps.inventory.models import UnitAsset
-from apps.locations.models import Location
+from apps.locations.models import Location, order_by_hierarchy
 from apps.locations.scoping import accessible_locations
 
 from . import queries
@@ -315,7 +315,7 @@ class LowStockView(LoginRequiredMixin, ListView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["locations"] = accessible_locations(self.request.user).order_by("level", "name")
+        context["locations"] = order_by_hierarchy(accessible_locations(self.request.user))
         context["filters"] = self.request.GET
         return context
 
@@ -343,7 +343,7 @@ class ReorderSuggestionsView(LoginRequiredMixin, View):
             self.template_name,
             {
                 "rows": rows,
-                "locations": accessible_locations(request.user).order_by("level", "name"),
+                "locations": order_by_hierarchy(accessible_locations(request.user)),
                 "filters": request.GET,
             },
         )

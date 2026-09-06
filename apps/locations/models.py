@@ -102,3 +102,27 @@ class Location(UUIDPrimaryKeyModel, TimestampedModel):
             node = node.parent
         result.reverse()
         return result
+
+
+def order_by_hierarchy(queryset):
+    """Orders a Location queryset by actual hierarchy depth (Country, Site,
+    Floor, Storage Room, Rack/Cabinet, Shelf/Bin), then name.
+
+    Plain `.order_by("level", "name")` — used to scatter across a dozen
+    call sites in this codebase — sorts alphabetically by `level`'s
+    *stored string* ("country" < "floor" < "rack_cabinet" < "shelf_bin" <
+    "site" < "storage_room"), which is not the hierarchy order at all: a
+    location picker built that way lists every Country, then every Floor,
+    then every Rack/Cabinet, then every Shelf/Bin, then every Site, then
+    every Storage Room — scrambled relative to how an operator actually
+    thinks about the tree. This annotates each row with its real position
+    in Location.LEVEL_ORDER instead.
+    """
+    ordering = models.Case(
+        *(
+            models.When(level=level, then=models.Value(index))
+            for index, level in enumerate(Location.LEVEL_ORDER)
+        ),
+        output_field=models.IntegerField(),
+    )
+    return queryset.annotate(_level_rank=ordering).order_by("_level_rank", "name")

@@ -41,7 +41,7 @@ from apps.core.sorting import (
     parse_multi_sort,
     positive_int_param,
 )
-from apps.locations.models import Location
+from apps.locations.models import Location, order_by_hierarchy
 from apps.locations.scoping import (
     accessible_locations,
     location_breadcrumb_map,
@@ -847,7 +847,7 @@ class UnitAssetListView(LoginRequiredMixin, CSVExportMixin, SortableListMixin, L
         context["selected_status"] = self.request.GET.get("status", "")
         context["statuses"] = UnitStatus.choices
         context["stock_purposes"] = StockPurpose.choices
-        context["locations"] = accessible_locations(self.request.user).order_by("level", "name")
+        context["locations"] = order_by_hierarchy(accessible_locations(self.request.user))
         context["filters"] = self.request.GET
         return context
 
@@ -1451,7 +1451,7 @@ class StockBalanceListView(LoginRequiredMixin, CSVExportMixin, SortableListMixin
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["locations"] = accessible_locations(self.request.user).order_by("level", "name")
+        context["locations"] = order_by_hierarchy(accessible_locations(self.request.user))
         context["stock_purposes"] = StockPurpose.choices
         context["filters"] = self.request.GET
         return context
