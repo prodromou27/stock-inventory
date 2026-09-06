@@ -301,9 +301,7 @@ class TestSetUserRole:
         )
         assert response.status_code == 403
 
-    def test_a_blank_role_submission_is_rejected_not_silently_applied(
-        self, client, administrator
-    ):
+    def test_a_blank_role_submission_is_rejected_not_silently_applied(self, client, administrator):
         """The template's placeholder <option value=""> must never be able
         to reach set_user_role() as a real role — SetUserRoleForm's
         ChoiceField already rejects it (only ROLE_CHOICES are valid), so a
