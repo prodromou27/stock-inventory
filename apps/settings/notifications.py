@@ -2,6 +2,7 @@ from datetime import timedelta
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
+from django.urls import reverse
 from django.utils import timezone
 
 from apps.audit.models import AuditEvent
@@ -21,7 +22,7 @@ from apps.locations.models import LocationLevel
 from apps.locations.scoping import require_location_access
 from apps.reporting.queries import low_stock_balances
 
-from .models import NotificationDigestDelivery, NotificationSubscription
+from .models import Notification, NotificationDigestDelivery, NotificationSubscription
 from .services import send_configured_email
 
 
@@ -190,6 +191,63 @@ def build_digest(subscription, *, today=None):
     return "\n".join(body), counts
 
 
+def _notification_summary_and_url(category, count, country):
+    """The in-app bell's summary text and link-through page for one
+    build_digest() `counts` key — reuses build_digest()'s own detection/
+    counting instead of re-querying low_stock_balances()/_overdue_assignments()/
+    etc a second time just to decide whether to raise a bell notification.
+    """
+    if category == "low_stock":
+        return (
+            f"{count} product(s) low on stock in {country.name}",
+            f"{reverse('reporting:low_stock')}?location={country.pk}",
+        )
+    if category == "overdue_assignments":
+        return (
+            f"{count} overdue temporary assignment(s) in {country.name}",
+            reverse("inventory:transaction_list"),
+        )
+    if category == "import_export_failures":
+        return (
+            f"{count} import/export failure(s) in the last 24 hours",
+            reverse("imports:batch_list"),
+        )
+    if category == "high_data_quality":
+        return (
+            f"{count} unresolved high-severity data-quality finding(s) in {country.name}",
+            reverse("dataquality:workspace"),
+        )
+    return (f"{count} item(s) need attention in {country.name}", "")
+
+
+def sync_in_app_notifications(*, delivery, counts):
+    """One Notification row per truthy build_digest() count, upserted
+    against this delivery (the (subscription, digest_date) row already
+    idempotent per send_daily_digests()'s own get_or_create) — re-running
+    the daily command is safe and never duplicates a bell entry, and a
+    count that's since dropped to zero on a retry is removed rather than
+    left showing a stale alert.
+    """
+    subscription = delivery.subscription
+    current_categories = set()
+    for category, count in counts.items():
+        if not count:
+            continue
+        current_categories.add(category)
+        summary, url = _notification_summary_and_url(category, count, subscription.country)
+        Notification.objects.update_or_create(
+            delivery=delivery,
+            category=category,
+            defaults={
+                "recipient": subscription.recipient,
+                "country": subscription.country,
+                "summary": summary,
+                "url": url,
+            },
+        )
+    delivery.notifications.exclude(category__in=current_categories).delete()
+
+
 def send_daily_digests(*, today=None):
     today = today or timezone.localdate()
     results = {"sent": 0, "no_content": 0, "failed": 0, "skipped": 0}
@@ -211,6 +269,13 @@ def send_daily_digests(*, today=None):
 
         body, counts = build_digest(subscription, today=today)
         delivery.item_counts = counts
+        # In-app bell notifications are independent of email delivery
+        # succeeding — a low-stock alert is still worth surfacing even if
+        # SMTP is down — so this runs regardless of which branch below
+        # follows, including "no content" (which correctly clears any
+        # stale notification from a previous run whose count has since
+        # dropped to zero).
+        sync_in_app_notifications(delivery=delivery, counts=counts)
         if not body:
             delivery.status = NotificationDigestDelivery.Status.NO_CONTENT
             delivery.detail = "No matching alerts."

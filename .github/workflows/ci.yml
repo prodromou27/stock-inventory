@@ -80,3 +80,22 @@ jobs:
 
       - name: pytest
         run: pytest -q
+
+      # Chromium's own OS-level dependencies (fonts, GTK/NSS libs, etc.) —
+      # separate from the WeasyPrint apt packages above, which only cover
+      # PDF rendering, not running a real browser.
+      - name: Install Playwright's Chromium browser
+        run: python -m playwright install --with-deps chromium
+
+      - name: Browser QA (document editor + generation, template lifecycle)
+        env:
+          RUN_BROWSER_TESTS: "1"
+        run: pytest tests/test_document_browser.py -q
+
+      - name: Upload browser QA screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-qa-screenshots
+          path: .qa-screenshots/
+          if-no-files-found: ignore

@@ -5,9 +5,11 @@
 {% block content %}
   <div class="page-header">
     <h1>Settings</h1>
+    <div class="page-header__subtitle">Organized by how often you'll need it: your everyday tools first, one-time system setup last.</div>
   </div>
 
-  <h2>Locations</h2>
+  <h2>Locations & documents</h2>
+  <p class="settings-section__intro">The two things almost everyone in Settings is here for.</p>
   <div class="card-grid">
     <a class="action-card" href="{% url 'locations:list' %}">
       <span class="action-card__title">Locations</span>
@@ -21,10 +23,23 @@
         {% endif %}
       </span>
     </a>
+    {% if user_is_administrator or "StockManager" in user_role_groups %}
+      <a class="action-card" href="{% url 'documents:template_hub' %}">
+        <span class="action-card__title">Document templates</span>
+        <span class="action-card__desc">
+          {% if user_is_administrator %}
+            Customize the assignment/delivery/disposal PDF layout, columns, and branding.
+          {% else %}
+            Preview what the assignment/delivery/disposal PDF currently looks like.
+          {% endif %}
+        </span>
+      </a>
+    {% endif %}
   </div>
 
   {% if user_is_administrator %}
     <h2>Access & data</h2>
+    <p class="settings-section__intro">Who can do what, and keeping the data itself clean.</p>
     <div class="card-grid">
       <a class="action-card" href="{% url 'accounts:user_access_list' %}">
         <span class="action-card__title">Manage access</span>
@@ -50,9 +65,14 @@
         <span class="action-card__title">Product custom fields</span>
         <span class="action-card__desc">Add extra fields to the product form without a code change.</span>
       </a>
+      <a class="action-card" href="{% url 'settings:notifications' %}">
+        <span class="action-card__title">Daily digest recipients</span>
+        <span class="action-card__desc">Who gets emailed about low stock, overdue assignments, and failures — not your own notification bell.</span>
+      </a>
     </div>
 
-    <h2>System & documents</h2>
+    <h2>System setup</h2>
+    <p class="settings-section__intro">Configured once, rarely revisited.</p>
     <div class="card-grid">
       <a class="action-card" href="{% url 'settings:system' %}">
         <span class="action-card__title">System configuration</span>
@@ -66,29 +86,9 @@
         <span class="action-card__title">Email (SMTP)</span>
         <span class="action-card__desc">Outgoing mail server configuration, with a test-send option.</span>
       </a>
-      <a class="action-card" href="{% url 'settings:notifications' %}">
-        <span class="action-card__title">Daily notifications</span>
-        <span class="action-card__desc">Choose per-country recipients and opt-in alert categories.</span>
-      </a>
       <a class="action-card" href="{% url 'settings:certificates' %}">
         <span class="action-card__title">TLS certificate</span>
         <span class="action-card__desc">Upload a real certificate to replace the self-signed one.</span>
-      </a>
-    </div>
-  {% endif %}
-
-  {% if user_is_administrator or "StockManager" in user_role_groups %}
-    <h2>Documents</h2>
-    <div class="card-grid">
-      <a class="action-card" href="{% url 'documents:template_hub' %}">
-        <span class="action-card__title">Document templates</span>
-        <span class="action-card__desc">
-          {% if user_is_administrator %}
-            Customize the assignment/delivery/disposal PDF layout, columns, and branding.
-          {% else %}
-            Preview what the assignment/delivery/disposal PDF currently looks like.
-          {% endif %}
-        </span>
       </a>
     </div>
   {% endif %}

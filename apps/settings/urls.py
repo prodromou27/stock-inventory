@@ -20,4 +20,15 @@ urlpatterns = [
         views.NotificationSubscriptionUpdateView.as_view(),
         name="notification_edit",
     ),
+    path("my-notifications/", views.NotificationListView.as_view(), name="notification_list"),
+    path(
+        "my-notifications/<uuid:pk>/open/",
+        views.NotificationOpenView.as_view(),
+        name="notification_open",
+    ),
+    path(
+        "my-notifications/mark-all-read/",
+        views.NotificationMarkAllReadView.as_view(),
+        name="notification_mark_all_read",
+    ),
 ]

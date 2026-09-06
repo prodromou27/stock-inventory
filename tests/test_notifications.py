@@ -9,6 +9,7 @@ from apps.audit.models import AuditEvent
 from apps.inventory.services.assignments import assign_to_employee
 from apps.inventory.services.receipts import receive_stock
 from apps.settings.models import (
+    Notification,
     NotificationDigestDelivery,
     SystemSettings,
 )
@@ -154,3 +155,197 @@ class TestDailyDigests:
 
         assert counts["overdue_assignments"] == 1
         assert "Temporary recipient" in body
+
+
+@pytest.mark.django_db
+class TestInAppNotifications:
+    """The bell's backing rows — created alongside (not instead of) the
+    email digest, by apps.settings.notifications.sync_in_app_notifications(),
+    reusing build_digest()'s own counts rather than re-detecting anything.
+    """
+
+    def test_low_stock_creates_an_in_app_notification(
+        self, administrator, quantity_product, location_tree
+    ):
+        receive_stock(
+            user=administrator,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=3,
+        )
+        _subscription(
+            administrator,
+            location_tree["country"],
+            notify_overdue_assignments=False,
+            notify_import_export_failures=False,
+            notify_data_quality=False,
+        )
+
+        call_command("send_daily_inventory_digest")
+
+        notification = Notification.objects.get()
+        assert notification.recipient == administrator
+        assert notification.category == "low_stock"
+        assert notification.read_at is None
+        assert "low on stock" in notification.summary
+        assert notification.url
+
+    def test_rerunning_the_command_does_not_duplicate(
+        self, administrator, quantity_product, location_tree
+    ):
+        receive_stock(
+            user=administrator,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=3,
+        )
+        _subscription(
+            administrator,
+            location_tree["country"],
+            notify_overdue_assignments=False,
+            notify_import_export_failures=False,
+            notify_data_quality=False,
+        )
+
+        call_command("send_daily_inventory_digest")
+        call_command("send_daily_inventory_digest")
+
+        assert Notification.objects.count() == 1
+
+    def test_no_content_digest_creates_no_notification(self, administrator, location_tree):
+        _subscription(
+            administrator,
+            location_tree["country"],
+            notify_low_stock=False,
+            notify_overdue_assignments=False,
+            notify_import_export_failures=False,
+            notify_data_quality=False,
+        )
+
+        call_command("send_daily_inventory_digest")
+
+        assert Notification.objects.count() == 0
+
+    def test_open_notification_marks_read_and_redirects(
+        self, client, administrator, quantity_product, location_tree
+    ):
+        receive_stock(
+            user=administrator,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=3,
+        )
+        _subscription(
+            administrator,
+            location_tree["country"],
+            notify_overdue_assignments=False,
+            notify_import_export_failures=False,
+            notify_data_quality=False,
+        )
+        call_command("send_daily_inventory_digest")
+        notification = Notification.objects.get()
+
+        client.force_login(administrator)
+        response = client.get(reverse("settings:notification_open", args=[notification.pk]))
+        assert response.status_code == 302
+        notification.refresh_from_db()
+        assert notification.read_at is not None
+
+    def test_cannot_open_another_users_notification(
+        self, client, administrator, stock_manager, quantity_product, location_tree
+    ):
+        receive_stock(
+            user=administrator,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=3,
+        )
+        _subscription(
+            administrator,
+            location_tree["country"],
+            notify_overdue_assignments=False,
+            notify_import_export_failures=False,
+            notify_data_quality=False,
+        )
+        call_command("send_daily_inventory_digest")
+        notification = Notification.objects.get()
+
+        client.force_login(stock_manager)
+        response = client.get(reverse("settings:notification_open", args=[notification.pk]))
+        assert response.status_code == 404
+        notification.refresh_from_db()
+        assert notification.read_at is None
+
+    def test_mark_all_read(self, client, administrator, quantity_product, location_tree):
+        receive_stock(
+            user=administrator,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=3,
+        )
+        _subscription(
+            administrator,
+            location_tree["country"],
+            notify_overdue_assignments=False,
+            notify_import_export_failures=False,
+            notify_data_quality=False,
+        )
+        call_command("send_daily_inventory_digest")
+
+        client.force_login(administrator)
+        response = client.post(reverse("settings:notification_mark_all_read"))
+        assert response.status_code == 302
+        assert not Notification.objects.filter(recipient=administrator, read_at__isnull=True)
+
+    def test_bell_context_shows_unread_count_on_any_page(
+        self, client, administrator, quantity_product, location_tree
+    ):
+        receive_stock(
+            user=administrator,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=3,
+        )
+        _subscription(
+            administrator,
+            location_tree["country"],
+            notify_overdue_assignments=False,
+            notify_import_export_failures=False,
+            notify_data_quality=False,
+        )
+        call_command("send_daily_inventory_digest")
+
+        client.force_login(administrator)
+        response = client.get(reverse("core:home"))
+        assert response.context["unread_notification_count"] == 1
+        assert len(response.context["unread_notifications"]) == 1
+
+    def test_list_view_scoped_to_the_requesting_user(
+        self, client, administrator, stock_manager, quantity_product, location_tree
+    ):
+        receive_stock(
+            user=administrator,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=3,
+        )
+        _subscription(
+            administrator,
+            location_tree["country"],
+            notify_overdue_assignments=False,
+            notify_import_export_failures=False,
+            notify_data_quality=False,
+        )
+        call_command("send_daily_inventory_digest")
+
+        client.force_login(stock_manager)
+        response = client.get(reverse("settings:notification_list"))
+        assert response.status_code == 200
+        assert list(response.context["notifications"]) == []

@@ -302,7 +302,11 @@ def publish_template(*, user, document_type):
 
     _validate_template_renders(template_obj.html_source, template_obj)
     template_obj.status = TemplateStatus.PUBLISHED
-    template_obj.save(update_fields=["status"])
+    # updated_at is auto_now=True — Django computes its new value regardless,
+    # but a `save(update_fields=...)` call still only writes columns actually
+    # named in that list, so it must be listed explicitly here or the row's
+    # updated_at silently stays stale despite the in-memory value changing.
+    template_obj.save(update_fields=["status", "updated_at"])
     record_event(
         actor=user,
         event_type=AuditEvent.EventType.RECORD_UPDATED,
@@ -327,7 +331,7 @@ def reset_template(*, user, document_type):
         return
 
     template_obj.is_active = False
-    template_obj.save(update_fields=["is_active"])
+    template_obj.save(update_fields=["is_active", "updated_at"])
     record_event(
         actor=user,
         event_type=AuditEvent.EventType.RECORD_UPDATED,
@@ -379,6 +383,7 @@ def duplicate_template(*, user, source_document_type, target_document_type):
         finally:
             source.logo.close()
     new_template.full_clean()
+    _validate_template_renders(new_template.html_source, new_template)
     new_template.save()
     _record_version(template_obj=new_template, user=user)
 
@@ -418,6 +423,7 @@ def restore_template_version(*, user, version_obj):
     template_obj.updated_by = user
     template_obj.version = 1 if is_new else template_obj.version + 1
     template_obj.full_clean()
+    _validate_template_renders(template_obj.html_source, template_obj)
     template_obj.save()
     _record_version(template_obj=template_obj, user=user)
 
@@ -460,23 +466,32 @@ def render_preview_pdf(
     """
     saved_template = get_template(document_type)
     context = dict(sample_document_context())
-    if logo_file is not None:
-        _validate_logo(logo_file)
-        context["logo_data_uri"] = file_to_data_uri(logo_file)
-    elif not remove_logo:
-        context["logo_data_uri"] = build_logo_data_uri(saved_template)
-
-    # A throwaway, unsaved DocumentTemplate carries the in-progress style
-    # fields into layout_context() without persisting anything — the same
-    # function real generation uses, so preview and real output can never
-    # drift apart in how they compute heading/table colors, spacing, etc.
-    preview_template = DocumentTemplate(
-        document_type=document_type,
-        layout_config={**_default_layout_config(), **_clean_layout_config(layout_config or {})},
-        **{field: style[field] for field in _STYLE_FIELDS if field in style},
-    )
-    context.update(layout_context(preview_template))
     try:
+        if logo_file is not None:
+            _validate_logo(logo_file)
+            context["logo_data_uri"] = file_to_data_uri(logo_file)
+        elif not remove_logo:
+            # Reads the already-saved logo from storage — kept inside this
+            # try block (not before it) so a missing/unreadable file (a
+            # storage-permission problem, or a file removed out from under
+            # the app) becomes the same clean ValidationError as any other
+            # render failure, matching this function's own documented
+            # promise, rather than an uncaught OSError/500.
+            context["logo_data_uri"] = build_logo_data_uri(saved_template)
+
+        # A throwaway, unsaved DocumentTemplate carries the in-progress style
+        # fields into layout_context() without persisting anything — the
+        # same function real generation uses, so preview and real output can
+        # never drift apart in how they compute heading/table colors, etc.
+        preview_template = DocumentTemplate(
+            document_type=document_type,
+            layout_config={
+                **_default_layout_config(),
+                **_clean_layout_config(layout_config or {}),
+            },
+            **{field: style[field] for field in _STYLE_FIELDS if field in style},
+        )
+        context.update(layout_context(preview_template))
         if output_format == "html":
             return Template(html_source).render(Context(context))
         return render_pdf_from_source(html_source, context)

@@ -5,6 +5,12 @@
   {{ field.errors }}
   <label for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="required-mark">*</span>{% endif %}</label>
   {{ field }}
+  {% if field.field.widget.attrs.data_empty_hint %}
+    <span class="messages__item messages__item--warning">
+      {{ field.field.widget.attrs.data_empty_hint }}
+      <a href="{% url 'locations:create' %}" target="_blank" rel="noopener">Create a location</a>
+    </span>
+  {% endif %}
   {% if field.help_text %}<span class="helptext">{{ field.help_text }}</span>{% endif %}
 </p>
 {% endif %}

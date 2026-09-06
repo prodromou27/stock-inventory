@@ -3,7 +3,8 @@ import logging
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import ValidationError
-from django.shortcuts import redirect, render
+from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 from django.views import View
 
 from apps.core.authorization import ADMINISTRATOR, RoleRequiredMixin
@@ -15,7 +16,7 @@ from .forms import (
     SystemSettingsForm,
     TimezoneSettingsForm,
 )
-from .models import NotificationSubscription, SystemSettings
+from .models import Notification, NotificationSubscription, SystemSettings
 from .notifications import save_notification_subscription
 from .services import (
     send_test_email,
@@ -279,3 +280,44 @@ class NotificationSubscriptionUpdateView(LoginRequiredMixin, RoleRequiredMixin, 
                 messages.success(request, "Notification subscription saved.")
                 return redirect("settings:notifications")
         return render(request, self.template_name, {"subscription": subscription, "form": form})
+
+
+# --- In-app notification bell -------------------------------------------
+
+
+class NotificationListView(LoginRequiredMixin, View):
+    """The bell's "see all" page — every notification ever raised for this
+    user, most recent first, not just the handful the topbar dropdown shows.
+    """
+
+    template_name = "settings/notification_list.html"
+
+    def get(self, request):
+        notifications = Notification.objects.filter(recipient=request.user).select_related(
+            "country"
+        )
+        return render(request, self.template_name, {"notifications": notifications})
+
+
+class NotificationOpenView(LoginRequiredMixin, View):
+    """Marks one notification read, then sends the user on to whatever page
+    it's actually about — a single click does both, no separate "mark read"
+    step to remember. Scoped to the requesting user's own notifications
+    (get_object_or_404's queryset filter), never another user's by id.
+    """
+
+    def get(self, request, pk):
+        notification = get_object_or_404(Notification, pk=pk, recipient=request.user)
+        if notification.read_at is None:
+            notification.read_at = timezone.now()
+            notification.save(update_fields=["read_at", "updated_at"])
+        return redirect(notification.url or "settings:notifications")
+
+
+class NotificationMarkAllReadView(LoginRequiredMixin, View):
+    def post(self, request):
+        Notification.objects.filter(recipient=request.user, read_at__isnull=True).update(
+            read_at=timezone.now()
+        )
+        redirect_to = request.POST.get("next") or "core:home"
+        return redirect(redirect_to)

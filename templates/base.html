@@ -83,6 +83,39 @@
           <svg class="theme-toggle__icon theme-toggle__icon--sun" aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#sun"></use></svg>
           <svg class="theme-toggle__icon theme-toggle__icon--moon" aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#moon"></use></svg>
         </button>
+        <details class="notification-bell">
+          <summary aria-label="Notifications{% if unread_notification_count %}, {{ unread_notification_count }} unread{% endif %}">
+            <svg class="notification-bell__icon" aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#bell"></use></svg>
+            {% if unread_notification_count %}<span class="notification-bell__badge">{{ unread_notification_count|default:0 }}</span>{% endif %}
+          </summary>
+          <div class="notification-bell__panel">
+            <div class="notification-bell__panel-header">
+              <strong>Notifications</strong>
+              {% if unread_notification_count %}
+                <form method="post" action="{% url 'settings:notification_mark_all_read' %}">
+                  {% csrf_token %}
+                  <input type="hidden" name="next" value="{{ request.path }}">
+                  <button type="submit" class="btn btn--sm">Mark all read</button>
+                </form>
+              {% endif %}
+            </div>
+            {% if unread_notifications %}
+              <ul class="notification-bell__list">
+                {% for notification in unread_notifications %}
+                  <li>
+                    <a href="{% url 'settings:notification_open' notification.pk %}">
+                      <span class="notification-bell__summary">{{ notification.summary }}</span>
+                      <span class="notification-bell__meta">{{ notification.created_at|date:"M j" }}</span>
+                    </a>
+                  </li>
+                {% endfor %}
+              </ul>
+            {% else %}
+              <p class="empty-state">No unread notifications.</p>
+            {% endif %}
+            <a class="notification-bell__all-link" href="{% url 'settings:notification_list' %}">See all notifications</a>
+          </div>
+        </details>
         <details class="user-menu">
           <summary><span class="user-avatar">{{ user.get_username|slice:":1"|upper }}</span><span class="user-menu__identity"><strong>{{ user.get_username }}</strong>{% if user_role_groups %}<small>{{ user_role_groups|join:", " }}</small>{% endif %}</span><svg aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#chevron"></use></svg></summary>
           <div class="user-menu__panel">

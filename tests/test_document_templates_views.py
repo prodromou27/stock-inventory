@@ -3,9 +3,15 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 
 from apps.documents.models import DocumentTemplate, DocumentType
-from apps.documents.template_services import update_template
+from apps.documents.template_services import publish_template, update_template
 
 VALID_HTML = "<html><body><h1>{{ document_number }}</h1></body></html>"
+
+PNG_BYTES = bytes.fromhex(
+    "89504e470d0a1a0a0000000d4948445200000001000000010806000000"
+    "1f15c4890000000a49444154789c6360000002000155e75dd8000000004"
+    "9454e44ae426082"
+)
 
 VALID_STYLE = {
     "logo_position": "left",
@@ -153,6 +159,30 @@ class TestLivePreviewView:
         client.force_login(read_only_user)
         response = client.get(reverse("documents:template_live_preview", args=["delivery"]))
         assert response.status_code == 403
+
+    def test_missing_logo_file_returns_friendly_error_not_500(self, client, administrator):
+        """Regression test: a published template's logo unreadable from
+        storage (deleted out from under the app, or a storage-permission
+        problem) used to raise an uncaught OSError here — a raw 500 with no
+        exception handling at all, unlike the equivalent real-generation
+        path which already had a friendly-message fallback.
+        """
+        template_obj = update_template(
+            user=administrator,
+            document_type=DocumentType.DELIVERY,
+            html_source=VALID_HTML,
+            logo=SimpleUploadedFile("logo.png", PNG_BYTES, content_type="image/png"),
+        )
+        publish_template(user=administrator, document_type=DocumentType.DELIVERY)
+        # Simulate the file vanishing from storage without touching the DB
+        # row — exactly what a permission problem or an out-of-band delete
+        # looks like from Django's perspective.
+        template_obj.logo.storage.delete(template_obj.logo.name)
+
+        client.force_login(administrator)
+        response = client.get(reverse("documents:template_live_preview", args=["delivery"]))
+        assert response.status_code == 500
+        assert b"storage permissions" in response.content
 
     def test_unknown_document_type_404s(self, client, administrator):
         client.force_login(administrator)

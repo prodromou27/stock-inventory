@@ -1,7 +1,15 @@
+import logging
+
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import ValidationError
-from django.http import FileResponse, Http404, HttpResponse, HttpResponseBadRequest
+from django.http import (
+    FileResponse,
+    Http404,
+    HttpResponse,
+    HttpResponseBadRequest,
+    HttpResponseServerError,
+)
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
 
@@ -29,6 +37,8 @@ from .template_services import (
     restore_template_version,
     update_template,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class GenerateDocumentView(LoginRequiredMixin, RoleRequiredMixin, View):
@@ -196,7 +206,24 @@ class DocumentTemplateLivePreviewView(LoginRequiredMixin, RoleRequiredMixin, Vie
 
     def get(self, request, document_type):
         _require_valid_document_type(document_type)
-        pdf_bytes = render_pdf(sample_document_context(), document_type=document_type)
+        try:
+            pdf_bytes = render_pdf(sample_document_context(), document_type=document_type)
+        except ValidationError as exc:
+            return HttpResponseBadRequest(
+                "; ".join(exc.messages) if hasattr(exc, "messages") else str(exc)
+            )
+        except OSError:
+            # The published template's logo file couldn't be read (missing
+            # from storage, or a storage-permission problem — the same
+            # class of failure apps.documents.services.generate_document()
+            # already turns into a friendly message for real generation;
+            # this is that same protection for the read-only preview path,
+            # which previously had none at all and surfaced a raw 500).
+            logger.exception("Could not render live preview for document_type=%s", document_type)
+            return HttpResponseServerError(
+                "This template's logo could not be read. Ask an Administrator to check document "
+                "storage permissions, or remove and re-upload the logo, then try again."
+            )
         return HttpResponse(pdf_bytes, content_type="application/pdf")
 
 
@@ -430,6 +457,10 @@ class DocumentTemplateRestoreVersionView(LoginRequiredMixin, RoleRequiredMixin, 
             pk=version_pk,
             template__document_type=document_type,
         )
-        restore_template_version(user=request.user, version_obj=version_obj)
-        messages.success(request, f"Restored v{version_obj.version}.")
+        try:
+            restore_template_version(user=request.user, version_obj=version_obj)
+        except ValidationError as exc:
+            messages.error(request, "; ".join(exc.messages))
+        else:
+            messages.success(request, f"Restored v{version_obj.version}.")
         return redirect("documents:template_edit", document_type=document_type)

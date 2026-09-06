@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block title %}Notifications — Stock Inventory{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>Notifications</h1>
+      <div class="page-header__subtitle">Everything the daily digest has raised for you, most recent first.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    {% if notifications %}
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Status</th><th>Category</th><th>Summary</th><th>Date</th><th></th></tr></thead>
+          <tbody>
+            {% for notification in notifications %}
+              <tr>
+                <td><span class="badge {% if notification.read_at %}badge--neutral{% else %}badge--info{% endif %}">{% if notification.read_at %}Read{% else %}Unread{% endif %}</span></td>
+                <td>{{ notification.get_category_display }}</td>
+                <td>{{ notification.summary }}</td>
+                <td>{{ notification.created_at|date:"Y-m-d H:i" }}</td>
+                <td>
+                  {% if notification.url %}
+                    <a class="btn btn--sm" href="{% url 'settings:notification_open' notification.pk %}">Open</a>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="empty-state">No notifications yet — the daily digest job creates these as it finds things worth your attention.</p>
+    {% endif %}
+  </div>
+{% endblock %}

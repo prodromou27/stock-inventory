@@ -5,14 +5,22 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 
 from apps.audit.models import AuditEvent
-from apps.documents.models import DocumentTemplate, DocumentType, FontChoice, PageMargin
+from apps.documents.models import (
+    DocumentTemplate,
+    DocumentTemplateVersion,
+    DocumentType,
+    FontChoice,
+    PageMargin,
+)
 from apps.documents.pdf import default_template_source, layout_context, render_styleable_source
 from apps.documents.services import generate_document
 from apps.documents.template_services import (
+    duplicate_template,
     get_template,
     publish_template,
     render_preview_pdf,
     reset_template,
+    restore_template_version,
     update_template,
 )
 from apps.inventory.models import UnitAsset
@@ -258,6 +266,149 @@ class TestResetTemplate:
         )
         with pytest.raises(PermissionDenied):
             reset_template(user=stock_manager, document_type=DocumentType.DELIVERY)
+
+
+@pytest.mark.django_db
+class TestDuplicateTemplate:
+    def test_copies_configuration_into_a_new_draft(self, administrator):
+        source = update_template(
+            user=administrator,
+            document_type=DocumentType.DELIVERY,
+            html_source=VALID_HTML,
+            accent_color="#abcdef",
+        )
+        new_template = duplicate_template(
+            user=administrator,
+            source_document_type=DocumentType.DELIVERY,
+            target_document_type=DocumentType.ASSIGNMENT,
+        )
+        assert new_template.document_type == DocumentType.ASSIGNMENT
+        assert new_template.status == "draft"
+        assert new_template.html_source == source.html_source
+        assert new_template.accent_color == "#abcdef"
+        assert new_template.version == 1
+
+    def test_rejects_a_broken_source_template_without_saving(self, administrator):
+        """Regression test: duplicate_template() used to skip the same
+        render validation update_template()/publish_template() already
+        require — a template row could reach `full_clean()`+`save()` (and
+        even get published later) despite html_source not actually
+        rendering, breaking every future real generation from that row.
+        """
+        template_obj = DocumentTemplate(
+            document_type=DocumentType.DELIVERY, html_source=BROKEN_HTML, version=1
+        )
+        template_obj.save()
+        with pytest.raises(ValidationError, match="failed to render"):
+            duplicate_template(
+                user=administrator,
+                source_document_type=DocumentType.DELIVERY,
+                target_document_type=DocumentType.ASSIGNMENT,
+            )
+        assert get_template(DocumentType.ASSIGNMENT) is None
+
+    def test_requires_a_different_target_type(self, administrator):
+        update_template(
+            user=administrator, document_type=DocumentType.DELIVERY, html_source=VALID_HTML
+        )
+        with pytest.raises(ValidationError, match="different document type"):
+            duplicate_template(
+                user=administrator,
+                source_document_type=DocumentType.DELIVERY,
+                target_document_type=DocumentType.DELIVERY,
+            )
+
+    def test_rejects_when_target_already_has_a_template(self, administrator):
+        update_template(
+            user=administrator, document_type=DocumentType.DELIVERY, html_source=VALID_HTML
+        )
+        update_template(
+            user=administrator, document_type=DocumentType.ASSIGNMENT, html_source=VALID_HTML
+        )
+        with pytest.raises(ValidationError, match="already has a template"):
+            duplicate_template(
+                user=administrator,
+                source_document_type=DocumentType.DELIVERY,
+                target_document_type=DocumentType.ASSIGNMENT,
+            )
+
+    def test_requires_administrator(self, administrator, stock_manager):
+        update_template(
+            user=administrator, document_type=DocumentType.DELIVERY, html_source=VALID_HTML
+        )
+        with pytest.raises(PermissionDenied):
+            duplicate_template(
+                user=stock_manager,
+                source_document_type=DocumentType.DELIVERY,
+                target_document_type=DocumentType.ASSIGNMENT,
+            )
+
+
+@pytest.mark.django_db
+class TestRestoreTemplateVersion:
+    def test_restore_creates_a_new_version_from_an_old_snapshot(self, administrator):
+        update_template(
+            user=administrator,
+            document_type=DocumentType.DELIVERY,
+            html_source=VALID_HTML,
+            accent_color="#111111",
+        )
+        v1 = DocumentTemplateVersion.objects.get(
+            template__document_type=DocumentType.DELIVERY, version=1
+        )
+        current = update_template(
+            user=administrator,
+            document_type=DocumentType.DELIVERY,
+            html_source=VALID_HTML,
+            accent_color="#222222",
+        )
+        assert current.version == 2
+
+        restored = restore_template_version(user=administrator, version_obj=v1)
+        assert restored.pk == current.pk  # same live row, not a new one
+        assert restored.accent_color == "#111111"
+        assert restored.version == 3  # a new version, v1's history untouched
+        v1.refresh_from_db()
+        assert v1.field_snapshot["accent_color"] == "#111111"
+
+    def test_rejects_a_broken_snapshot_without_saving(self, administrator):
+        """Regression test: restore_template_version() used to skip
+        render validation entirely — restoring a stale/corrupt snapshot
+        could silently write an unrenderable html_source onto a
+        *currently Published, live* template, breaking every subsequent
+        real document generation for that type until someone noticed.
+        """
+        good = update_template(
+            user=administrator, document_type=DocumentType.DELIVERY, html_source=VALID_HTML
+        )
+        publish_template(user=administrator, document_type=DocumentType.DELIVERY)
+        broken_version = DocumentTemplateVersion.objects.create(
+            template=good,
+            version=99,
+            field_snapshot={
+                "html_source": BROKEN_HTML,
+                "layout_config": {},
+                "accent_color": "#444444",
+            },
+            saved_by=administrator,
+        )
+
+        with pytest.raises(ValidationError, match="failed to render"):
+            restore_template_version(user=administrator, version_obj=broken_version)
+
+        good.refresh_from_db()
+        assert good.html_source == VALID_HTML  # untouched — the bad restore never saved
+        assert good.status == "published"
+
+    def test_requires_administrator(self, administrator, stock_manager):
+        update_template(
+            user=administrator, document_type=DocumentType.DELIVERY, html_source=VALID_HTML
+        )
+        version_obj = DocumentTemplateVersion.objects.get(
+            template__document_type=DocumentType.DELIVERY, version=1
+        )
+        with pytest.raises(PermissionDenied):
+            restore_template_version(user=stock_manager, version_obj=version_obj)
 
 
 @pytest.mark.django_db

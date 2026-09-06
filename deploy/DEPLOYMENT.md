@@ -179,3 +179,19 @@ need exists). `web`'s Docker healthcheck and `/healthz/` are what a host-level m
 your platform's own health-check feature) should poll. Logs are structured JSON on stdout
 (`config/settings/production.py`) — point your log collector (if any) at the container's stdout rather than a
 file inside it.
+
+## Troubleshooting: "The PDF could not be saved"
+
+`deploy/Dockerfile.prod` creates and chowns `/app/media` to the non-root `app` user before that path is ever used
+as a volume mount point, specifically so Docker's first-time-volume-creation behavior (it copies the ownership of
+whatever already exists at the mount point in the image into a brand-new named volume) leaves `media_data`
+writable by `app` from the very first `docker compose up`. If you deployed with an image built *before* that fix,
+the `media_data` volume was already created owned by `root`, and rebuilding the image alone won't retroactively
+fix an existing volume's ownership — every document generation will keep failing with "The PDF could not be
+saved" until it's corrected once, by hand:
+
+```
+docker compose -f deploy/docker-compose.prod.yml exec -u root web chown -R app:app /app/media
+```
+
+This is a one-time fix per affected volume — it does not need to be repeated on subsequent restarts or rebuilds.

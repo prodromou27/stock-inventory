@@ -42,7 +42,16 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 COPY --from=assets /app/static/css/app.css ./static/css/app.css
-RUN chown -R app:app /app && chmod +x deploy/entrypoint.sh deploy/backup.sh
+# media_data (deploy/docker-compose.prod.yml) is a named volume mounted at
+# /app/media with nothing in the repo to COPY there (git doesn't track
+# empty directories, and generated PDFs/logos obviously aren't committed).
+# Docker populates a brand-new named volume's ownership from whatever
+# already exists at that path in the image on first mount — if nothing
+# exists there, it initializes root:root instead, and every write from the
+# non-root `app` user below fails with a silent PermissionError (surfaced
+# to users as "The PDF could not be saved"). Creating and chowning it here,
+# before that first mount, is what makes the volume come up writable.
+RUN mkdir -p media && chown -R app:app /app && chmod +x deploy/entrypoint.sh deploy/backup.sh
 
 USER app
 

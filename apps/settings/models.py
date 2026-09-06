@@ -159,3 +159,62 @@ class NotificationDigestDelivery(UUIDPrimaryKeyModel, TimestampedModel):
                 name="notification_unique_subscription_digest_date",
             )
         ]
+
+
+class NotificationCategory(models.TextChoices):
+    """Mirrors NotificationSubscription's four notify_* toggles and
+    build_digest()'s `counts` dict keys exactly — apps.settings.notifications.
+    sync_in_app_notifications() creates one Notification per truthy count
+    per daily digest run, reusing that same detection logic rather than
+    re-querying it here.
+    """
+
+    LOW_STOCK = "low_stock", "Low stock"
+    OVERDUE_ASSIGNMENTS = "overdue_assignments", "Overdue temporary assignments"
+    IMPORT_EXPORT_FAILURES = "import_export_failures", "Import/export failures"
+    DATA_QUALITY = "high_data_quality", "Data quality"
+
+
+class Notification(UUIDPrimaryKeyModel, TimestampedModel):
+    """The in-app bell's backing store — one row per (recipient, country,
+    category, day) a daily digest run found something worth surfacing.
+    Deliberately NOT one row per individual low-stock product/overdue
+    assignment/etc: that would flood the bell with dozens of near-duplicate
+    entries every day the underlying issue persists. One summarizing row
+    per category per day, linking through to the page that shows the full
+    detail, matches how the email digest itself groups the same data into
+    sections.
+
+    `recipient` is denormalized from `delivery.subscription.recipient` (and
+    `country` from `delivery.subscription.country`) purely so the bell's
+    per-request unread-count/list queries never need to join through
+    NotificationDigestDelivery -> NotificationSubscription just to filter by
+    who's asking — the same "cheap to query on every page" trade doc 02
+    already accepts elsewhere (e.g. DataQualityFinding.country).
+    """
+
+    delivery = models.ForeignKey(
+        NotificationDigestDelivery, on_delete=models.CASCADE, related_name="notifications"
+    )
+    recipient = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="notifications"
+    )
+    country = models.ForeignKey("locations.Location", on_delete=models.CASCADE, related_name="+")
+    category = models.CharField(max_length=30, choices=NotificationCategory.choices)
+    summary = models.CharField(max_length=255)
+    url = models.CharField(max_length=255, blank=True)
+    read_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["delivery", "category"], name="unique_notification_per_delivery_category"
+            )
+        ]
+        indexes = [
+            models.Index(fields=["recipient", "read_at"], name="notif_recipient_read_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.recipient} — {self.get_category_display()} ({self.created_at:%Y-%m-%d})"

@@ -2,6 +2,7 @@ import pytest
 from django.core.exceptions import ValidationError
 from django.urls import reverse
 
+from apps.inventory.forms import ReceiveStockForm
 from apps.locations.models import Location
 from apps.locations.scoping import require_room_or_below
 from apps.locations.services import create_location
@@ -32,6 +33,26 @@ class TestRequireRoomOrBelow:
 
     def test_none_is_accepted(self):
         require_room_or_below(None)  # a separate "is it required at all" concern
+
+
+@pytest.mark.django_db
+class TestEmptyRoomHint:
+    """A user with no accessible Storage Room (a brand-new install with no
+    locations yet, or access granted only above room level) gets an empty
+    <select> — apps.inventory.forms._apply_scoped_room_location() flags
+    this so templates/_form_field.html can explain why instead of leaving
+    an unexplained blank dropdown.
+    """
+
+    def test_hint_set_when_no_room_is_accessible(self, administrator):
+        form = ReceiveStockForm(user=administrator)
+        assert not form.fields["location"].queryset.exists()
+        assert "No Storage Room" in form.fields["location"].widget.attrs["data_empty_hint"]
+
+    def test_hint_absent_once_a_room_is_accessible(self, administrator, location_tree):
+        form = ReceiveStockForm(user=administrator)
+        assert form.fields["location"].queryset.exists()
+        assert "data_empty_hint" not in form.fields["location"].widget.attrs
 
 
 @pytest.mark.django_db

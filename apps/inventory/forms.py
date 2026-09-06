@@ -55,9 +55,26 @@ def _apply_scoped_room_location(field, user):
     Room/Rack/Shelf levels — for the fields above that name where stock is
     actually held (as opposed to e.g. a Transfer's destination search scope,
     which may legitimately span a whole country).
+
+    A brand-new install (or a user whose access grant hasn't reached a
+    Storage Room yet) legitimately has zero options here — Country/Site/
+    Floor no longer count, per the room-mandatory rule above, so the
+    dropdown can be empty even when locations exist. That's a confusing,
+    unexplained blank list otherwise; data_empty_hint flags it for
+    templates/_form_field.html to render as an actionable message + a link
+    to create a room, instead of a silently empty <select>. Underscored,
+    not hyphenated, so it's never mistaken for one of this app's real
+    JS-facing data-* attributes (data-filterable, data-tracking-method) —
+    this one is read only by the Django template itself, server-side.
     """
     field.queryset = _scoped_location_queryset(user).filter(level__in=ROOM_OR_BELOW_LEVELS)
     field.widget.attrs["data-filterable"] = "true"
+    if not field.queryset.exists():
+        field.widget.attrs["data_empty_hint"] = (
+            "No Storage Room is available yet. An Administrator or Stock Manager needs to "
+            "create a Country > Site > Floor > Storage Room hierarchy (or be granted access to "
+            "an existing one) before stock can be received or moved."
+        )
 
 
 def _validate_room_or_below(value):

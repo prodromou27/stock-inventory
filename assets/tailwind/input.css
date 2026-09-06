@@ -582,6 +582,103 @@
     display: block;
   }
 
+  .notification-bell {
+    position: relative;
+  }
+
+  .notification-bell summary {
+    list-style: none;
+    position: relative;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    padding: 0.4rem;
+  }
+
+  .notification-bell summary::-webkit-details-marker { display: none; }
+  .notification-bell summary:hover { background: var(--color-bg); }
+
+  .notification-bell__icon {
+    width: 1.1rem;
+    height: 1.1rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.75;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .notification-bell__badge {
+    position: absolute;
+    top: 0.1rem;
+    right: 0.1rem;
+    min-width: 1rem;
+    height: 1rem;
+    padding: 0 0.25rem;
+    display: grid;
+    place-items: center;
+    border-radius: 999px;
+    background: var(--color-danger);
+    color: #fff;
+    font-size: 0.62rem;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .notification-bell__panel {
+    position: absolute;
+    top: calc(100% + 0.45rem);
+    right: 0;
+    width: 20rem;
+    max-width: 90vw;
+    padding: 0.5rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+    z-index: 20;
+  }
+
+  .notification-bell__panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.3rem 0.4rem 0.5rem;
+    font-size: 0.85rem;
+  }
+
+  .notification-bell__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 18rem;
+    overflow-y: auto;
+  }
+
+  .notification-bell__list a {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.5rem 0.5rem;
+    border-radius: var(--radius-sm);
+    color: var(--color-text);
+  }
+
+  .notification-bell__list a:hover { background: var(--color-bg); text-decoration: none; }
+
+  .notification-bell__summary { font-size: 0.82rem; }
+  .notification-bell__meta { font-size: 0.7rem; color: var(--color-text-muted); }
+
+  .notification-bell__all-link {
+    display: block;
+    text-align: center;
+    margin-top: 0.35rem;
+    padding: 0.45rem;
+    font-size: 0.8rem;
+    border-top: 1px solid var(--color-border);
+  }
+
   .user-menu {
     position: relative;
   }
@@ -817,6 +914,12 @@
     color: var(--color-text-muted);
     font-size: 0.85rem;
     margin-top: 0.35rem;
+  }
+
+  .settings-section__intro {
+    color: var(--color-text-muted);
+    font-size: 0.82rem;
+    margin: -0.3rem 0 0.6rem;
   }
 
   .page-header__actions {
