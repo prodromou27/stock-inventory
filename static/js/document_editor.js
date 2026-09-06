@@ -73,6 +73,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     container.append(rows);
     field.closest('p, .form-field')?.setAttribute('hidden', '');
+    if (columns) form.elements.column_labels.closest('p, .form-field')?.setAttribute('hidden', '');
     sync();
   }
 

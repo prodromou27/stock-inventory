@@ -135,35 +135,32 @@
             <legend>{{ form.hidden_columns.label }}</legend>
             {{ form.hidden_columns }}
           </fieldset>
-          <p>
-            <label for="{{ form.column_order.id_for_label }}">{{ form.column_order.label }}</label>
+          <div hidden>
             {{ form.column_order }}
-            <span class="help-text">{{ form.column_order.help_text }}</span>
-            {% if form.column_order.errors %}<div class="messages__item messages__item--error">{{ form.column_order.errors }}</div>{% endif %}
-          </p>
-          <p>
-            <label for="{{ form.column_labels.id_for_label }}">{{ form.column_labels.label }}</label>
             {{ form.column_labels }}
-            <span class="help-text">{{ form.column_labels.help_text }}</span>
-            {% if form.column_labels.errors %}<div class="messages__item messages__item--error">{{ form.column_labels.errors }}</div>{% endif %}
-          </p>
+          </div>
         </div>
 
-        <div class="card">
-          <h2>Visual layout</h2>
-          <p>Drag sections and columns to reorder them, or use the up/down buttons. Rename columns directly below.</p>
-          {% include "_form_field.html" with field=form.section_order %}
-          <div id="section-layout"></div>
-          <h3>Line-item columns</h3>
-          <div id="column-layout"></div>
-          <h3>Typography and signatures</h3>
-          {% include "_form_field.html" with field=form.body_font_size %}
-          {% include "_form_field.html" with field=form.heading_font_size %}
-          {% include "_form_field.html" with field=form.table_font_size %}
-          {% include "_form_field.html" with field=form.table_cell_padding %}
-          {% include "_form_field.html" with field=form.signature_left_label %}
-          {% include "_form_field.html" with field=form.signature_right_label %}
-        </div>
+        <details class="card template-editor__advanced">
+          <summary>
+            <span>Advanced visual layout</span>
+            <span class="text-muted">Sections, line columns, typography, and signatures</span>
+          </summary>
+          <div class="template-editor__advanced-content">
+            <p>Drag sections and columns to reorder them, or use the up/down buttons. Rename columns directly below.</p>
+            {% include "_form_field.html" with field=form.section_order %}
+            <div id="section-layout"></div>
+            <h3>Line-item columns</h3>
+            <div id="column-layout"></div>
+            <h3>Typography and signatures</h3>
+            {% include "_form_field.html" with field=form.body_font_size %}
+            {% include "_form_field.html" with field=form.heading_font_size %}
+            {% include "_form_field.html" with field=form.table_font_size %}
+            {% include "_form_field.html" with field=form.table_cell_padding %}
+            {% include "_form_field.html" with field=form.signature_left_label %}
+            {% include "_form_field.html" with field=form.signature_right_label %}
+          </div>
+        </details>
         <div class="form-actions template-save-actions">
           <button type="submit" class="btn btn--primary">Save</button>
         </div>

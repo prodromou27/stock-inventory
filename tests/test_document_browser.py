@@ -31,6 +31,11 @@ def test_document_editor_browser(live_server, administrator, stock_manager, loca
             page.set_viewport_size({"width": width, "height": height})
             page.goto(live_server.url + reverse("documents:template_edit", args=["delivery"]))
             expect(page.locator("#template-preview-frame")).not_to_have_attribute("hidden", "")
+            advanced_layout = page.locator("details.template-editor__advanced")
+            expect(advanced_layout).not_to_have_attribute("open", "")
+            expect(page.locator('[name="column_labels"]')).not_to_be_visible()
+            advanced_layout.locator("summary").click()
+            expect(page.locator("#section-layout")).to_be_visible()
             page.locator('[name="document_title"]').fill("QA delivery form")
             expect(
                 page.locator("#template-preview-frame").content_frame.locator("h1")
