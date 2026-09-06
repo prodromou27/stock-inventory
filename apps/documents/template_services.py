@@ -2,6 +2,7 @@ from django.core.exceptions import ValidationError
 from django.core.files.base import ContentFile
 from django.db import transaction
 from django.template import Context, Template
+from django.utils import timezone
 
 from apps.audit.models import AuditEvent
 from apps.audit.services import record_event
@@ -271,6 +272,14 @@ def update_template(
     # preview after every change, not just once ever, before Publish is
     # allowed (see the model field's docstring and template_completeness()).
     template_obj.preview_confirmed = bool(preview_confirmed)
+    if template_obj.status == TemplateStatus.PENDING_REVIEW:
+        # The reviewed content just changed — that pending submission was
+        # never actually reviewed in this form, so it must be resubmitted
+        # (apps.documents.template_services.submit_for_review()) rather than
+        # silently stay eligible for approve_and_publish() as-is.
+        template_obj.status = TemplateStatus.DRAFT
+        template_obj.submitted_by = None
+        template_obj.submitted_at = None
     template_obj.version = 1 if is_new else template_obj.version + 1
     template_obj.full_clean()
     _validate_template_renders(html_source, template_obj)
@@ -344,17 +353,91 @@ def template_completeness(template_obj):
     ]
 
 
-def publish_template(*, user, document_type):
-    """Makes the current active row's configuration live for real document
-    generation (apps.documents.pdf.active_template_for()). A Draft's
-    changes are already fully previewable before this — publishing only
-    ever changes what a real transaction's Generate Document uses.
+def _check_completeness_or_raise(template_obj):
+    unmet = [item["label"] for item in template_completeness(template_obj) if not item["satisfied"]]
+    if unmet:
+        raise ValidationError(f"Cannot submit yet — incomplete: {'; '.join(unmet)}.")
 
-    Blocked (ValidationError) until template_completeness() is fully
-    satisfied — publishing a template missing its own branding/title/company
-    identification, or one nobody has actually reviewed a PDF preview of
-    since the last edit, is exactly the "looks fine in the settings form,
-    wrong on the actual printed page" gap this checklist exists to close.
+
+@transaction.atomic
+def submit_for_review(*, user, document_type):
+    """Draft -> Pending review — the first half of the two-Administrator
+    publish workflow (spec: "Administrator drafts; a second authorized
+    Administrator reviews and publishes"). Requires template_completeness()
+    to already be satisfied, same as the old single-step publish did — no
+    point asking a second Administrator to review something with an
+    already-known gap.
+    """
+    require_role(user, ADMINISTRATOR)
+    template_obj = get_template(document_type)
+    if template_obj is None:
+        raise ValidationError("No template exists for this document type yet.")
+    if template_obj.status == TemplateStatus.PUBLISHED:
+        raise ValidationError("This template is already published.")
+    if template_obj.status == TemplateStatus.PENDING_REVIEW:
+        return template_obj
+
+    _check_completeness_or_raise(template_obj)
+    _validate_template_renders(template_obj.html_source, template_obj)
+
+    template_obj.status = TemplateStatus.PENDING_REVIEW
+    template_obj.submitted_by = user
+    template_obj.submitted_at = timezone.now()
+    template_obj.save(update_fields=["status", "submitted_by", "submitted_at", "updated_at"])
+    record_event(
+        actor=user,
+        event_type=AuditEvent.EventType.RECORD_UPDATED,
+        obj=template_obj,
+        summary=(
+            f"Submitted {template_obj.get_document_type_display()} document template for review"
+        ),
+    )
+    return template_obj
+
+
+@transaction.atomic
+def reject_review(*, user, document_type, reason=""):
+    """Pending review -> Draft, without publishing — the reviewing
+    Administrator sends it back (e.g. spotted something the completeness
+    checklist can't catch, like a wording issue). The submitter re-edits
+    and re-submits; update_template() already reverts to Draft on any edit,
+    this just lets a reviewer do the same thing explicitly, with a reason,
+    before any further edit happens.
+    """
+    require_role(user, ADMINISTRATOR)
+    template_obj = get_template(document_type)
+    if template_obj is None or template_obj.status != TemplateStatus.PENDING_REVIEW:
+        raise ValidationError("This template is not currently pending review.")
+
+    template_obj.status = TemplateStatus.DRAFT
+    template_obj.submitted_by = None
+    template_obj.submitted_at = None
+    template_obj.save(update_fields=["status", "submitted_by", "submitted_at", "updated_at"])
+    record_event(
+        actor=user,
+        event_type=AuditEvent.EventType.RECORD_UPDATED,
+        obj=template_obj,
+        summary=(
+            f"Sent {template_obj.get_document_type_display()} document template back to draft"
+            + (f": {reason}" if reason else "")
+        ),
+    )
+    return template_obj
+
+
+@transaction.atomic
+def publish_template(*, user, document_type):
+    """Pending review -> Published — the second half of the two-
+    Administrator workflow: makes the current active row's configuration
+    live for real document generation (apps.documents.pdf.
+    active_template_for()). Refuses when the approver is the same
+    Administrator who submitted it (`user == template_obj.submitted_by`) —
+    the whole point of a second reviewer is that it's actually a different
+    person. Re-checks completeness and re-validates rendering defensively
+    (update_template() already reverts any edited row back to Draft, so
+    neither should ever actually fail here, but a submit-then-approve gap
+    is exactly the kind of race this belongs to double-check rather than
+    trust blindly).
     """
     require_role(user, ADMINISTRATOR)
     template_obj = get_template(document_type)
@@ -362,23 +445,32 @@ def publish_template(*, user, document_type):
         raise ValidationError("No template exists for this document type yet.")
     if template_obj.status == TemplateStatus.PUBLISHED:
         return template_obj
+    if template_obj.status == TemplateStatus.DRAFT:
+        raise ValidationError("Submit this template for review before it can be published.")
+    if template_obj.submitted_by_id == user.id:
+        raise ValidationError(
+            "A different Administrator must approve and publish — the same person can't "
+            "review their own submission."
+        )
 
-    unmet = [item["label"] for item in template_completeness(template_obj) if not item["satisfied"]]
-    if unmet:
-        raise ValidationError(f"Cannot publish yet — incomplete: {'; '.join(unmet)}.")
-
+    _check_completeness_or_raise(template_obj)
     _validate_template_renders(template_obj.html_source, template_obj)
     template_obj.status = TemplateStatus.PUBLISHED
+    template_obj.approved_by = user
+    template_obj.approved_at = timezone.now()
     # updated_at is auto_now=True — Django computes its new value regardless,
     # but a `save(update_fields=...)` call still only writes columns actually
     # named in that list, so it must be listed explicitly here or the row's
     # updated_at silently stays stale despite the in-memory value changing.
-    template_obj.save(update_fields=["status", "updated_at"])
+    template_obj.save(update_fields=["status", "approved_by", "approved_at", "updated_at"])
     record_event(
         actor=user,
         event_type=AuditEvent.EventType.RECORD_UPDATED,
         obj=template_obj,
-        summary=f"Published {template_obj.get_document_type_display()} document template",
+        summary=(
+            f"Published {template_obj.get_document_type_display()} document template "
+            f"(submitted by {template_obj.submitted_by})"
+        ),
     )
     return template_obj
 
@@ -461,6 +553,59 @@ def duplicate_template(*, user, source_document_type, target_document_type):
         summary=(
             f"Duplicated {source.get_document_type_display()} document template into "
             f"{new_template.get_document_type_display()}"
+        ),
+    )
+    return new_template
+
+
+@transaction.atomic
+def apply_starter_template(*, user, document_type, preset_key):
+    """Creates a new Draft from one of apps.documents.gallery.STARTER_TEMPLATES
+    — the same "brand-new Draft row, never touches an existing one" shape as
+    duplicate_template(), just sourced from packaged data instead of another
+    template. An Administrator can freely edit the result afterward; picking
+    a starter is a one-time copy, not a live link back to the preset.
+    """
+    from .gallery import STARTER_TEMPLATES
+    from .pdf import render_styleable_source
+
+    require_role(user, ADMINISTRATOR)
+    preset = STARTER_TEMPLATES.get(preset_key)
+    if preset is None:
+        raise ValidationError("Unknown starter template.")
+    if get_template(document_type) is not None:
+        raise ValidationError(
+            "This document type already has a template — reset it first if you want to "
+            "replace it with a starter layout."
+        )
+
+    fields = preset["fields"]
+    html_source = render_styleable_source(
+        logo_position=fields.get("logo_position", "left"),
+        accent_color=fields.get("accent_color", "#444444"),
+        font_choice=fields.get("font_choice", "sans"),
+        page_margin=fields.get("page_margin", "normal"),
+    )
+    new_template = DocumentTemplate(document_type=document_type, status=TemplateStatus.DRAFT)
+    for field in _STYLE_FIELDS:
+        if field in fields:
+            setattr(new_template, field, fields[field])
+    new_template.html_source = html_source
+    new_template.layout_config = _clean_layout_config({})
+    new_template.updated_by = user
+    new_template.version = 1
+    new_template.full_clean()
+    _validate_template_renders(new_template.html_source, new_template)
+    new_template.save()
+    _record_version(template_obj=new_template, user=user)
+
+    record_event(
+        actor=user,
+        event_type=AuditEvent.EventType.RECORD_CREATED,
+        obj=new_template,
+        summary=(
+            f"Started {new_template.get_document_type_display()} document template from the "
+            f"'{preset['label']}' starter layout"
         ),
     )
     return new_template

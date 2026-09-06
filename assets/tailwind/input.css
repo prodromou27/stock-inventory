@@ -1037,6 +1037,38 @@
     font-size: 0.78rem;
   }
 
+  .starter-gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+    gap: 0.75rem;
+  }
+
+  .starter-gallery__card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    padding: 0.9rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+  }
+
+  .starter-gallery__swatch {
+    width: 100%;
+    height: 0.5rem;
+    border-radius: var(--radius-sm);
+  }
+
+  .starter-gallery__title {
+    font-weight: 600;
+  }
+
+  .starter-gallery__desc {
+    font-size: 0.82rem;
+    color: var(--color-text-muted);
+    flex-grow: 1;
+  }
+
   .completeness-checklist {
     list-style: none;
     margin: 0;

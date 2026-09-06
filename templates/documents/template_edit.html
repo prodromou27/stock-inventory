@@ -11,6 +11,8 @@
       {% if template_obj %}
         {% if template_obj.status == "published" %}
           <span class="badge badge--success">Published</span>
+        {% elif template_obj.status == "pending_review" %}
+          <span class="badge badge--info">Pending review — submitted by {{ template_obj.submitted_by|default:"—" }}</span>
         {% else %}
           <span class="badge badge--warning">Draft — not yet used for real documents</span>
         {% endif %}
@@ -26,6 +28,25 @@
         <li class="messages__item messages__item--error">{{ error }}</li>
       {% endfor %}
     </ul>
+  {% endif %}
+
+  {% if not template_obj %}
+    <div class="card">
+      <h2>Start from a layout</h2>
+      <p class="text-muted">Pick an approved starting point instead of configuring everything below from scratch — you can freely customize it afterward. Or skip this and start from the packaged default using the form below.</p>
+      <div class="starter-gallery">
+        {% for key, preset in starter_templates.items %}
+          <form method="post" action="{% url 'documents:template_apply_starter' document_type %}" class="starter-gallery__card">
+            {% csrf_token %}
+            <input type="hidden" name="preset_key" value="{{ key }}">
+            <span class="starter-gallery__swatch" style="background:{{ preset.fields.accent_color }};"></span>
+            <span class="starter-gallery__title">{{ preset.label }}</span>
+            <span class="starter-gallery__desc">{{ preset.description }}</span>
+            <button type="submit" class="btn btn--sm">Use this layout</button>
+          </form>
+        {% endfor %}
+      </div>
+    </div>
   {% endif %}
 
   <div class="template-editor-layout">
@@ -187,10 +208,23 @@
         </div>
 
         <div class="form-actions">
-          {% if template_obj.status != "published" %}
-            <form method="post" action="{% url 'documents:template_publish' document_type %}">
+          {% if template_obj.status == "draft" %}
+            <form method="post" action="{% url 'documents:template_submit_for_review' document_type %}">
               {% csrf_token %}
-              <button type="submit" class="btn btn--primary btn--sm">Publish this draft</button>
+              <button type="submit" class="btn btn--primary btn--sm">Submit for review</button>
+            </form>
+          {% elif template_obj.status == "pending_review" %}
+            {% if user.pk == template_obj.submitted_by_id %}
+              <p class="text-muted" style="margin:0;">Waiting for a different Administrator to review and publish this.</p>
+            {% else %}
+              <form method="post" action="{% url 'documents:template_publish' document_type %}">
+                {% csrf_token %}
+                <button type="submit" class="btn btn--primary btn--sm">Approve and publish</button>
+              </form>
+            {% endif %}
+            <form method="post" action="{% url 'documents:template_reject_review' document_type %}">
+              {% csrf_token %}
+              <button type="submit" class="btn btn--sm">Send back to draft</button>
             </form>
           {% endif %}
           <form method="post" action="{% url 'documents:template_reset' document_type %}"
@@ -261,7 +295,7 @@
 
       <aside class="template-field-reference">
         <h2>Publishing and history</h2>
-        <p>New templates start as drafts. Save, inspect the PDF, then publish. Changes to an already published template apply to new documents when saved.</p>
+        <p>New templates start as drafts. Once the checklist above is satisfied, submit it for review — a <strong>different</strong> Administrator must then approve and publish it; the same person can't review their own submission. Any further edit sends a pending submission back to draft automatically. Changes to an already-published template apply to new documents as soon as they're saved (no re-approval needed for routine edits).</p>
         <p>Generated PDFs remain unchanged. Restore creates a new version; it never erases earlier versions.</p>
         <p>Section order, columns, labels, typography, branding, notes and signature wording are customizable. Transaction values come from the recorded movement.</p>
       </aside>

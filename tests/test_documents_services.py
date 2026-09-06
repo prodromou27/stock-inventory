@@ -16,7 +16,7 @@ from apps.documents.services import (
     regenerate_document,
     upload_attachment,
 )
-from apps.documents.template_services import publish_template, update_template
+from apps.documents.template_services import publish_template, submit_for_review, update_template
 from apps.inventory.models import UnitAsset
 from apps.inventory.services.assignments import assign_to_employee, deliver_to_customer
 from apps.inventory.services.disposition import dispose
@@ -115,7 +115,7 @@ class TestGenerateDocument:
         assert len(content) > 100
 
     def test_generates_a_pdf_with_a_published_structured_template(
-        self, administrator, assignment_txn
+        self, administrator, second_administrator, assignment_txn
     ):
         template_obj = update_template(
             user=administrator,
@@ -136,7 +136,8 @@ class TestGenerateDocument:
             logo_intentionally_omitted=True,
             preview_confirmed=True,
         )
-        publish_template(user=administrator, document_type="assignment")
+        submit_for_review(user=administrator, document_type="assignment")
+        publish_template(user=second_administrator, document_type="assignment")
 
         document = generate_document(txn=assignment_txn, user=administrator)
 

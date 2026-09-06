@@ -21,6 +21,7 @@ from apps.documents.template_services import (
     render_preview_pdf,
     reset_template,
     restore_template_version,
+    submit_for_review,
     update_template,
 )
 from apps.inventory.models import UnitAsset
@@ -41,6 +42,16 @@ PUBLISH_READY_KWARGS = {
     "logo_intentionally_omitted": True,
     "preview_confirmed": True,
 }
+
+
+def _submit_and_publish(*, document_type, submitter, approver):
+    """publish_template() requires a *different* Administrator from
+    whoever submitted it — a plain single-admin publish_template() call no
+    longer takes a Draft straight to Published on its own.
+    """
+    submit_for_review(user=submitter, document_type=document_type)
+    return publish_template(user=approver, document_type=document_type)
+
 
 PNG_BYTES = bytes.fromhex(
     "89504e470d0a1a0a0000000d4948445200000001000000010806000000"
@@ -291,22 +302,28 @@ class TestTemplateCompletenessAndPublishGate:
         unsatisfied = {item["key"] for item in items if not item["satisfied"]}
         assert unsatisfied == {"logo", "title", "company", "preview"}
 
-    def test_publish_blocked_until_checklist_satisfied(self, administrator):
+    def test_submit_for_review_blocked_until_checklist_satisfied(self, administrator):
         update_template(
             user=administrator, document_type=DocumentType.DELIVERY, html_source=VALID_HTML
         )
         with pytest.raises(ValidationError, match="incomplete"):
-            publish_template(user=administrator, document_type=DocumentType.DELIVERY)
+            submit_for_review(user=administrator, document_type=DocumentType.DELIVERY)
         assert get_template(DocumentType.DELIVERY).status == "draft"
 
-    def test_publish_succeeds_once_every_item_is_satisfied(self, administrator):
+    def test_publish_succeeds_once_every_item_is_satisfied(
+        self, administrator, second_administrator
+    ):
         update_template(
             user=administrator,
             document_type=DocumentType.DELIVERY,
             html_source=VALID_HTML,
             **PUBLISH_READY_KWARGS,
         )
-        published = publish_template(user=administrator, document_type=DocumentType.DELIVERY)
+        published = _submit_and_publish(
+            document_type=DocumentType.DELIVERY,
+            submitter=administrator,
+            approver=second_administrator,
+        )
         assert published.status == "published"
 
     def test_logo_file_satisfies_the_logo_item_without_the_checkbox(self, administrator):
@@ -353,6 +370,131 @@ class TestTemplateCompletenessAndPublishGate:
 
 
 @pytest.mark.django_db
+class TestApprovalWorkflow:
+    """apps.documents.template_services.submit_for_review()/publish_template()/
+    reject_review() — the two-Administrator publish workflow (spec:
+    "Administrator drafts; a second authorized Administrator reviews and
+    publishes").
+    """
+
+    def test_submit_moves_draft_to_pending_review(self, administrator):
+        update_template(
+            user=administrator,
+            document_type=DocumentType.DELIVERY,
+            html_source=VALID_HTML,
+            **PUBLISH_READY_KWARGS,
+        )
+        submitted = submit_for_review(user=administrator, document_type=DocumentType.DELIVERY)
+        assert submitted.status == "pending_review"
+        assert submitted.submitted_by == administrator
+        assert submitted.submitted_at is not None
+
+    def test_publish_rejects_the_same_submitter_as_approver(self, administrator):
+        update_template(
+            user=administrator,
+            document_type=DocumentType.DELIVERY,
+            html_source=VALID_HTML,
+            **PUBLISH_READY_KWARGS,
+        )
+        submit_for_review(user=administrator, document_type=DocumentType.DELIVERY)
+        with pytest.raises(ValidationError, match="different Administrator"):
+            publish_template(user=administrator, document_type=DocumentType.DELIVERY)
+        assert get_template(DocumentType.DELIVERY).status == "pending_review"
+
+    def test_a_different_administrator_can_publish(self, administrator, second_administrator):
+        update_template(
+            user=administrator,
+            document_type=DocumentType.DELIVERY,
+            html_source=VALID_HTML,
+            **PUBLISH_READY_KWARGS,
+        )
+        submit_for_review(user=administrator, document_type=DocumentType.DELIVERY)
+        published = publish_template(user=second_administrator, document_type=DocumentType.DELIVERY)
+        assert published.status == "published"
+        assert published.approved_by == second_administrator
+        assert published.approved_at is not None
+
+    def test_publish_blocked_while_still_a_plain_draft(self, administrator):
+        update_template(
+            user=administrator,
+            document_type=DocumentType.DELIVERY,
+            html_source=VALID_HTML,
+            **PUBLISH_READY_KWARGS,
+        )
+        with pytest.raises(ValidationError, match="Submit this template for review"):
+            publish_template(user=administrator, document_type=DocumentType.DELIVERY)
+
+    def test_editing_a_pending_review_template_reverts_it_to_draft(self, administrator):
+        update_template(
+            user=administrator,
+            document_type=DocumentType.DELIVERY,
+            html_source=VALID_HTML,
+            **PUBLISH_READY_KWARGS,
+        )
+        submit_for_review(user=administrator, document_type=DocumentType.DELIVERY)
+
+        edited = update_template(
+            user=administrator,
+            document_type=DocumentType.DELIVERY,
+            html_source=VALID_HTML,
+            **PUBLISH_READY_KWARGS,
+        )
+        assert edited.status == "draft"
+        assert edited.submitted_by is None
+        assert edited.submitted_at is None
+
+    def test_reject_sends_it_back_to_draft(self, administrator, second_administrator):
+        update_template(
+            user=administrator,
+            document_type=DocumentType.DELIVERY,
+            html_source=VALID_HTML,
+            **PUBLISH_READY_KWARGS,
+        )
+        submit_for_review(user=administrator, document_type=DocumentType.DELIVERY)
+
+        from apps.documents.template_services import reject_review
+
+        rejected = reject_review(
+            user=second_administrator,
+            document_type=DocumentType.DELIVERY,
+            reason="wrong terms wording",
+        )
+        assert rejected.status == "draft"
+        assert rejected.submitted_by is None
+
+    def test_reject_requires_pending_review_status(self, administrator):
+        from apps.documents.template_services import reject_review
+
+        update_template(
+            user=administrator, document_type=DocumentType.DELIVERY, html_source=VALID_HTML
+        )
+        with pytest.raises(ValidationError, match="not currently pending review"):
+            reject_review(user=administrator, document_type=DocumentType.DELIVERY)
+
+    def test_publish_is_a_noop_once_already_published(self, administrator, second_administrator):
+        update_template(
+            user=administrator,
+            document_type=DocumentType.DELIVERY,
+            html_source=VALID_HTML,
+            **PUBLISH_READY_KWARGS,
+        )
+        published = _submit_and_publish(
+            document_type=DocumentType.DELIVERY,
+            submitter=administrator,
+            approver=second_administrator,
+        )
+        again = publish_template(user=administrator, document_type=DocumentType.DELIVERY)
+        assert again.pk == published.pk
+        assert again.status == "published"
+
+    def test_requires_administrator(self, stock_manager, administrator):
+        with pytest.raises(PermissionDenied):
+            submit_for_review(user=stock_manager, document_type=DocumentType.DELIVERY)
+        with pytest.raises(PermissionDenied):
+            publish_template(user=stock_manager, document_type=DocumentType.DELIVERY)
+
+
+@pytest.mark.django_db
 class TestResetTemplate:
     def test_reverts_to_packaged_default(self, administrator):
         update_template(
@@ -371,6 +513,66 @@ class TestResetTemplate:
         )
         with pytest.raises(PermissionDenied):
             reset_template(user=stock_manager, document_type=DocumentType.DELIVERY)
+
+
+@pytest.mark.django_db
+class TestApplyStarterTemplate:
+    def test_creates_a_draft_from_a_known_preset(self, administrator):
+        from apps.documents.template_services import apply_starter_template
+
+        template_obj = apply_starter_template(
+            user=administrator, document_type=DocumentType.DELIVERY, preset_key="classic"
+        )
+        assert template_obj.status == "draft"
+        assert template_obj.accent_color == "#1d4ed8"
+        assert template_obj.logo_position == "left"
+        assert template_obj.font_choice == "serif"
+        assert "{{ document_number }}" in template_obj.html_source
+
+    def test_unknown_preset_is_rejected(self, administrator):
+        from apps.documents.template_services import apply_starter_template
+
+        with pytest.raises(ValidationError, match="Unknown starter template"):
+            apply_starter_template(
+                user=administrator, document_type=DocumentType.DELIVERY, preset_key="not-a-preset"
+            )
+        assert get_template(DocumentType.DELIVERY) is None
+
+    def test_rejects_when_the_type_already_has_a_template(self, administrator):
+        from apps.documents.template_services import apply_starter_template
+
+        update_template(
+            user=administrator, document_type=DocumentType.DELIVERY, html_source=VALID_HTML
+        )
+        with pytest.raises(ValidationError, match="already has a template"):
+            apply_starter_template(
+                user=administrator, document_type=DocumentType.DELIVERY, preset_key="classic"
+            )
+
+    def test_requires_administrator(self, stock_manager):
+        from apps.documents.template_services import apply_starter_template
+
+        with pytest.raises(PermissionDenied):
+            apply_starter_template(
+                user=stock_manager, document_type=DocumentType.DELIVERY, preset_key="classic"
+            )
+
+    def test_every_packaged_preset_renders(self, administrator):
+        """Every entry in apps.documents.gallery.STARTER_TEMPLATES must
+        actually produce a renderable template — this is the one guard
+        against a typo'd preset value shipping broken.
+        """
+        from apps.documents.gallery import STARTER_TEMPLATES
+        from apps.documents.template_services import apply_starter_template
+
+        document_types = list(DocumentType.values)
+        for index, preset_key in enumerate(STARTER_TEMPLATES):
+            document_type = document_types[index % len(document_types)]
+            reset_template(user=administrator, document_type=document_type)
+            template_obj = apply_starter_template(
+                user=administrator, document_type=document_type, preset_key=preset_key
+            )
+            assert template_obj.pk
 
 
 @pytest.mark.django_db
@@ -476,7 +678,7 @@ class TestRestoreTemplateVersion:
         v1.refresh_from_db()
         assert v1.field_snapshot["accent_color"] == "#111111"
 
-    def test_rejects_a_broken_snapshot_without_saving(self, administrator):
+    def test_rejects_a_broken_snapshot_without_saving(self, administrator, second_administrator):
         """Regression test: restore_template_version() used to skip
         render validation entirely — restoring a stale/corrupt snapshot
         could silently write an unrenderable html_source onto a
@@ -489,7 +691,11 @@ class TestRestoreTemplateVersion:
             html_source=VALID_HTML,
             **PUBLISH_READY_KWARGS,
         )
-        publish_template(user=administrator, document_type=DocumentType.DELIVERY)
+        _submit_and_publish(
+            document_type=DocumentType.DELIVERY,
+            submitter=administrator,
+            approver=second_administrator,
+        )
         broken_version = DocumentTemplateVersion.objects.create(
             template=good,
             version=99,
@@ -553,7 +759,9 @@ class TestRenderPreviewPdf:
 
 @pytest.mark.django_db
 class TestGenerateDocumentUsesOverride:
-    def test_custom_template_is_used_when_present(self, administrator, delivery_txn):
+    def test_custom_template_is_used_when_present(
+        self, administrator, second_administrator, delivery_txn
+    ):
         """A brand-new template saves as Draft — real generation keeps using
         the packaged default until it's explicitly published (Draft/
         Published, request #6/#7). Publish here, matching what this test
@@ -565,7 +773,11 @@ class TestGenerateDocumentUsesOverride:
             html_source="<html><body><h1>OVERRIDE {{ document_number }}</h1></body></html>",
             **PUBLISH_READY_KWARGS,
         )
-        publish_template(user=administrator, document_type=DocumentType.DELIVERY)
+        _submit_and_publish(
+            document_type=DocumentType.DELIVERY,
+            submitter=administrator,
+            approver=second_administrator,
+        )
         document = generate_document(txn=delivery_txn, user=administrator)
         content = document.pdf_file.open("rb").read()
         document.pdf_file.close()
@@ -588,7 +800,7 @@ class TestGenerateDocumentUsesOverride:
         assert content[:4] == b"%PDF"
 
     def test_template_and_version_recorded_with_a_custom_template(
-        self, administrator, delivery_txn
+        self, administrator, second_administrator, delivery_txn
     ):
         template_obj = update_template(
             user=administrator,
@@ -596,7 +808,11 @@ class TestGenerateDocumentUsesOverride:
             html_source=VALID_HTML,
             **PUBLISH_READY_KWARGS,
         )
-        publish_template(user=administrator, document_type=DocumentType.DELIVERY)
+        _submit_and_publish(
+            document_type=DocumentType.DELIVERY,
+            submitter=administrator,
+            approver=second_administrator,
+        )
         document = generate_document(txn=delivery_txn, user=administrator)
         assert document.template_id == template_obj.pk
         assert document.template_version == f"v{template_obj.version}"
@@ -609,7 +825,7 @@ class TestGenerateDocumentUsesOverride:
         assert document.template_version == "form_v1"
 
     def test_resetting_the_template_does_not_break_a_historical_document(
-        self, administrator, delivery_txn
+        self, administrator, second_administrator, delivery_txn
     ):
         """reset_template() deactivates (is_active=False), it never deletes
         the row (spec: "templates referenced by history may be deactivated
@@ -623,7 +839,11 @@ class TestGenerateDocumentUsesOverride:
             html_source=VALID_HTML,
             **PUBLISH_READY_KWARGS,
         )
-        publish_template(user=administrator, document_type=DocumentType.DELIVERY)
+        _submit_and_publish(
+            document_type=DocumentType.DELIVERY,
+            submitter=administrator,
+            approver=second_administrator,
+        )
         document = generate_document(txn=delivery_txn, user=administrator)
         assert document.template_id is not None
 

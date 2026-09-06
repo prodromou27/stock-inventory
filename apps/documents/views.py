@@ -18,6 +18,7 @@ from apps.inventory.access import require_transaction_access
 from apps.inventory.models import InventoryTransaction
 
 from .forms import AttachmentUploadForm, DocumentTemplateStyleForm
+from .gallery import STARTER_TEMPLATES
 from .layout import SECTIONS
 from .models import (
     REPORT_COLUMNS,
@@ -31,12 +32,15 @@ from .models import (
 from .pdf import render_pdf, render_styleable_source, sample_document_context
 from .services import delete_attachment, generate_document, regenerate_document, upload_attachment
 from .template_services import (
+    apply_starter_template,
     duplicate_template,
     get_template,
     publish_template,
+    reject_review,
     render_preview_pdf,
     reset_template,
     restore_template_version,
+    submit_for_review,
     template_completeness,
     update_template,
 )
@@ -351,6 +355,7 @@ class DocumentTemplateEditView(LoginRequiredMixin, RoleRequiredMixin, View):
                     template_obj.versions.select_related("saved_by")[:20] if template_obj else []
                 ),
                 "completeness": template_completeness(template_obj),
+                "starter_templates": STARTER_TEMPLATES,
             },
         )
 
@@ -404,8 +409,46 @@ class DocumentTemplateResetView(LoginRequiredMixin, RoleRequiredMixin, View):
         return redirect("documents:template_edit", document_type=document_type)
 
 
+class DocumentTemplateSubmitForReviewView(LoginRequiredMixin, RoleRequiredMixin, View):
+    """Draft -> Pending review — the first half of the two-Administrator
+    publish workflow.
+    """
+
+    allowed_roles = (ADMINISTRATOR,)
+
+    def post(self, request, document_type):
+        _require_valid_document_type(document_type)
+        try:
+            submit_for_review(user=request.user, document_type=document_type)
+        except ValidationError as exc:
+            messages.error(request, "; ".join(exc.messages))
+        else:
+            messages.success(
+                request, "Submitted for review — a different Administrator must now approve it."
+            )
+        return redirect("documents:template_edit", document_type=document_type)
+
+
+class DocumentTemplateRejectReviewView(LoginRequiredMixin, RoleRequiredMixin, View):
+    """Pending review -> Draft, without publishing."""
+
+    allowed_roles = (ADMINISTRATOR,)
+
+    def post(self, request, document_type):
+        _require_valid_document_type(document_type)
+        reason = request.POST.get("reason", "")
+        try:
+            reject_review(user=request.user, document_type=document_type, reason=reason)
+        except ValidationError as exc:
+            messages.error(request, "; ".join(exc.messages))
+        else:
+            messages.success(request, "Sent back to draft.")
+        return redirect("documents:template_edit", document_type=document_type)
+
+
 class DocumentTemplatePublishView(LoginRequiredMixin, RoleRequiredMixin, View):
-    """Makes the current Draft's configuration live for real document
+    """Pending review -> Published, by a *different* Administrator from
+    whoever submitted it — makes the configuration live for real document
     generation. A no-op (still succeeds) if it's already Published.
     """
 
@@ -447,6 +490,29 @@ class DocumentTemplateDuplicateView(LoginRequiredMixin, RoleRequiredMixin, View)
             f"Duplicated into a new {new_template.get_document_type_display()} draft template.",
         )
         return redirect("documents:template_edit", document_type=new_template.document_type)
+
+
+class DocumentTemplateApplyStarterView(LoginRequiredMixin, RoleRequiredMixin, View):
+    """Creates document_type's first template from one of the packaged
+    starter layouts (apps.documents.gallery.STARTER_TEMPLATES) — the
+    editor screen only offers this when the type has no template yet (same
+    "reset first" rule as Duplicate).
+    """
+
+    allowed_roles = (ADMINISTRATOR,)
+
+    def post(self, request, document_type):
+        _require_valid_document_type(document_type)
+        preset_key = request.POST.get("preset_key", "")
+        try:
+            apply_starter_template(
+                user=request.user, document_type=document_type, preset_key=preset_key
+            )
+        except ValidationError as exc:
+            messages.error(request, "; ".join(exc.messages))
+        else:
+            messages.success(request, "Started a new draft from the selected layout.")
+        return redirect("documents:template_edit", document_type=document_type)
 
 
 class DocumentTemplateRestoreVersionView(LoginRequiredMixin, RoleRequiredMixin, View):

@@ -59,6 +59,17 @@ def administrator(db):
 
 
 @pytest.fixture
+def second_administrator(db):
+    """A distinct Administrator from `administrator` — for anything requiring
+    two different people, e.g. apps.documents.template_services.
+    publish_template()'s "a different Administrator must approve" rule.
+    """
+    user = User.objects.create_user(username="admin2", password="a-strong-test-password-123")
+    user.groups.add(Group.objects.get(name="Administrator"))
+    return user
+
+
+@pytest.fixture
 def stock_manager(db):
     user = User.objects.create_user(username="manager1", password="a-strong-test-password-123")
     user.groups.add(Group.objects.get(name="StockManager"))

@@ -124,8 +124,9 @@ def test_document_generation_browser(live_server, administrator, unit_product, l
         browser.close()
 
 
-def test_template_publish_and_restore_browser(live_server, administrator):
-    """Draft -> Publish -> edit again -> Restore an earlier version, driven
+def test_template_publish_and_restore_browser(live_server, administrator, second_administrator):
+    """Draft -> Submit for review -> Approve and publish (by a *different*
+    Administrator) -> edit again -> Restore an earlier version, driven
     through the actual editor UI rather than calling the service functions
     directly — catches a wiring mistake in the buttons/forms themselves
     that a pure-Python test of template_services.py never would.
@@ -149,9 +150,9 @@ def test_template_publish_and_restore_browser(live_server, administrator):
         edit_url = live_server.url + reverse("documents:template_edit", args=["delivery"])
         page.goto(edit_url)
         page.locator('[name="document_title"]').fill("QA v1 title")
-        # publish_template() gates on template_completeness() — satisfy the
+        # submit_for_review() gates on template_completeness() — satisfy the
         # rest of the checklist (title is filled above; signatures/columns
-        # already default to satisfied) so the upcoming Publish click below
+        # already default to satisfied) so the upcoming submit click below
         # actually succeeds instead of failing the completeness check.
         page.locator('[name="company_name"]').fill("QA Corp")
         page.locator('[name="logo_intentionally_omitted"]').check()
@@ -163,8 +164,26 @@ def test_template_publish_and_restore_browser(live_server, administrator):
         # match case-insensitively rather than depend on that styling.
         assert "draft" in page.locator(".page-header__actions").inner_text().lower()
 
-        page.get_by_role("button", name="Publish this draft").click()
+        page.get_by_role("button", name="Submit for review").click()
         page.wait_for_url(edit_url)
+        assert "pending review" in page.locator(".page-header__actions").inner_text().lower()
+        # The submitter themselves must not see an Approve button — a
+        # different Administrator does the approving, in a separate context.
+        assert page.get_by_role("button", name="Approve and publish").count() == 0
+
+        reviewer_context = browser.new_context()
+        reviewer_page = reviewer_context.new_page()
+        reviewer_page.goto(live_server.url + reverse("login"))
+        reviewer_page.locator('[name="username"]').fill(second_administrator.username)
+        reviewer_page.locator('[name="password"]').fill("a-strong-test-password-123")
+        reviewer_page.get_by_role("button", name="Log in").click()
+        reviewer_page.goto(edit_url)
+        reviewer_page.get_by_role("button", name="Approve and publish").click()
+        reviewer_page.wait_for_url(edit_url)
+        assert "published" in reviewer_page.locator(".page-header__actions").inner_text().lower()
+        reviewer_context.close()
+
+        page.reload()
         assert "published" in page.locator(".page-header__actions").inner_text().lower()
 
         page.locator('[name="document_title"]').fill("QA v2 title")

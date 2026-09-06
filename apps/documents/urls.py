@@ -52,6 +52,16 @@ urlpatterns = [
         name="template_reset",
     ),
     path(
+        "templates/<str:document_type>/submit-for-review/",
+        views.DocumentTemplateSubmitForReviewView.as_view(),
+        name="template_submit_for_review",
+    ),
+    path(
+        "templates/<str:document_type>/reject-review/",
+        views.DocumentTemplateRejectReviewView.as_view(),
+        name="template_reject_review",
+    ),
+    path(
         "templates/<str:document_type>/publish/",
         views.DocumentTemplatePublishView.as_view(),
         name="template_publish",
@@ -60,6 +70,11 @@ urlpatterns = [
         "templates/<str:document_type>/duplicate/",
         views.DocumentTemplateDuplicateView.as_view(),
         name="template_duplicate",
+    ),
+    path(
+        "templates/<str:document_type>/apply-starter/",
+        views.DocumentTemplateApplyStarterView.as_view(),
+        name="template_apply_starter",
     ),
     path(
         "templates/<str:document_type>/versions/<uuid:version_pk>/restore/",

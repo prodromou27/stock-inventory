@@ -3,7 +3,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 
 from apps.documents.models import DocumentTemplate, DocumentType
-from apps.documents.template_services import publish_template, update_template
+from apps.documents.template_services import publish_template, submit_for_review, update_template
 
 VALID_HTML = "<html><body><h1>{{ document_number }}</h1></body></html>"
 
@@ -21,6 +21,20 @@ VALID_STYLE = {
     "section_spacing": "normal",
     "page_size": "A4",
     "orientation": "portrait",
+}
+
+# VALID_STYLE alone leaves template_completeness() unsatisfied (no title/
+# company, no preview confirmation, and show_signature_block — a checkbox
+# absent from POST data means unchecked regardless of the field's initial=
+# — would submit as False) — this is what a POST needs to clear the
+# checklist so submit_for_review()/publish_template() actually succeed.
+PUBLISHABLE_STYLE = {
+    **VALID_STYLE,
+    "document_title": "Test document",
+    "company_name": "Acme Corp",
+    "logo_intentionally_omitted": "on",
+    "preview_confirmed": "on",
+    "show_signature_block": "on",
 }
 
 
@@ -91,13 +105,22 @@ class TestEditView:
         }
         assert "title" in unsatisfied  # VALID_STYLE never sets one
 
-    def test_publish_blocked_shows_a_helpful_error(self, client, administrator):
+    def test_submit_for_review_blocked_shows_a_helpful_error(self, client, administrator):
+        client.force_login(administrator)
+        client.post(reverse("documents:template_edit", args=["delivery"]), VALID_STYLE)
+        response = client.post(
+            reverse("documents:template_submit_for_review", args=["delivery"]), follow=True
+        )
+        assert b"incomplete" in response.content
+        assert DocumentTemplate.objects.get(document_type="delivery").status == "draft"
+
+    def test_publish_blocked_on_a_plain_draft(self, client, administrator):
         client.force_login(administrator)
         client.post(reverse("documents:template_edit", args=["delivery"]), VALID_STYLE)
         response = client.post(
             reverse("documents:template_publish", args=["delivery"]), follow=True
         )
-        assert b"incomplete" in response.content
+        assert b"Submit this template for review" in response.content
         assert DocumentTemplate.objects.get(document_type="delivery").status == "draft"
 
     def test_rejects_an_invalid_accent_color_with_form_error(self, client, administrator):
@@ -128,6 +151,102 @@ class TestEditView:
         response = client.post(reverse("documents:template_edit", args=["delivery"]), VALID_STYLE)
         assert response.status_code == 403
         assert not DocumentTemplate.objects.filter(document_type="delivery").exists()
+
+    def test_shows_starter_gallery_only_when_no_template_exists(self, client, administrator):
+        client.force_login(administrator)
+        response = client.get(reverse("documents:template_edit", args=["delivery"]))
+        assert b"Start from a layout" in response.content
+
+        client.post(reverse("documents:template_edit", args=["delivery"]), VALID_STYLE)
+        response = client.get(reverse("documents:template_edit", args=["delivery"]))
+        assert b"Start from a layout" not in response.content
+
+
+@pytest.mark.django_db
+class TestApplyStarterView:
+    def test_creates_a_draft_and_redirects(self, client, administrator):
+        client.force_login(administrator)
+        response = client.post(
+            reverse("documents:template_apply_starter", args=["delivery"]),
+            {"preset_key": "minimal"},
+        )
+        assert response.status_code == 302
+        template_obj = DocumentTemplate.objects.get(document_type="delivery")
+        assert template_obj.font_choice == "mono"
+
+    def test_unknown_preset_shows_an_error(self, client, administrator):
+        client.force_login(administrator)
+        response = client.post(
+            reverse("documents:template_apply_starter", args=["delivery"]),
+            {"preset_key": "does-not-exist"},
+            follow=True,
+        )
+        assert b"Unknown starter template" in response.content
+        assert not DocumentTemplate.objects.filter(document_type="delivery").exists()
+
+    def test_stock_manager_forbidden(self, client, stock_manager):
+        client.force_login(stock_manager)
+        response = client.post(
+            reverse("documents:template_apply_starter", args=["delivery"]),
+            {"preset_key": "classic"},
+        )
+        assert response.status_code == 403
+
+
+@pytest.mark.django_db
+class TestApprovalWorkflowViews:
+    def test_submit_then_a_different_administrator_publishes(
+        self, client, administrator, second_administrator
+    ):
+        client.force_login(administrator)
+        client.post(reverse("documents:template_edit", args=["delivery"]), PUBLISHABLE_STYLE)
+        response = client.post(reverse("documents:template_submit_for_review", args=["delivery"]))
+        assert response.status_code == 302
+        assert DocumentTemplate.objects.get(document_type="delivery").status == "pending_review"
+
+        client.force_login(second_administrator)
+        response = client.post(reverse("documents:template_publish", args=["delivery"]))
+        assert response.status_code == 302
+        template_obj = DocumentTemplate.objects.get(document_type="delivery")
+        assert template_obj.status == "published"
+        assert template_obj.approved_by == second_administrator
+
+    def test_submitter_cannot_publish_their_own_submission(self, client, administrator):
+        client.force_login(administrator)
+        client.post(reverse("documents:template_edit", args=["delivery"]), PUBLISHABLE_STYLE)
+        client.post(reverse("documents:template_submit_for_review", args=["delivery"]))
+
+        response = client.post(
+            reverse("documents:template_publish", args=["delivery"]), follow=True
+        )
+        assert b"different Administrator" in response.content
+        assert DocumentTemplate.objects.get(document_type="delivery").status == "pending_review"
+
+    def test_reject_sends_it_back_to_draft(self, client, administrator, second_administrator):
+        client.force_login(administrator)
+        client.post(reverse("documents:template_edit", args=["delivery"]), PUBLISHABLE_STYLE)
+        client.post(reverse("documents:template_submit_for_review", args=["delivery"]))
+
+        client.force_login(second_administrator)
+        response = client.post(reverse("documents:template_reject_review", args=["delivery"]))
+        assert response.status_code == 302
+        assert DocumentTemplate.objects.get(document_type="delivery").status == "draft"
+
+    def test_stock_manager_cannot_submit_or_reject(self, client, stock_manager, administrator):
+        client.force_login(administrator)
+        client.post(reverse("documents:template_edit", args=["delivery"]), PUBLISHABLE_STYLE)
+
+        client.force_login(stock_manager)
+        assert (
+            client.post(
+                reverse("documents:template_submit_for_review", args=["delivery"])
+            ).status_code
+            == 403
+        )
+        assert (
+            client.post(reverse("documents:template_reject_review", args=["delivery"])).status_code
+            == 403
+        )
 
 
 @pytest.mark.django_db
@@ -180,7 +299,9 @@ class TestLivePreviewView:
         response = client.get(reverse("documents:template_live_preview", args=["delivery"]))
         assert response.status_code == 403
 
-    def test_missing_logo_file_returns_friendly_error_not_500(self, client, administrator):
+    def test_missing_logo_file_returns_friendly_error_not_500(
+        self, client, administrator, second_administrator
+    ):
         """Regression test: a published template's logo unreadable from
         storage (deleted out from under the app, or a storage-permission
         problem) used to raise an uncaught OSError here — a raw 500 with no
@@ -196,7 +317,8 @@ class TestLivePreviewView:
             company_name="Acme Corp",
             preview_confirmed=True,
         )
-        publish_template(user=administrator, document_type=DocumentType.DELIVERY)
+        submit_for_review(user=administrator, document_type=DocumentType.DELIVERY)
+        publish_template(user=second_administrator, document_type=DocumentType.DELIVERY)
         # Simulate the file vanishing from storage without touching the DB
         # row — exactly what a permission problem or an out-of-band delete
         # looks like from Django's perspective.

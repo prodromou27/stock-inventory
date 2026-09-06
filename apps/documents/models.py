@@ -71,6 +71,7 @@ class SectionSpacing(models.TextChoices):
 
 class TemplateStatus(models.TextChoices):
     DRAFT = "draft", "Draft"
+    PENDING_REVIEW = "pending_review", "Pending review"
     PUBLISHED = "published", "Published"
 
 
@@ -224,13 +225,23 @@ class DocumentTemplate(UUIDPrimaryKeyModel, TimestampedModel):
     resolvable forever (spec: "templates referenced by history may be
     deactivated but not deleted").
 
-    `status` (Draft/Published) is the second, independent gate:
-    apps.documents.pdf.active_template_for() (real PDF generation) only ever
-    considers a Published row, while apps.documents.template_services.
-    get_template() (the editor's "what am I currently working on" lookup)
-    returns the active row regardless of status — so a brand-new or
-    in-progress edit never goes live until an Administrator explicitly
-    publishes it, but can still be freely previewed.
+    `status` (Draft/Pending review/Published) is the second, independent
+    gate: apps.documents.pdf.active_template_for() (real PDF generation)
+    only ever considers a Published row, while apps.documents.
+    template_services.get_template() (the editor's "what am I currently
+    working on" lookup) returns the active row regardless of status — so a
+    brand-new or in-progress edit never goes live until it clears the full
+    submit-for-review -> approve-and-publish workflow, but can still be
+    freely previewed at any stage. Publishing is a two-Administrator
+    action (spec: "Administrator drafts; a second authorized Administrator
+    reviews and publishes") — apps.documents.template_services.
+    submit_for_review() moves Draft -> Pending review (recording
+    submitted_by/submitted_at), and publish_template() moves Pending
+    review -> Published (recording approved_by/approved_at) but refuses
+    when the approver is the same user who submitted it. Any edit
+    (update_template()) to a Pending review row reverts it to Draft —
+    changed content was never actually reviewed, so the pending submission
+    is no longer valid and must be resubmitted.
 
     `html_source` is never typed by an Administrator directly — the editor
     (apps.documents.views.DocumentTemplateEditView) only exposes structured
@@ -250,7 +261,7 @@ class DocumentTemplate(UUIDPrimaryKeyModel, TimestampedModel):
         "GeneratedDocument that already references it.",
     )
     status = models.CharField(
-        max_length=10, choices=TemplateStatus.choices, default=TemplateStatus.DRAFT
+        max_length=14, choices=TemplateStatus.choices, default=TemplateStatus.DRAFT
     )
     html_source = models.TextField()
     logo = models.FileField(upload_to=_template_logo_upload_path, null=True, blank=True)
@@ -297,6 +308,26 @@ class DocumentTemplate(UUIDPrimaryKeyModel, TimestampedModel):
         "any subsequent save resets it — an Administrator must re-review the PDF preview after "
         "every change before Publish is allowed.",
     )
+    submitted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        help_text="Who submitted this configuration for review — cleared whenever a subsequent "
+        "edit reverts the row back to Draft.",
+    )
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        help_text="Who approved and published this configuration — always a different "
+        "Administrator from submitted_by.",
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
     layout_config = models.JSONField(default=_default_layout_config)
     version = models.PositiveIntegerField(
         default=1,
