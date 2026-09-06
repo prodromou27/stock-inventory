@@ -47,6 +47,9 @@
             <label>{{ form.remove_logo }} {{ form.remove_logo.label }}</label>
           </p>
           <p>
+            <label>{{ form.logo_intentionally_omitted }} {{ form.logo_intentionally_omitted.label }}</label>
+          </p>
+          <p>
             <label for="{{ form.logo_position.id_for_label }}">{{ form.logo_position.label }}</label>
             {{ form.logo_position }}
           </p>
@@ -161,12 +164,28 @@
             {% include "_form_field.html" with field=form.signature_right_label %}
           </div>
         </details>
+        <p>
+          <label>{{ form.preview_confirmed }} {{ form.preview_confirmed.label }}</label>
+          <span class="helptext">{{ form.preview_confirmed.help_text }}</span>
+        </p>
         <div class="form-actions template-save-actions">
           <button type="submit" class="btn btn--primary">Save</button>
         </div>
       </form>
 
       {% if template_obj %}
+        <div class="card">
+          <h2>Before you publish</h2>
+          <ul class="completeness-checklist">
+            {% for item in completeness %}
+              <li class="completeness-checklist__item {% if item.satisfied %}is-satisfied{% else %}is-unsatisfied{% endif %}">
+                <span aria-hidden="true">{% if item.satisfied %}✓{% else %}○{% endif %}</span>
+                {{ item.label }}
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+
         <div class="form-actions">
           {% if template_obj.status != "published" %}
             <form method="post" action="{% url 'documents:template_publish' document_type %}">

@@ -66,4 +66,5 @@ urlpatterns = [
         views.DocumentTemplateRestoreVersionView.as_view(),
         name="template_restore_version",
     ),
+    path("pdf-health/", views.PdfHealthDiagnosticsView.as_view(), name="pdf_health"),
 ]

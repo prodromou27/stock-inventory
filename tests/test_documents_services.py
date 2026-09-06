@@ -131,6 +131,10 @@ class TestGenerateDocument:
                 "signature_left_label": "Handed over by",
                 "signature_right_label": "Accepted by",
             },
+            document_title="Assignment form",
+            company_name="Acme Corp",
+            logo_intentionally_omitted=True,
+            preview_confirmed=True,
         )
         publish_template(user=administrator, document_type="assignment")
 
@@ -276,6 +280,143 @@ class TestGenerateDocument:
         document.template_version = "tampered"
         with pytest.raises(ValueError):
             document.save()
+
+    def test_storage_permission_error_becomes_a_friendly_validation_error(
+        self, administrator, assignment_txn, monkeypatch
+    ):
+        """Regression test: the exact failure mode a broken media-volume
+        permission produces in production (deploy/Dockerfile.prod's fix) —
+        confirms the OSError->friendly-ValidationError translation this
+        codebase promises actually holds, not just documented intent.
+        """
+        from django.core.files.storage import FileSystemStorage
+
+        def fail_save(self, name, content, max_length=None):
+            raise PermissionError("Permission denied")
+
+        monkeypatch.setattr(FileSystemStorage, "_save", fail_save)
+
+        with pytest.raises(ValidationError, match="could not be saved"):
+            generate_document(txn=assignment_txn, user=administrator)
+        assert not GeneratedDocument.objects.filter(transaction=assignment_txn).exists()
+
+
+@pytest.mark.django_db
+class TestDocumentRenderLog:
+    """apps.documents.services.generate_document()'s DocumentRenderLog
+    entries — the Administrator-facing PDF health diagnostics feed.
+    """
+
+    def test_successful_generation_is_logged(self, administrator, assignment_txn):
+        from apps.documents.models import DocumentRenderLog
+
+        document = generate_document(txn=assignment_txn, user=administrator)
+
+        log = DocumentRenderLog.objects.get()
+        assert log.success is True
+        assert log.document_type == "assignment"
+        assert log.generated_document_id == document.pk
+        assert log.template_version == "form_v1"
+        assert log.triggered_by == administrator
+        assert log.duration_ms >= 0
+
+    def test_render_failure_is_logged(self, administrator, assignment_txn, monkeypatch):
+        from apps.documents.models import DocumentRenderLog
+
+        def broken_render(*args, **kwargs):
+            raise RuntimeError("unexpected token in template")
+
+        monkeypatch.setattr("apps.documents.services.render_pdf", broken_render)
+        with pytest.raises(ValidationError):
+            generate_document(txn=assignment_txn, user=administrator)
+
+        log = DocumentRenderLog.objects.get()
+        assert log.success is False
+        assert log.generated_document_id is None
+        assert "unexpected token in template" in log.error_message
+
+    def test_storage_failure_is_logged(self, administrator, assignment_txn, monkeypatch):
+        from django.core.files.storage import FileSystemStorage
+
+        from apps.documents.models import DocumentRenderLog
+
+        def fail_save(self, name, content, max_length=None):
+            raise PermissionError("Permission denied")
+
+        monkeypatch.setattr(FileSystemStorage, "_save", fail_save)
+        with pytest.raises(ValidationError):
+            generate_document(txn=assignment_txn, user=administrator)
+
+        log = DocumentRenderLog.objects.get()
+        assert log.success is False
+        assert "Permission denied" in log.error_message
+
+    def test_post_render_failure_is_logged_despite_the_atomic_rollback(
+        self, administrator, assignment_txn, monkeypatch
+    ):
+        """The critical regression this whole model exists to catch: a
+        failure inside generate_document()'s own `with transaction.atomic()`
+        block (here, the audit-event write) rolls back the GeneratedDocument
+        row — the DocumentRenderLog row recording that failure must still
+        survive, written after that rollback has already happened, not
+        inside it.
+        """
+        from apps.documents.models import DocumentRenderLog
+
+        def fail_audit(**kwargs):
+            raise RuntimeError("audit unavailable")
+
+        monkeypatch.setattr("apps.documents.services.record_event", fail_audit)
+        with pytest.raises(RuntimeError):
+            generate_document(txn=assignment_txn, user=administrator)
+
+        log = DocumentRenderLog.objects.get()
+        assert log.success is False
+        assert "audit unavailable" in log.error_message
+
+    def test_regenerate_failure_is_also_logged(self, administrator, assignment_txn, monkeypatch):
+        """The same regression as above, through regenerate_document() —
+        which used to wrap generate_document() in its own redundant
+        @transaction.atomic, turning generate_document()'s internal
+        savepoint rollback into a rollback of regenerate_document()'s own
+        transaction too, discarding this exact log row.
+        """
+        from apps.documents.models import DocumentRenderLog
+
+        document = generate_document(txn=assignment_txn, user=administrator)
+
+        def fail_audit(**kwargs):
+            raise RuntimeError("audit unavailable")
+
+        monkeypatch.setattr("apps.documents.services.record_event", fail_audit)
+        with pytest.raises(RuntimeError):
+            regenerate_document(previous_document=document, user=administrator)
+
+        assert DocumentRenderLog.objects.filter(success=False).count() == 1
+
+    def test_permission_denied_is_not_logged(self, stock_manager, assignment_txn):
+        from apps.documents.models import DocumentRenderLog
+
+        with pytest.raises(PermissionDenied):
+            generate_document(txn=assignment_txn, user=stock_manager)
+        assert not DocumentRenderLog.objects.exists()
+
+    def test_wrong_movement_type_is_not_logged(self, administrator, unit_product, location_tree):
+        from apps.documents.models import DocumentRenderLog
+
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-DOC-NOTPRINTABLE",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-DOC-NOTPRINTABLE")
+        receipt_txn = asset.transaction_lines.first().transaction
+
+        with pytest.raises(ValidationError):
+            generate_document(txn=receipt_txn, user=administrator)
+        assert not DocumentRenderLog.objects.exists()
 
 
 @pytest.mark.django_db

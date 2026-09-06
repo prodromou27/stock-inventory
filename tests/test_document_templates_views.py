@@ -80,6 +80,26 @@ class TestEditView:
         assert template_obj.page_margin == "compact"
         assert "{{ document_number }}" in template_obj.html_source
 
+    def test_shows_completeness_checklist_after_saving(self, client, administrator):
+        client.force_login(administrator)
+        client.post(reverse("documents:template_edit", args=["delivery"]), VALID_STYLE)
+        response = client.get(reverse("documents:template_edit", args=["delivery"]))
+        keys = {item["key"] for item in response.context["completeness"]}
+        assert keys == {"logo", "title", "company", "columns", "signatures", "preview"}
+        unsatisfied = {
+            item["key"] for item in response.context["completeness"] if not item["satisfied"]
+        }
+        assert "title" in unsatisfied  # VALID_STYLE never sets one
+
+    def test_publish_blocked_shows_a_helpful_error(self, client, administrator):
+        client.force_login(administrator)
+        client.post(reverse("documents:template_edit", args=["delivery"]), VALID_STYLE)
+        response = client.post(
+            reverse("documents:template_publish", args=["delivery"]), follow=True
+        )
+        assert b"incomplete" in response.content
+        assert DocumentTemplate.objects.get(document_type="delivery").status == "draft"
+
     def test_rejects_an_invalid_accent_color_with_form_error(self, client, administrator):
         client.force_login(administrator)
         data = {**VALID_STYLE, "accent_color": "#zzzzzz"}
@@ -172,6 +192,9 @@ class TestLivePreviewView:
             document_type=DocumentType.DELIVERY,
             html_source=VALID_HTML,
             logo=SimpleUploadedFile("logo.png", PNG_BYTES, content_type="image/png"),
+            document_title="Delivery form",
+            company_name="Acme Corp",
+            preview_confirmed=True,
         )
         publish_template(user=administrator, document_type=DocumentType.DELIVERY)
         # Simulate the file vanishing from storage without touching the DB

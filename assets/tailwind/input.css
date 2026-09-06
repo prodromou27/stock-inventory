@@ -1037,6 +1037,39 @@
     font-size: 0.78rem;
   }
 
+  .completeness-checklist {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  .completeness-checklist__item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+  }
+
+  .completeness-checklist__item.is-satisfied {
+    color: var(--color-text);
+  }
+
+  .completeness-checklist__item.is-satisfied span {
+    color: var(--color-success);
+    font-weight: 700;
+  }
+
+  .completeness-checklist__item.is-unsatisfied {
+    color: var(--color-text-muted);
+  }
+
+  .completeness-checklist__item.is-unsatisfied span {
+    color: var(--color-text-faint);
+  }
+
   /* A form row that should ignore the 32rem cap — code editors, long textareas */
   .form-row--wide {
     max-width: none !important;

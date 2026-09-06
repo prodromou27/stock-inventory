@@ -241,3 +241,33 @@ class TestAttachmentDownloadAndDelete:
         assert response.status_code == 403
         attachment.refresh_from_db()
         assert attachment.is_deleted is False
+
+
+@pytest.mark.django_db
+class TestPdfHealthDiagnosticsView:
+    def test_administrator_can_view(self, client, administrator, assignment_txn):
+        generate_document(txn=assignment_txn, user=administrator)
+        client.force_login(administrator)
+        response = client.get(reverse("documents:pdf_health"))
+        assert response.status_code == 200
+        assert response.context["recent_total"] == 1
+        assert response.context["recent_failures"] == 0
+
+    def test_stock_manager_forbidden(self, client, stock_manager_with_room_access):
+        client.force_login(stock_manager_with_room_access)
+        response = client.get(reverse("documents:pdf_health"))
+        assert response.status_code == 403
+
+    def test_shows_missing_documents_from_latest_integrity_run(
+        self, client, administrator, assignment_txn
+    ):
+        from apps.documents.integrity import check_document_integrity
+
+        document = generate_document(txn=assignment_txn, user=administrator)
+        document.pdf_file.storage.delete(document.pdf_file.name)
+        check_document_integrity()
+
+        client.force_login(administrator)
+        response = client.get(reverse("documents:pdf_health"))
+        assert response.status_code == 200
+        assert list(response.context["missing_documents"]) == [document]

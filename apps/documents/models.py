@@ -286,6 +286,17 @@ class DocumentTemplate(UUIDPrimaryKeyModel, TimestampedModel):
     company_name = models.CharField(max_length=200, blank=True)
     company_address = models.TextField(blank=True)
     company_tax_id = models.CharField(max_length=60, blank=True)
+    logo_intentionally_omitted = models.BooleanField(
+        default=False,
+        help_text="Acknowledges this template has no logo on purpose — lets the completeness "
+        "checklist pass without one, instead of treating a blank logo as an oversight forever.",
+    )
+    preview_confirmed = models.BooleanField(
+        default=False,
+        help_text="Set only by explicitly ticking the editor's confirmation checkbox on a save; "
+        "any subsequent save resets it — an Administrator must re-review the PDF preview after "
+        "every change before Publish is allowed.",
+    )
     layout_config = models.JSONField(default=_default_layout_config)
     version = models.PositiveIntegerField(
         default=1,
@@ -348,3 +359,87 @@ class DocumentTemplateVersion(UUIDPrimaryKeyModel, AppendOnlyModel):
 
     def __str__(self):
         return f"{self.template} v{self.version}"
+
+
+class DocumentRenderLog(UUIDPrimaryKeyModel, AppendOnlyModel):
+    """One row per real document-generation attempt (apps.documents.services.
+    generate_document()) — duration, which template/version rendered it, and
+    whether it succeeded, purely for an Administrator-facing diagnostics view
+    (spec: "record render duration, template version, failures, and storage
+    errors"). Append-only: a historical health record, not something a later
+    event should ever revise. Deliberately excludes preview renders (the
+    editor's own Preview/live-preview buttons) — those are expected to fail
+    often while an Administrator is actively drafting, and would drown out
+    the signal real-generation failures are meant to surface.
+    """
+
+    document_type = models.CharField(max_length=20, choices=DocumentType.choices)
+    template = models.ForeignKey(
+        DocumentTemplate,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="render_logs",
+        help_text="Null means the packaged default rendered it (no override existed at the time).",
+    )
+    template_version = models.CharField(max_length=40, blank=True)
+    generated_document = models.ForeignKey(
+        GeneratedDocument,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="render_log",
+        help_text="Null when the render failed outright — never a document to point to.",
+    )
+    duration_ms = models.PositiveIntegerField()
+    success = models.BooleanField()
+    error_message = models.TextField(blank=True)
+    triggered_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = AppendOnlyQuerySet.as_manager()
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["success", "created_at"], name="renderlog_success_created_idx"),
+        ]
+
+    def __str__(self):
+        status = "OK" if self.success else "FAILED"
+        return f"{self.get_document_type_display()} render {status} ({self.duration_ms}ms)"
+
+
+class DocumentIntegrityCheckRun(UUIDPrimaryKeyModel, AppendOnlyModel):
+    """One row per run of the `check_document_integrity` management command
+    (apps.documents.integrity) — a scheduled (host cron, same pattern as
+    the daily notification digest and nightly export) walk of every
+    GeneratedDocument confirming its pdf_file still exists and is a
+    non-empty, real PDF in storage. Surfaces a missing/corrupt file to an
+    Administrator via the diagnostics page before a user discovers it by
+    clicking Download and getting a 404.
+    """
+
+    started_at = models.DateTimeField()
+    finished_at = models.DateTimeField()
+    checked_count = models.PositiveIntegerField()
+    missing_document_ids = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="GeneratedDocument ids whose pdf_file was missing, empty, or not a valid PDF.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = AppendOnlyQuerySet.as_manager()
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    @property
+    def missing_count(self):
+        return len(self.missing_document_ids)
+
+    def __str__(self):
+        return f"Integrity check {self.created_at:%Y-%m-%d} — {self.missing_count} missing"

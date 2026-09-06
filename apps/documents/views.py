@@ -22,6 +22,8 @@ from .layout import SECTIONS
 from .models import (
     REPORT_COLUMNS,
     Attachment,
+    DocumentIntegrityCheckRun,
+    DocumentRenderLog,
     DocumentTemplateVersion,
     DocumentType,
     GeneratedDocument,
@@ -35,6 +37,7 @@ from .template_services import (
     render_preview_pdf,
     reset_template,
     restore_template_version,
+    template_completeness,
     update_template,
 )
 
@@ -244,6 +247,7 @@ _STYLE_KWARG_FIELDS = (
     "company_name",
     "company_address",
     "company_tax_id",
+    "logo_intentionally_omitted",
 )
 
 
@@ -297,6 +301,7 @@ class DocumentTemplateEditView(LoginRequiredMixin, RoleRequiredMixin, View):
                 font_choice=data["font_choice"],
                 page_margin=data["page_margin"],
                 layout_config=form.layout_config(),
+                preview_confirmed=data["preview_confirmed"],
                 **_style_kwargs(data),
             )
         except ValidationError as exc:
@@ -345,6 +350,7 @@ class DocumentTemplateEditView(LoginRequiredMixin, RoleRequiredMixin, View):
                 "versions": (
                     template_obj.versions.select_related("saved_by")[:20] if template_obj else []
                 ),
+                "completeness": template_completeness(template_obj),
             },
         )
 
@@ -464,3 +470,44 @@ class DocumentTemplateRestoreVersionView(LoginRequiredMixin, RoleRequiredMixin, 
         else:
             messages.success(request, f"Restored v{version_obj.version}.")
         return redirect("documents:template_edit", document_type=document_type)
+
+
+class PdfHealthDiagnosticsView(LoginRequiredMixin, RoleRequiredMixin, View):
+    """Administrator-only visibility into apps.documents.services.
+    generate_document()'s DocumentRenderLog entries (duration, template/
+    version, failures) and the latest scheduled DocumentIntegrityCheckRun
+    (apps.documents.integrity, run via the check_document_integrity
+    management command) — spec: "record render duration, template version,
+    failures, and storage errors... reporting missing files before a user
+    discovers them."
+    """
+
+    allowed_roles = (ADMINISTRATOR,)
+    template_name = "documents/pdf_health.html"
+    LOG_LIMIT = 200
+
+    def get(self, request):
+        logs = DocumentRenderLog.objects.select_related(
+            "template", "generated_document", "triggered_by"
+        )[: self.LOG_LIMIT]
+        recent_failures = DocumentRenderLog.objects.filter(success=False).count()
+        recent_total = DocumentRenderLog.objects.count()
+        latest_integrity_run = DocumentIntegrityCheckRun.objects.first()
+        missing_documents = (
+            GeneratedDocument.objects.filter(
+                pk__in=latest_integrity_run.missing_document_ids
+            ).select_related("transaction")
+            if latest_integrity_run and latest_integrity_run.missing_document_ids
+            else GeneratedDocument.objects.none()
+        )
+        return render(
+            request,
+            self.template_name,
+            {
+                "logs": logs,
+                "recent_failures": recent_failures,
+                "recent_total": recent_total,
+                "latest_integrity_run": latest_integrity_run,
+                "missing_documents": missing_documents,
+            },
+        )

@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+
+{% block title %}PDF Health — Stock Inventory{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>PDF health</h1>
+      <div class="page-header__subtitle">Render outcomes for real "Generate Document" attempts, and the latest scheduled storage integrity check.</div>
+    </div>
+  </div>
+
+  <div class="card-grid">
+    <div class="card">
+      <h2>Render outcomes</h2>
+      <p class="empty-state" style="margin:0;">
+        {% if recent_total %}
+          {{ recent_failures }} failed out of the last {{ recent_total }} recorded attempts.
+        {% else %}
+          No document generation has been recorded yet.
+        {% endif %}
+      </p>
+    </div>
+    <div class="card">
+      <h2>Storage integrity</h2>
+      {% if latest_integrity_run %}
+        <p style="margin:0;">
+          Last checked {{ latest_integrity_run.created_at }} — {{ latest_integrity_run.checked_count }} documents checked,
+          <strong>{{ latest_integrity_run.missing_count }}</strong> missing or corrupt.
+        </p>
+      {% else %}
+        <p class="empty-state" style="margin:0;">No integrity check has run yet — schedule the `check_document_integrity` management command (see deploy/DEPLOYMENT.md).</p>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if missing_documents %}
+    <div class="card">
+      <h2>Missing or corrupt files</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Document</th><th>Transaction</th><th>Generated</th></tr></thead>
+          <tbody>
+            {% for document in missing_documents %}
+              <tr>
+                <td><a href="{{ document.get_absolute_url }}">{{ document.document_number }}</a></td>
+                <td><a href="{{ document.transaction.get_absolute_url }}">{{ document.transaction.transaction_number }}</a></td>
+                <td>{{ document.generated_at }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="card">
+    <h2>Recent render attempts</h2>
+    {% if logs %}
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>When</th><th>Type</th><th>Template</th><th>Duration</th><th>Status</th><th>By</th></tr></thead>
+          <tbody>
+            {% for log in logs %}
+              <tr>
+                <td>{{ log.created_at }}</td>
+                <td>{{ log.get_document_type_display }}</td>
+                <td>{{ log.template_version }}{% if log.template %} ({{ log.template.get_document_type_display }}){% endif %}</td>
+                <td>{{ log.duration_ms }} ms</td>
+                <td>
+                  {% if log.success %}
+                    <span class="badge badge--success">OK</span>
+                  {% else %}
+                    <span class="badge badge--danger" title="{{ log.error_message }}">Failed</span>
+                  {% endif %}
+                </td>
+                <td>{{ log.triggered_by|default:"—" }}</td>
+              </tr>
+              {% if not log.success and log.error_message %}
+                <tr>
+                  <td colspan="6"><code class="text-muted">{{ log.error_message|truncatechars:300 }}</code></td>
+                </tr>
+              {% endif %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="empty-state">No document generation has been recorded yet.</p>
+    {% endif %}
+  </div>
+{% endblock %}

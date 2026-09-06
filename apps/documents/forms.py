@@ -35,6 +35,9 @@ class DocumentTemplateStyleForm(forms.Form):
         required=False, label="Logo (PNG or JPEG) — leave blank to keep the current one"
     )
     remove_logo = forms.BooleanField(required=False, label="Remove the current logo")
+    logo_intentionally_omitted = forms.BooleanField(
+        required=False, label="This template doesn't need a logo"
+    )
     logo_position = forms.ChoiceField(
         choices=LogoPosition.choices, label="Logo position", initial=LogoPosition.LEFT
     )
@@ -132,6 +135,12 @@ class DocumentTemplateStyleForm(forms.Form):
     table_cell_padding = forms.IntegerField(required=False, min_value=2, max_value=12, initial=4)
     signature_left_label = forms.CharField(required=False, max_length=120)
     signature_right_label = forms.CharField(required=False, max_length=120)
+    preview_confirmed = forms.BooleanField(
+        required=False,
+        label="I have reviewed the PDF preview and it looks correct",
+        help_text="Required (alongside the rest of the completeness checklist) before this "
+        "template can be published — resets on every save, so re-check after each change.",
+    )
 
     def clean_section_order(self):
         return [key.strip() for key in self.cleaned_data["section_order"].split(",") if key.strip()]

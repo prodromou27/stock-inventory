@@ -149,6 +149,13 @@ def test_template_publish_and_restore_browser(live_server, administrator):
         edit_url = live_server.url + reverse("documents:template_edit", args=["delivery"])
         page.goto(edit_url)
         page.locator('[name="document_title"]').fill("QA v1 title")
+        # publish_template() gates on template_completeness() — satisfy the
+        # rest of the checklist (title is filled above; signatures/columns
+        # already default to satisfied) so the upcoming Publish click below
+        # actually succeeds instead of failing the completeness check.
+        page.locator('[name="company_name"]').fill("QA Corp")
+        page.locator('[name="logo_intentionally_omitted"]').check()
+        page.locator('[name="preview_confirmed"]').check()
         page.get_by_role("button", name="Save").click()
         page.wait_for_url(edit_url)
         # The badge's text-transform: uppercase CSS changes how Playwright's

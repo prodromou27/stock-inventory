@@ -168,6 +168,32 @@ The last run's outcome (including the failure reason, if any — e.g. a disconne
 settings screen and recorded as an `AuditEvent`; the command also exits non-zero on failure so cron's own mail-on
 -error or your monitoring can catch it independently.
 
+## Scheduled notification digest
+
+Same "doesn't self-schedule, invoke daily via cron" shape as the export above — each active notification
+subscription (**Settings > Daily digest recipients**) gets at most one digest email per day, tracked via a
+`(subscription, digest_date)` idempotency row, so a re-run (or a cron misconfiguration invoking it twice) never
+double-sends:
+
+```
+0 6 * * * docker compose -f /path/to/deploy/docker-compose.prod.yml exec -T web \
+    python manage.py send_daily_inventory_digest >> /var/log/stock-inventory-digest.log 2>&1
+```
+
+The same run also raises the in-app notification bell entries every recipient sees in the topbar — that part isn't
+optional/skippable the way the email send is, so it happens even if SMTP itself is unreachable that day.
+
+## Scheduled PDF integrity check
+
+Walks every generated document's stored PDF confirming it's still present and a valid file, surfacing a missing or
+corrupt one on **Settings > PDF health** before a user discovers it via a broken Download link. Cheap enough to run
+daily or weekly depending on how many documents this instance accumulates:
+
+```
+0 4 * * * docker compose -f /path/to/deploy/docker-compose.prod.yml exec -T web \
+    python manage.py check_document_integrity >> /var/log/stock-inventory-pdf-integrity.log 2>&1
+```
+
 ## Restore
 
 See [`RESTORE.md`](RESTORE.md) — practice it in a disposable environment before you need it for real.

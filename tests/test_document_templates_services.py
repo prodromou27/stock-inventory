@@ -30,6 +30,18 @@ from apps.inventory.services.receipts import receive_stock
 VALID_HTML = "<html><body><h1>{{ document_number }}</h1><p>{{ final_customer }}</p></body></html>"
 BROKEN_HTML = "{% for x in %}broken"
 
+# publish_template() gates on template_completeness() — every call site
+# that publishes needs the underlying update_template() call to satisfy it
+# (title, company details, logo-or-explicitly-omitted, and a fresh preview
+# confirmation; signatures/columns are satisfied by the model's own
+# defaults). Centralized here so a checklist change only needs updating once.
+PUBLISH_READY_KWARGS = {
+    "document_title": "Test document",
+    "company_name": "Acme Corp",
+    "logo_intentionally_omitted": True,
+    "preview_confirmed": True,
+}
+
 PNG_BYTES = bytes.fromhex(
     "89504e470d0a1a0a0000000d4948445200000001000000010806000000"
     "1f15c4890000000a49444154789c6360000002000155e75dd8000000004"
@@ -246,6 +258,99 @@ class TestUpdateTemplateStyleFields:
         assert template_obj.accent_color == "#444444"
         assert template_obj.font_choice == FontChoice.SANS
 
+    def test_preview_confirmed_resets_on_every_subsequent_save(self, administrator):
+        template_obj = update_template(
+            user=administrator,
+            document_type=DocumentType.DELIVERY,
+            html_source=VALID_HTML,
+            preview_confirmed=True,
+        )
+        assert template_obj.preview_confirmed is True
+
+        template_obj = update_template(
+            user=administrator, document_type=DocumentType.DELIVERY, html_source=VALID_HTML
+        )
+        assert template_obj.preview_confirmed is False
+
+
+@pytest.mark.django_db
+class TestTemplateCompletenessAndPublishGate:
+    """apps.documents.template_services.template_completeness()/
+    publish_template() — the pre-publish checklist (spec: "logo, title,
+    company details, required sections, signatures, and PDF preview
+    confirmation").
+    """
+
+    def test_brand_new_draft_is_incomplete(self, administrator):
+        from apps.documents.template_services import template_completeness
+
+        template_obj = update_template(
+            user=administrator, document_type=DocumentType.DELIVERY, html_source=VALID_HTML
+        )
+        items = template_completeness(template_obj)
+        unsatisfied = {item["key"] for item in items if not item["satisfied"]}
+        assert unsatisfied == {"logo", "title", "company", "preview"}
+
+    def test_publish_blocked_until_checklist_satisfied(self, administrator):
+        update_template(
+            user=administrator, document_type=DocumentType.DELIVERY, html_source=VALID_HTML
+        )
+        with pytest.raises(ValidationError, match="incomplete"):
+            publish_template(user=administrator, document_type=DocumentType.DELIVERY)
+        assert get_template(DocumentType.DELIVERY).status == "draft"
+
+    def test_publish_succeeds_once_every_item_is_satisfied(self, administrator):
+        update_template(
+            user=administrator,
+            document_type=DocumentType.DELIVERY,
+            html_source=VALID_HTML,
+            **PUBLISH_READY_KWARGS,
+        )
+        published = publish_template(user=administrator, document_type=DocumentType.DELIVERY)
+        assert published.status == "published"
+
+    def test_logo_file_satisfies_the_logo_item_without_the_checkbox(self, administrator):
+        from apps.documents.template_services import template_completeness
+
+        template_obj = update_template(
+            user=administrator,
+            document_type=DocumentType.DELIVERY,
+            html_source=VALID_HTML,
+            logo=_png_upload(),
+        )
+        items = {item["key"]: item["satisfied"] for item in template_completeness(template_obj)}
+        assert items["logo"] is True
+
+    def test_hiding_every_column_fails_the_columns_item(self, administrator):
+        from apps.documents.models import REPORT_COLUMNS
+        from apps.documents.template_services import template_completeness
+
+        template_obj = update_template(
+            user=administrator,
+            document_type=DocumentType.DELIVERY,
+            html_source=VALID_HTML,
+            layout_config={"hidden_columns": [key for key, _ in REPORT_COLUMNS]},
+        )
+        items = {item["key"]: item["satisfied"] for item in template_completeness(template_obj)}
+        assert items["columns"] is False
+
+    def test_hiding_the_signature_block_fails_the_signatures_item(self, administrator):
+        from apps.documents.template_services import template_completeness
+
+        template_obj = update_template(
+            user=administrator,
+            document_type=DocumentType.DELIVERY,
+            html_source=VALID_HTML,
+            layout_config={"show_signature_block": False},
+        )
+        items = {item["key"]: item["satisfied"] for item in template_completeness(template_obj)}
+        assert items["signatures"] is False
+
+    def test_no_template_yet_has_an_empty_checklist(self):
+        from apps.documents.template_services import template_completeness
+
+        assert template_completeness(None) == []
+
 
 @pytest.mark.django_db
 class TestResetTemplate:
@@ -379,7 +484,10 @@ class TestRestoreTemplateVersion:
         real document generation for that type until someone noticed.
         """
         good = update_template(
-            user=administrator, document_type=DocumentType.DELIVERY, html_source=VALID_HTML
+            user=administrator,
+            document_type=DocumentType.DELIVERY,
+            html_source=VALID_HTML,
+            **PUBLISH_READY_KWARGS,
         )
         publish_template(user=administrator, document_type=DocumentType.DELIVERY)
         broken_version = DocumentTemplateVersion.objects.create(
@@ -455,6 +563,7 @@ class TestGenerateDocumentUsesOverride:
             user=administrator,
             document_type=DocumentType.DELIVERY,
             html_source="<html><body><h1>OVERRIDE {{ document_number }}</h1></body></html>",
+            **PUBLISH_READY_KWARGS,
         )
         publish_template(user=administrator, document_type=DocumentType.DELIVERY)
         document = generate_document(txn=delivery_txn, user=administrator)
@@ -482,7 +591,10 @@ class TestGenerateDocumentUsesOverride:
         self, administrator, delivery_txn
     ):
         template_obj = update_template(
-            user=administrator, document_type=DocumentType.DELIVERY, html_source=VALID_HTML
+            user=administrator,
+            document_type=DocumentType.DELIVERY,
+            html_source=VALID_HTML,
+            **PUBLISH_READY_KWARGS,
         )
         publish_template(user=administrator, document_type=DocumentType.DELIVERY)
         document = generate_document(txn=delivery_txn, user=administrator)
@@ -506,7 +618,10 @@ class TestGenerateDocumentUsesOverride:
         template_obj.delete() behavior which SET_NULL'd it.
         """
         template_obj = update_template(
-            user=administrator, document_type=DocumentType.DELIVERY, html_source=VALID_HTML
+            user=administrator,
+            document_type=DocumentType.DELIVERY,
+            html_source=VALID_HTML,
+            **PUBLISH_READY_KWARGS,
         )
         publish_template(user=administrator, document_type=DocumentType.DELIVERY)
         document = generate_document(txn=delivery_txn, user=administrator)

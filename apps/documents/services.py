@@ -1,4 +1,5 @@
 import logging
+import time
 
 from django.core.exceptions import ValidationError
 from django.core.files.base import ContentFile
@@ -10,7 +11,7 @@ from apps.core.authorization import ADMINISTRATOR, STOCK_MANAGER, require_role
 from apps.inventory.access import require_transaction_access
 from apps.inventory.models import MovementType
 
-from .models import Attachment, GeneratedDocument
+from .models import Attachment, DocumentRenderLog, GeneratedDocument
 from .pdf import (
     CURRENT_TEMPLATE_VERSION,
     active_template_for,
@@ -45,28 +46,61 @@ def document_type_for(transaction):
 _PRINTABLE_MOVEMENT_TYPES = (MovementType.ASSIGNMENT, MovementType.DELIVERY, MovementType.DISPOSAL)
 
 
+def _record_render_log(
+    *, document_type, template_obj, user, duration_ms, success, generated_document=None, error=""
+):
+    """Best-effort — a diagnostics row failing to save must never mask (or
+    replace) the actual generation outcome above it. AppendOnlyModel means
+    this is always a fresh INSERT, never a risk of clobbering another log.
+    """
+    try:
+        DocumentRenderLog.objects.create(
+            document_type=document_type,
+            template=template_obj,
+            template_version=(
+                f"v{template_obj.version}" if template_obj else CURRENT_TEMPLATE_VERSION
+            ),
+            generated_document=generated_document,
+            duration_ms=duration_ms,
+            success=success,
+            error_message=error[:4000],
+            triggered_by=user,
+        )
+    except Exception:  # noqa: BLE001 - diagnostics logging must never break generation
+        logger.exception("Could not record document render log")
+
+
 def generate_document(*, txn, user, supersedes=None):
     """Renders and persists a PDF snapshot of a completed assignment/
     delivery/disposal transaction (spec §10, acceptance criterion §21.13,
     plus the disposal certificate — document_type_for() above).
     `supersedes`, when given, links to the GeneratedDocument this one
     replaces — regeneration never edits or removes the old row/file (doc 06).
+
+    Every attempt that gets past the role/transaction-scope/movement-type
+    checks below is logged to DocumentRenderLog (duration, template/version,
+    success or the failure reason) for the Administrator-facing diagnostics
+    page — an authorization rejection isn't a rendering failure, so those
+    never produce a log row, only genuine render/storage/persistence
+    outcomes do.
     """
+    require_role(user, ADMINISTRATOR, STOCK_MANAGER)
+    require_transaction_access(user, txn)
+
+    if txn.movement_type not in _PRINTABLE_MOVEMENT_TYPES:
+        raise ValidationError(
+            "Only assignment, delivery, or disposal transactions can generate a "
+            "printable document."
+        )
+
+    document_type = document_type_for(txn)
+    started = time.monotonic()
     stored_file = None
     storage = None
+    template_obj = None
     try:
         with transaction.atomic():
-            require_role(user, ADMINISTRATOR, STOCK_MANAGER)
-            require_transaction_access(user, txn)
-
-            if txn.movement_type not in _PRINTABLE_MOVEMENT_TYPES:
-                raise ValidationError(
-                    "Only assignment, delivery, or disposal transactions can generate a "
-                    "printable document."
-                )
-
             document_number = next_document_number()
-            document_type = document_type_for(txn)
             template_obj = active_template_for(document_type)
             context = build_document_context(transaction=txn, document_number=document_number)
             try:
@@ -114,8 +148,8 @@ def generate_document(*, txn, user, supersedes=None):
                     f"for {txn.transaction_number}"
                 ),
             )
-        return document
     except Exception as exc:
+        duration_ms = int((time.monotonic() - started) * 1000)
         if stored_file and storage:
             try:
                 storage.delete(stored_file)
@@ -123,17 +157,51 @@ def generate_document(*, txn, user, supersedes=None):
                 logger.exception("Could not clean up unsuccessful document file")
         if isinstance(exc, OSError):
             logger.exception("Could not store generated PDF")
-            raise ValidationError(
+            friendly = ValidationError(
                 "The PDF could not be saved. Ask an Administrator to check document storage "
                 "permissions and available disk space, then try again."
-            ) from exc
+            )
+            _record_render_log(
+                document_type=document_type,
+                template_obj=template_obj,
+                user=user,
+                duration_ms=duration_ms,
+                success=False,
+                error=str(exc),
+            )
+            raise friendly from exc
+        _record_render_log(
+            document_type=document_type,
+            template_obj=template_obj,
+            user=user,
+            duration_ms=duration_ms,
+            success=False,
+            error=str(exc),
+        )
         raise
+    else:
+        duration_ms = int((time.monotonic() - started) * 1000)
+        _record_render_log(
+            document_type=document_type,
+            template_obj=template_obj,
+            user=user,
+            duration_ms=duration_ms,
+            success=True,
+            generated_document=document,
+        )
+        return document
 
 
-@transaction.atomic
 def regenerate_document(*, previous_document, user):
     """Creates a new GeneratedDocument for the same transaction, linked back
     via `supersedes`. The previous document's row and PDF file are untouched.
+
+    Deliberately not itself wrapped in @transaction.atomic — generate_document()
+    already wraps its own writes in one internally, and nesting another atomic
+    block here would turn its internal savepoint rollback (on a render/storage
+    failure) into a rollback of *this* function's transaction too, silently
+    discarding the DocumentRenderLog row generate_document() writes for that
+    same failure right after.
     """
     return generate_document(
         txn=previous_document.transaction, user=user, supersedes=previous_document

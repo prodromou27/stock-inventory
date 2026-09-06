@@ -38,6 +38,7 @@ _STYLE_FIELDS = (
     "company_name",
     "company_address",
     "company_tax_id",
+    "logo_intentionally_omitted",
 )
 
 
@@ -195,6 +196,8 @@ def update_template(
     company_name=None,
     company_address=None,
     company_tax_id=None,
+    logo_intentionally_omitted=None,
+    preview_confirmed=False,
     layout_config=None,
 ):
     """`html_source` is always the final, already-composed template — the
@@ -256,12 +259,18 @@ def update_template(
         template_obj.company_address = company_address
     if company_tax_id is not None:
         template_obj.company_tax_id = company_tax_id
+    if logo_intentionally_omitted is not None:
+        template_obj.logo_intentionally_omitted = logo_intentionally_omitted
     if logo is not None:
         template_obj.logo = logo
     elif remove_logo and template_obj.logo:
         template_obj.logo = None
     if layout_config is not None:
         template_obj.layout_config = _clean_layout_config(layout_config)
+    # Any save resets this — an Administrator must re-review the PDF
+    # preview after every change, not just once ever, before Publish is
+    # allowed (see the model field's docstring and template_completeness()).
+    template_obj.preview_confirmed = bool(preview_confirmed)
     template_obj.version = 1 if is_new else template_obj.version + 1
     template_obj.full_clean()
     _validate_template_renders(html_source, template_obj)
@@ -287,11 +296,65 @@ def update_template(
 
 
 @transaction.atomic
+def template_completeness(template_obj):
+    """The pre-publish checklist (spec: "template completeness checklist
+    before publishing: logo, title, company details, required sections,
+    signatures, and PDF preview confirmation") — a list of
+    {key, label, satisfied} dicts, most-important-first. publish_template()
+    blocks on any unsatisfied item; the editor screen shows the same list
+    live so an Administrator sees exactly what's missing before they even
+    try to publish.
+    """
+    if template_obj is None:
+        return []
+    hidden_columns = set(template_obj.layout_config.get("hidden_columns") or [])
+    visible_columns = {key for key, _ in REPORT_COLUMNS} - hidden_columns
+    show_signatures = template_obj.layout_config.get("show_signature_block", True)
+    return [
+        {
+            "key": "logo",
+            "label": "Logo set, or explicitly marked not needed",
+            "satisfied": bool(template_obj.logo) or template_obj.logo_intentionally_omitted,
+        },
+        {
+            "key": "title",
+            "label": "Document title set",
+            "satisfied": bool(template_obj.document_title),
+        },
+        {
+            "key": "company",
+            "label": "Company name or address set",
+            "satisfied": bool(template_obj.company_name or template_obj.company_address),
+        },
+        {
+            "key": "columns",
+            "label": "At least one line-item column is visible",
+            "satisfied": bool(visible_columns),
+        },
+        {
+            "key": "signatures",
+            "label": "Signature block included",
+            "satisfied": bool(show_signatures),
+        },
+        {
+            "key": "preview",
+            "label": "PDF preview reviewed and confirmed since the last change",
+            "satisfied": template_obj.preview_confirmed,
+        },
+    ]
+
+
 def publish_template(*, user, document_type):
     """Makes the current active row's configuration live for real document
     generation (apps.documents.pdf.active_template_for()). A Draft's
     changes are already fully previewable before this — publishing only
     ever changes what a real transaction's Generate Document uses.
+
+    Blocked (ValidationError) until template_completeness() is fully
+    satisfied — publishing a template missing its own branding/title/company
+    identification, or one nobody has actually reviewed a PDF preview of
+    since the last edit, is exactly the "looks fine in the settings form,
+    wrong on the actual printed page" gap this checklist exists to close.
     """
     require_role(user, ADMINISTRATOR)
     template_obj = get_template(document_type)
@@ -299,6 +362,10 @@ def publish_template(*, user, document_type):
         raise ValidationError("No template exists for this document type yet.")
     if template_obj.status == TemplateStatus.PUBLISHED:
         return template_obj
+
+    unmet = [item["label"] for item in template_completeness(template_obj) if not item["satisfied"]]
+    if unmet:
+        raise ValidationError(f"Cannot publish yet — incomplete: {'; '.join(unmet)}.")
 
     _validate_template_renders(template_obj.html_source, template_obj)
     template_obj.status = TemplateStatus.PUBLISHED
