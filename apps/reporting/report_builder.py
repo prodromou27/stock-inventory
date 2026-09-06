@@ -38,6 +38,19 @@ from .models import ReportBaseModel
 
 ALLOWED_FILTER_OPS = ("exact", "icontains", "gte", "lte", "in")
 
+# Human-readable labels for the builder's "Is" dropdown (apps.reporting.forms.
+# ReportFilterRowForm) — the ORM lookup names above are the actual submitted
+# values (also read directly by static/js/report_builder.js to toggle the
+# value input's type/placeholder), never shown to a Stock Manager building a
+# report without any Django/SQL background.
+FILTER_OP_LABELS = {
+    "exact": "Is",
+    "icontains": "Contains",
+    "gte": "At least",
+    "lte": "At most",
+    "in": "Is one of (comma-separated)",
+}
+
 REPORTABLE_FIELDS = {
     ReportBaseModel.UNIT_ASSET: {
         "brand": "product__brand__name",
@@ -160,11 +173,17 @@ def _scoped_base_queryset(base_model, user):
     raise ValueError(f"Unknown base_model: {base_model!r}")
 
 
+_FIELD_LABEL_OVERRIDES = {"sku": "SKU"}
+
+
 def field_choices(base_model):
     """(key, label) choices for a field-selection widget — every key is
     guaranteed to exist in REPORTABLE_FIELDS for this base_model.
     """
-    return [(key, key.replace("_", " ").title()) for key in REPORTABLE_FIELDS.get(base_model, {})]
+    return [
+        (key, _FIELD_LABEL_OVERRIDES.get(key, key.replace("_", " ").title()))
+        for key in REPORTABLE_FIELDS.get(base_model, {})
+    ]
 
 
 def field_kinds(base_model):

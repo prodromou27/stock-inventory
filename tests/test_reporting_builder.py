@@ -10,7 +10,7 @@ from apps.inventory.models import InventoryTransactionLine
 from apps.inventory.services.assignments import deliver_to_customer
 from apps.inventory.services.receipts import receive_stock
 from apps.reporting.models import ReportBaseModel, SavedReport
-from apps.reporting.report_builder import REPORTABLE_FIELDS, build_queryset
+from apps.reporting.report_builder import REPORTABLE_FIELDS, build_queryset, field_choices
 from apps.reporting.services import create_saved_report, delete_saved_report
 
 
@@ -40,6 +40,33 @@ def out_of_scope_asset(administrator, unit_product, other_location_tree):
     from apps.inventory.models import UnitAsset
 
     return UnitAsset.objects.get(vendor_serial="SN-REPORT-OUT-OF-SCOPE")
+
+
+class TestFieldAndFilterLabels:
+    """Regression test: the builder's "Is" filter dropdown used to show the
+    raw Django ORM lookup names ("exact", "icontains", "gte", "lte", "in")
+    as both value and label — jargon meaningless to a Stock Manager with no
+    SQL/Django background. sku's Title-Case fallback ("Sku") was also wrong.
+    """
+
+    def test_field_labels_special_case_known_acronyms(self):
+        labels = dict(field_choices(ReportBaseModel.UNIT_ASSET))
+        assert labels["sku"] == "SKU"
+
+    def test_filter_op_labels_are_human_readable_not_orm_lookup_names(self):
+        from apps.reporting.forms import ReportFilterRowForm
+
+        form = ReportFilterRowForm(base_model=ReportBaseModel.UNIT_ASSET)
+        op_choices = dict(form.fields["op"].choices)
+        assert op_choices["exact"] == "Is"
+        assert op_choices["icontains"] == "Contains"
+        assert op_choices["gte"] == "At least"
+        assert op_choices["lte"] == "At most"
+        assert "comma-separated" in op_choices["in"].lower()
+        # The submitted *value* must still be the raw ORM lookup name —
+        # static/js/report_builder.js and normalize_filter_value() both key
+        # off it directly.
+        assert set(op_choices.keys()) == {"exact", "icontains", "gte", "lte", "in"}
 
 
 @pytest.mark.django_db

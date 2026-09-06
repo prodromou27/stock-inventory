@@ -14,13 +14,14 @@ _SECTION_LABELS = {
     "audit": "Audit log",
     "catalog": "Product catalog",
     "core": "Dashboard",
+    "dataquality": "Data Quality Centre",
     "documents": "Documents",
     "exports": "Exports",
     "imports": "Excel import",
     "inventory": "Inventory",
     "locations": "Locations",
     "reporting": "Reports",
-    "sysconfig": "Settings",
+    "settings": "Settings",
 }
 
 _SUCCESS = ("active", "available", "in_stock", "in stock", "new", "good", "healthy", "completed")

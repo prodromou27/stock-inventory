@@ -1,7 +1,12 @@
 from django import forms
 
 from .models import ReportBaseModel
-from .report_builder import ALLOWED_FILTER_OPS, field_choices, normalize_filter_value
+from .report_builder import (
+    ALLOWED_FILTER_OPS,
+    FILTER_OP_LABELS,
+    field_choices,
+    normalize_filter_value,
+)
 
 
 class ReportBaseModelForm(forms.Form):
@@ -48,7 +53,9 @@ class ReportFilterRowForm(forms.Form):
 
     field_key = forms.ChoiceField(choices=(), required=False, label="Field")
     op = forms.ChoiceField(
-        choices=[(op, op) for op in ALLOWED_FILTER_OPS], required=False, label="Is"
+        choices=[(op, FILTER_OP_LABELS[op]) for op in ALLOWED_FILTER_OPS],
+        required=False,
+        label="Is",
     )
     value = forms.CharField(required=False, max_length=200, label="Value")
 

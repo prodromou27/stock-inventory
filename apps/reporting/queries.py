@@ -325,7 +325,6 @@ def dashboard_summary(user):
             StockReservation.objects.filter(status=ReservationStatus.ACTIVE),
             location_field="location",
         ).count(),
-        "reserved_count": _scoped_assets(user, status=UnitStatus.RESERVED).count(),
         "assigned_count": _scoped_assets(user, status=UnitStatus.ASSIGNED).count(),
         "delivered_count": _scoped_assets(user, status=UnitStatus.DELIVERED).count(),
         "damaged_count": damaged_assets(user).count(),

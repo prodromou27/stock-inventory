@@ -484,7 +484,14 @@ def _execute_row_chunk(rows, *, user):
 def _execute_row(row, *, user):
     data = row.normalized_data
     if data.get("duplicate_serial_ids") and not row.duplicate_serial_acknowledged:
-        row.outcome_detail = "Not executed: duplicate serial acknowledgement is required."
+        # Appended, not overwritten — row.outcome_detail already names which
+        # serial matched and how many existing assets it conflicts with
+        # (set at staging time, _stage_row()); losing that here would leave
+        # the Administrator with no way to tell what to check before
+        # deciding whether to acknowledge.
+        row.outcome_detail = (
+            f"{row.outcome_detail} Not executed: duplicate serial acknowledgement is required."
+        ).strip()
         row.save(update_fields=["outcome_detail"])
         return
     location_id = data.get("location_override_id") or data.get("resolved_location_id")
