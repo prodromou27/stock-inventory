@@ -40,9 +40,16 @@ class UserAccessListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
         # Precomputed here (not in the template) so each row's <select> can
         # preselect the user's current role without a broken/expensive
         # per-row template lookup against a prefetched groups queryset.
+        role_labels = dict(ROLE_CHOICES)
         for u in context["users"]:
             role_names = {g.name for g in u.groups.all()}
             u.current_role = next((r for r in VALID_ROLES if r in role_names), None)
+            # Shown next to the role dropdown instead of dumping every Django
+            # group the user happens to belong to (which could include a
+            # non-role group and misleadingly suggest multiple roles) — this
+            # app's model is exactly one role, matching what the dropdown
+            # itself reflects.
+            u.current_role_label = role_labels.get(u.current_role, "No role assigned")
         return context
 
 

@@ -6,7 +6,12 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
 from django.views.generic import DetailView, ListView
 
-from apps.core.authorization import ADMINISTRATOR, STOCK_MANAGER, RoleRequiredMixin
+from apps.core.authorization import (
+    ADMINISTRATOR,
+    STOCK_MANAGER,
+    RoleRequiredMixin,
+    is_administrator,
+)
 from apps.core.sorting import SortableListMixin
 
 from .forms import LocationEditForm, LocationForm
@@ -131,7 +136,10 @@ class LocationDetailView(LoginRequiredMixin, DetailView):
                 Location.Level.RACK_CABINET,
             )
         else:
-            context["can_add_child"] = self.object.level != Location.Level.SHELF_BIN
+            context["can_add_child"] = (
+                is_administrator(self.request.user)
+                and self.object.level != Location.Level.SHELF_BIN
+            )
         return context
 
 

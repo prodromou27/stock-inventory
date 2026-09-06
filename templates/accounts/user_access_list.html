@@ -45,13 +45,16 @@
               <form method="post" action="{% url 'accounts:set_user_role' u.pk %}" class="inline-form">
                 {% csrf_token %}
                 <select name="role">
+                  {% if not u.current_role %}
+                    <option value="" disabled selected>No role assigned — select one</option>
+                  {% endif %}
                   {% for value, label in role_choices %}
                     <option value="{{ value }}" {% if value == u.current_role %}selected{% endif %}>{{ label }}</option>
                   {% endfor %}
                 </select>
                 <button type="submit" class="btn btn--sm">Update role</button>
               </form>
-              <span class="text-muted">Current: {{ u.groups.all|join:", "|default:"none assigned" }}</span>
+              <span class="text-muted">Current: {{ u.current_role_label }}</span>
             {% endif %}
           </td>
           <td>

@@ -137,6 +137,30 @@ class TestLocationDetailView:
         )
         assert response.status_code == 403
 
+    def test_read_only_user_never_sees_add_child_location(
+        self, client, administrator, read_only_user, location_tree
+    ):
+        """Regression test: can_add_child's `else` branch matched *any*
+        non-Stock-Manager user, including Read-Only — the "+ Add child
+        location" link then appeared for them and 403'd on click, since
+        LocationCreateView is Administrator/Stock-Manager only.
+        """
+        grant_location_access(
+            user=read_only_user, location=location_tree["floor"], granted_by=administrator
+        )
+        client.force_login(read_only_user)
+        response = client.get(reverse("locations:detail", kwargs={"pk": location_tree["floor"].pk}))
+        assert response.context["can_add_child"] is False
+        assert "Add child location" not in response.content.decode()
+
+    def test_administrator_still_sees_add_child_location(
+        self, client, administrator, location_tree
+    ):
+        client.force_login(administrator)
+        response = client.get(reverse("locations:detail", kwargs={"pk": location_tree["floor"].pk}))
+        assert response.context["can_add_child"] is True
+        assert "Add child location" in response.content.decode()
+
 
 @pytest.mark.django_db
 class TestLocationMutationPermissions:

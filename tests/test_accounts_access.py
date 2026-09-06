@@ -34,6 +34,40 @@ class TestUserAccessListView:
         response = client.get(reverse("accounts:user_access_list"))
         assert response.status_code == 200
 
+    def test_a_user_with_no_role_never_shows_administrator_as_selected(self, client, administrator):
+        """A <select> with no explicitly-selected <option> defaults to
+        showing its *first* option in every browser — if that option were a
+        real role (Administrator, being first in ROLE_CHOICES), a no-role
+        user's row would visually look like "Administrator" is selected,
+        risking an accidental grant if someone clicks "Update role" without
+        deliberately changing it. The placeholder option must be the one
+        marked selected instead.
+        """
+        no_role_user = User.objects.create_user(username="norole", password="x", is_active=True)
+        client.force_login(administrator)
+        response = client.get(reverse("accounts:user_access_list"))
+        content = response.content.decode()
+        row_start = content.index(f">{no_role_user.username}<")
+        row_end = content.index("</tr>", row_start)
+        row_html = content[row_start:row_end]
+        assert '<option value="" disabled selected>' in row_html
+        assert "No role assigned" in row_html
+        # The real role options must not carry `selected` in this row.
+        assert 'value="Administrator" selected' not in row_html
+        assert 'value="StockManager" selected' not in row_html
+        assert 'value="ReadOnlyUser" selected' not in row_html
+
+    def test_current_role_label_shows_only_the_recognized_role(
+        self, client, administrator, stock_manager
+    ):
+        """Not every Django group the user belongs to (apps.accounts.views.
+        UserAccessListView previously dumped u.groups.all() here, which
+        could show an unrelated extra group alongside the real role and
+        contradict the single-role dropdown above it)."""
+        client.force_login(administrator)
+        response = client.get(reverse("accounts:user_access_list"))
+        assert "Current: Stock Manager" in response.content.decode()
+
 
 @pytest.mark.django_db
 class TestGrantAndRevokeViews:
@@ -266,6 +300,24 @@ class TestSetUserRole:
             reverse("accounts:set_user_role", args=[read_only_user.pk]), {"role": ADMINISTRATOR}
         )
         assert response.status_code == 403
+
+    def test_a_blank_role_submission_is_rejected_not_silently_applied(
+        self, client, administrator
+    ):
+        """The template's placeholder <option value=""> must never be able
+        to reach set_user_role() as a real role — SetUserRoleForm's
+        ChoiceField already rejects it (only ROLE_CHOICES are valid), so a
+        no-role user's row is never silently promoted just because a
+        browser defaults an unset <select> to displaying its first option.
+        """
+        no_role_user = User.objects.create_user(username="norole2", password="x")
+        client.force_login(administrator)
+        response = client.post(
+            reverse("accounts:set_user_role", args=[no_role_user.pk]), {"role": ""}
+        )
+        assert response.status_code == 302
+        no_role_user.refresh_from_db()
+        assert not no_role_user.groups.filter(name=ADMINISTRATOR).exists()
 
 
 @pytest.mark.django_db
