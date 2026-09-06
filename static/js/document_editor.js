@@ -4,7 +4,69 @@ document.addEventListener('DOMContentLoaded', () => {
   if (!form) return;
   const frame = document.getElementById('template-preview-frame');
   const state = document.getElementById('template-preview-empty');
-  let timer, controller;
+  const paper = document.getElementById('template-paper');
+  const paperViewport = document.getElementById('template-paper-viewport');
+  const pageBreaks = document.getElementById('template-page-breaks');
+  let timer, controller, resizeTimer, lastContentHeightPx;
+
+  // True CSS-pixel page dimensions at 96dpi, so the iframe's own text
+  // reflow matches how WeasyPrint would actually wrap it — the whole
+  // "paper" is then scaled down visually to fit the sidebar, never by
+  // shrinking the iframe's real width (see layoutPaper()).
+  const PAGE_SIZES_MM = {A4: [210, 297], Letter: [215.9, 279.4]};
+  const PX_PER_MM = 96 / 25.4;
+  const MARGIN_CM = {compact: 1.5, normal: 2, spacious: 2.5};
+
+  function paperDimensions() {
+    const sizeKey = form.elements.page_size ? form.elements.page_size.value : 'A4';
+    const [wMm, hMm] = PAGE_SIZES_MM[sizeKey] || PAGE_SIZES_MM.A4;
+    const landscape = form.elements.orientation && form.elements.orientation.value === 'landscape';
+    const widthMm = landscape ? hMm : wMm;
+    const heightMm = landscape ? wMm : hMm;
+    const marginKey = form.elements.page_margin ? form.elements.page_margin.value : 'normal';
+    const marginCm = MARGIN_CM[marginKey] || MARGIN_CM.normal;
+    return {
+      widthPx: Math.round(widthMm * PX_PER_MM),
+      heightPx: Math.round(heightMm * PX_PER_MM),
+      marginPx: Math.round(marginCm * 10 * PX_PER_MM),
+    };
+  }
+
+  function layoutPaper() {
+    if (!paper || paper.hidden) return;
+    const {widthPx, heightPx, marginPx} = paperDimensions();
+    let contentHeightPx = heightPx;
+    try {
+      contentHeightPx = Math.max(heightPx, frame.contentDocument.body.scrollHeight);
+    } catch (error) {
+      contentHeightPx = lastContentHeightPx || heightPx;
+    }
+    lastContentHeightPx = contentHeightPx;
+
+    paper.style.width = `${widthPx}px`;
+    paper.style.height = `${contentHeightPx}px`;
+    paper.querySelector('.template-paper__margin-guide').style.inset = `${marginPx}px`;
+
+    pageBreaks.innerHTML = '';
+    const pageCount = Math.max(1, Math.ceil(contentHeightPx / heightPx));
+    for (let page = 1; page < pageCount; page += 1) {
+      const y = page * heightPx;
+      const line = document.createElement('div');
+      line.className = 'template-paper__page-break-line';
+      line.style.top = `${y}px`;
+      const label = document.createElement('span');
+      label.className = 'template-paper__page-break-label';
+      label.style.top = `${y}px`;
+      label.textContent = `Page ${page + 1}`;
+      pageBreaks.append(line, label);
+    }
+
+    const scale = paperViewport.clientWidth > 0 ? Math.min(1, paperViewport.clientWidth / widthPx) : 1;
+    paper.style.transform = `scale(${scale})`;
+    paperViewport.style.height = `${contentHeightPx * scale}px`;
+  }
+  frame.addEventListener('load', layoutPaper);
+  window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(layoutPaper, 150); });
 
   function arrange(containerId, definitions, orderField, columns) {
     const container = document.getElementById(containerId);
@@ -90,7 +152,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const html = await response.text();
       if (!response.ok) throw new Error(html || 'Preview failed. Please check your settings.');
       frame.srcdoc = html;
-      frame.hidden = false;
+      paper.hidden = false;
       state.hidden = true;
     } catch (error) {
       if (error.name !== 'AbortError') state.textContent = error.message;

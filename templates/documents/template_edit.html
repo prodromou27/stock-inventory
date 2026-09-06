@@ -288,9 +288,19 @@
           <button type="button" class="btn btn--sm" id="template-preview-pdf">Open PDF preview</button>
         </div>
         <div class="template-preview-frame-wrap">
-          <iframe id="template-preview-frame" title="Document template preview" sandbox="" hidden></iframe>
+          <div class="template-paper-viewport" id="template-paper-viewport">
+            <div class="template-paper" id="template-paper" hidden>
+              <div class="template-paper__margin-guide" aria-hidden="true"></div>
+              <div class="template-paper__page-breaks" id="template-page-breaks" aria-hidden="true"></div>
+              <iframe id="template-preview-frame" title="Document template preview" sandbox="allow-same-origin"></iframe>
+            </div>
+          </div>
           <p class="empty-state" id="template-preview-empty">Loading preview…</p>
         </div>
+        <p class="template-paper-legend">
+          <span><span class="template-paper-legend__swatch" style="border-top-color: var(--color-primary);"></span>Margins</span>
+          <span><span class="template-paper-legend__swatch" style="border-top-color: var(--color-danger);"></span>Page break (approximate)</span>
+        </p>
       </div>
 
       <aside class="template-field-reference">
@@ -298,6 +308,7 @@
         <p>New templates start as drafts. Once the checklist above is satisfied, submit it for review — a <strong>different</strong> Administrator must then approve and publish it; the same person can't review their own submission. Any further edit sends a pending submission back to draft automatically. Changes to an already-published template apply to new documents as soon as they're saved (no re-approval needed for routine edits).</p>
         <p>Generated PDFs remain unchanged. Restore creates a new version; it never erases earlier versions.</p>
         <p>Section order, columns, labels, typography, branding, notes and signature wording are customizable. Transaction values come from the recorded movement.</p>
+        <p>The page below shows the paper boundary, margins, and approximate page-break points for the current page size, orientation, and margin setting — a visual guide, not a pixel-exact match to the final PDF.</p>
       </aside>
     </div>
   </div>

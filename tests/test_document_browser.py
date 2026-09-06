@@ -30,7 +30,17 @@ def test_document_editor_browser(live_server, administrator, stock_manager, loca
         for width, height in [(1440, 900), (1366, 768)]:
             page.set_viewport_size({"width": width, "height": height})
             page.goto(live_server.url + reverse("documents:template_edit", args=["delivery"]))
-            expect(page.locator("#template-preview-frame")).not_to_have_attribute("hidden", "")
+            expect(page.locator("#template-paper")).not_to_have_attribute("hidden", "")
+            expect(page.locator(".template-paper__margin-guide")).to_be_visible()
+            # The margin guide is a visual hint, not decoration — it must
+            # actually shrink to match a wider page_margin preset.
+            normal_guide = page.locator(".template-paper__margin-guide").bounding_box()
+            page.select_option('[name="page_margin"]', "spacious")
+            page.wait_for_timeout(1000)
+            spacious_guide = page.locator(".template-paper__margin-guide").bounding_box()
+            assert spacious_guide["width"] < normal_guide["width"]
+            page.select_option('[name="page_margin"]', "normal")
+            page.wait_for_timeout(1000)
             advanced_layout = page.locator("details.template-editor__advanced")
             expect(advanced_layout).not_to_have_attribute("open", "")
             expect(page.locator('[name="column_labels"]')).not_to_be_visible()
