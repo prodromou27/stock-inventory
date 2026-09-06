@@ -7,8 +7,8 @@
   <div class="page-header">
     <h1>{{ report.name }}</h1>
     <div class="page-header__actions">
-      <a class="btn" href="?format=csv">Export CSV</a>
-      <a class="btn" href="?format=xlsx">Export Excel</a>
+      <a class="btn" href="?format=csv" data-loading-link="Preparing export…">Export CSV</a>
+      <a class="btn" href="?format=xlsx" data-loading-link="Preparing export…">Export Excel</a>
       <a class="btn" href="?format=pdf" target="_blank" rel="noopener">Print PDF</a>
       {% if can_delete %}
         <form method="post" action="{% url 'reporting:saved_report_delete' report.pk %}" class="inline-form"

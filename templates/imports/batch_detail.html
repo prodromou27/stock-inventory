@@ -16,7 +16,7 @@
     </div>
     {% if batch.executed_at %}
       <div class="page-header__actions">
-        <a class="btn" href="{% url 'imports:results_download' batch.pk %}">Download results CSV</a>
+        <a class="btn" href="{% url 'imports:results_download' batch.pk %}" data-loading-link="Preparing download…">Download results CSV</a>
       </div>
     {% endif %}
   </div>

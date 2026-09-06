@@ -7,7 +7,7 @@
   <div class="page-header">
     <h1>Assets</h1>
     <div class="page-header__actions">
-      <a class="btn" id="asset-grid-export" href="?{{ request.GET.urlencode }}&format=csv">Export CSV</a>
+      <a class="btn" id="asset-grid-export" href="?{{ request.GET.urlencode }}&format=csv" data-loading-link="Preparing export…">Export CSV</a>
       {% if user_is_administrator or "StockManager" in user_role_groups %}
         <a class="btn btn--primary" href="{% url 'inventory:quick_receive' %}">+ Quick receive</a>
       {% endif %}
@@ -31,8 +31,8 @@
         <div class="grid-columns-panel" id="asset-grid-columns-panel" hidden></div>
       </div>
       <button type="button" class="btn" id="asset-grid-more-filters-toggle" aria-expanded="false">More filters</button>
-      <a class="btn" id="asset-grid-export-filtered" href="?format=csv">Export filtered CSV</a>
-      <a class="btn" id="asset-grid-export-current-view" href="?format=csv">Export current view</a>
+      <a class="btn" id="asset-grid-export-filtered" href="?format=csv" data-loading-link="Preparing export…">Export filtered CSV</a>
+      <a class="btn" id="asset-grid-export-current-view" href="?format=csv" data-loading-link="Preparing export…">Export current view</a>
       <span class="grid-views">
         <label class="sr-only" for="asset-grid-saved-views">Saved views</label>
         <select id="asset-grid-saved-views"><option value="">— Saved views —</option></select>

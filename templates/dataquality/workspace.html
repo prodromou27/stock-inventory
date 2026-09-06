@@ -17,7 +17,7 @@
         {% csrf_token %}
         <button type="submit" class="btn btn--primary">Refresh scan</button>
       </form>
-      <a class="btn" href="?{{ request.GET.urlencode }}{% if request.GET %}&{% else %}?{% endif %}format=csv">Export CSV</a>
+      <a class="btn" href="?{{ request.GET.urlencode }}{% if request.GET %}&{% else %}?{% endif %}format=csv" data-loading-link="Preparing export…">Export CSV</a>
     </div>
   </div>
 

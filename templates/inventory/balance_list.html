@@ -7,7 +7,7 @@
   <div class="page-header">
     <h1>Stock balances</h1>
     <div class="page-header__actions">
-      <a class="btn" href="?{{ request.GET.urlencode }}&format=csv">Export CSV</a>
+      <a class="btn" href="?{{ request.GET.urlencode }}&format=csv" data-loading-link="Preparing export…">Export CSV</a>
     </div>
   </div>
 
@@ -26,7 +26,7 @@
         <button type="button" class="btn" id="balance-grid-columns-toggle" aria-expanded="false">Columns</button>
         <div class="grid-columns-panel" id="balance-grid-columns-panel" hidden></div>
       </div>
-      <a class="btn" id="balance-grid-export-filtered" href="?format=csv">Export filtered CSV</a>
+      <a class="btn" id="balance-grid-export-filtered" href="?format=csv" data-loading-link="Preparing export…">Export filtered CSV</a>
       <span class="grid-views">
         <label class="sr-only" for="balance-grid-saved-views">Saved views</label>
         <select id="balance-grid-saved-views"><option value="">— Saved views —</option></select>

@@ -92,4 +92,27 @@
       submitter.textContent = submitter.dataset.loadingLabel || "Working…";
     });
   });
+
+  // A plain download link (?format=csv, results.csv, ...) gives no visible
+  // feedback at all while the export is being generated server-side — the
+  // browser shows nothing until the file is actually ready, which on a
+  // slow report can look indistinguishable from a hang. This doesn't
+  // preventDefault() — the real navigation/download proceeds exactly as
+  // before — it just swaps the link's text and marks it busy for a few
+  // seconds so a click is visibly acknowledged. There's no reliable "the
+  // file started downloading" event for an <a> (unlike a page navigation),
+  // so it reverts on a fixed timeout rather than waiting for one.
+  document.querySelectorAll("[data-loading-link]").forEach((link) => {
+    link.addEventListener("click", () => {
+      link.classList.add("is-loading");
+      link.setAttribute("aria-busy", "true");
+      const original = link.textContent;
+      link.textContent = link.dataset.loadingLink || "Preparing download…";
+      setTimeout(() => {
+        link.textContent = original;
+        link.classList.remove("is-loading");
+        link.removeAttribute("aria-busy");
+      }, 4000);
+    });
+  });
 })();
