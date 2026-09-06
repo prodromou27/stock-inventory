@@ -93,28 +93,6 @@
   </div>
 
   <div class="card">
-    <h2>Data quality</h2>
-    <ul class="hub-quick-list">
-      <li>
-        {% if data_quality.duplicate_serial_count %}
-          <a href="{% url 'inventory:asset_list' %}?duplicate_serial=1">Duplicate serials</a>
-        {% else %}
-          <span>Duplicate serials</span>
-        {% endif %}
-        <span class="{% if data_quality.duplicate_serial_count %}text-danger{% else %}text-muted{% endif %}">{{ data_quality.duplicate_serial_count }}</span>
-      </li>
-      <li>
-        <span>Assets missing a location</span>
-        <span class="{% if data_quality.unlocated_count %}text-danger{% else %}text-muted{% endif %}">{{ data_quality.unlocated_count }}</span>
-      </li>
-      <li>
-        <span>Assigned/Delivered assets missing custodian info</span>
-        <span class="{% if data_quality.missing_custodian_count %}text-danger{% else %}text-muted{% endif %}">{{ data_quality.missing_custodian_count }}</span>
-      </li>
-    </ul>
-  </div>
-
-  <div class="card">
     <h2>Recently viewed</h2>
     {% if recently_viewed %}
       <ul class="hub-quick-list">
