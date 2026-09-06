@@ -459,6 +459,35 @@ class TestQuickReceiveView:
         assert "results" not in response.context
         assert "Enter at least one serial" in response.content.decode()
 
+    def test_resubmitting_the_same_token_does_not_create_the_batch_twice(
+        self, client, stock_manager_with_room_access, unit_product, location_tree
+    ):
+        """Regression test: QuickReceiveForm had no submission_token field
+        at all, unlike every other movement form — a double-click/back-
+        button resubmit fell through to receive_stock_batch()'s per-serial
+        duplicate check instead, reporting the operator's own just-created
+        serials back to them as "Duplicate serial number" rather than the
+        clean "already submitted" message every other form gives.
+        """
+        client.force_login(stock_manager_with_room_access)
+        get_response = client.get(reverse("inventory:quick_receive"))
+        token = get_response.context["form"]["submission_token"].value()
+        assert token
+
+        payload = self._payload(
+            unit_product, location_tree["room"], vendor_serials="SN-QV-TOKEN-1\nSN-QV-TOKEN-2"
+        )
+        payload["submission_token"] = token
+
+        first = client.post(reverse("inventory:quick_receive"), payload)
+        assert first.status_code == 200
+        assert [r["status"] for r in first.context["results"]] == ["created", "created"]
+
+        second = client.post(reverse("inventory:quick_receive"), payload)
+        assert second.status_code == 302
+        assert second.url == reverse("inventory:movements_hub")
+        assert UnitAsset.objects.filter(vendor_serial__startswith="SN-QV-TOKEN-").count() == 2
+
 
 @pytest.mark.django_db
 class TestUnitAssetListAndDetail:

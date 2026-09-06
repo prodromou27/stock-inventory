@@ -328,6 +328,14 @@ class QuickReceiveForm(forms.Form):
     condition = forms.ChoiceField(choices=Condition.choices, required=False, initial=Condition.NEW)
     accessories = forms.CharField(required=False, widget=forms.Textarea)
     notes = forms.CharField(required=False, widget=forms.Textarea)
+    # Matches every other movement form's idempotency field — a double-
+    # click or back-button resubmit previously fell through to
+    # receive_stock_batch()'s per-serial DuplicateSerialError check instead,
+    # which reported the operator's own just-created serials back to them as
+    # "Duplicate serial number" instead of the clean "already submitted"
+    # message every other form gives (apps.core.idempotency.
+    # claim_submission_token() is what actually rejects a reused one).
+    submission_token = forms.CharField(required=False, widget=forms.HiddenInput)
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)

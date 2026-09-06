@@ -1,9 +1,12 @@
-from datetime import date
+from datetime import date, datetime, timedelta
 
 import pytest
 from django.urls import reverse
+from django.utils import timezone
 
 from apps.inventory.models import (
+    InventoryTransaction,
+    MovementType,
     ReservationStatus,
     StockBalance,
     StockReservation,
@@ -136,6 +139,29 @@ class TestMovementsHubContext:
         ]
         assert "Hub Room" not in location_names
         assert location_tree["room"].name in location_names
+
+
+@pytest.mark.django_db
+class TestConsequentialActionsHaveConfirmDialogs:
+    """Regression test: Transfer/Reserve/Assign/Deliver/Assess-returns had no
+    confirmation step at all, despite each form's own step-3 label reading
+    "Review and confirm" — an operator got no chance to double-check a batch
+    selection before it was committed. Disposition views already had a
+    (grammar-broken, separately fixed) confirm; the release-reservation
+    button had none either.
+    """
+
+    def test_movement_forms_now_have_a_confirm_dialog(self, client, stock_manager_with_room_access):
+        client.force_login(stock_manager_with_room_access)
+        for url_name in (
+            "inventory:transfer",
+            "inventory:reserve",
+            "inventory:assign",
+            "inventory:deliver",
+            "inventory:assess_return",
+        ):
+            response = client.get(reverse(url_name))
+            assert "data-confirm=" in response.content.decode(), url_name
 
 
 @pytest.mark.django_db
@@ -383,6 +409,89 @@ class TestTransferView:
         balance.refresh_from_db()
         assert balance.on_hand_quantity == 2
 
+    def test_out_of_scope_balance_rejects_without_burning_the_token(
+        self,
+        client,
+        stock_manager_with_room_access,
+        administrator,
+        quantity_product,
+        location_tree,
+        other_location_tree,
+        rack,
+    ):
+        """Regression test: _quantity_lines_from_balance_picker() raises
+        PermissionDenied (via require_location_access), not ValidationError,
+        for a manipulated quantity_lines_json naming a balance outside the
+        operator's scope. TransferView.post() used to have no except
+        PermissionDenied clause at all (unlike AssignView/DeliverView), so
+        the token stayed claimed forever after this rejection, silently
+        failing the operator's very next legitimate retry with "already
+        submitted — nothing was done" even though nothing had actually
+        succeeded.
+        """
+        import json
+
+        from apps.locations.models import Location
+        from apps.locations.services import create_location
+
+        other_floor = create_location(
+            level=Location.Level.FLOOR,
+            name="Other Transfer Floor",
+            parent=other_location_tree["site"],
+            user=administrator,
+        )
+        other_room = create_location(
+            level=Location.Level.STORAGE_ROOM,
+            name="Other Transfer Room",
+            parent=other_floor,
+            user=administrator,
+        )
+        receive_stock(
+            user=administrator,
+            product=quantity_product,
+            location=other_room,
+            occurred_at=date.today(),
+            quantity=10,
+        )
+        out_of_scope_balance = StockBalance.objects.get(
+            product=quantity_product, location=other_room
+        )
+        receive_stock(
+            user=stock_manager_with_room_access,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=5,
+        )
+        in_scope_balance = StockBalance.objects.get(
+            product=quantity_product, location=location_tree["room"]
+        )
+
+        client.force_login(stock_manager_with_room_access)
+        get_response = client.get(reverse("inventory:transfer"))
+        token = get_response.context["form"]["submission_token"].value()
+
+        payload = {
+            "destination_location": rack.pk,
+            "occurred_at": date.today().isoformat(),
+            "submission_token": token,
+            "quantity_lines_json": json.dumps(
+                [{"balance_id": str(out_of_scope_balance.pk), "quantity": 3}]
+            ),
+        }
+        response = client.post(reverse("inventory:transfer"), payload)
+        assert response.status_code == 403
+
+        # The token must have been released despite the PermissionDenied, so
+        # a corrected, in-scope resubmission with the SAME token succeeds.
+        payload["quantity_lines_json"] = json.dumps(
+            [{"balance_id": str(in_scope_balance.pk), "quantity": 3}]
+        )
+        retry = client.post(reverse("inventory:transfer"), payload)
+        assert retry.status_code == 302
+        in_scope_balance.refresh_from_db()
+        assert in_scope_balance.on_hand_quantity == 2
+
 
 @pytest.mark.django_db
 class TestReserveAndReleaseViews:
@@ -438,6 +547,43 @@ class TestReserveAndReleaseViews:
         assert response.status_code == 302
         reservation.refresh_from_db()
         assert reservation.status == ReservationStatus.RELEASED
+
+    def test_release_reservation_records_todays_date_not_the_reservations_creation_date(
+        self, client, stock_manager_with_room_access, administrator, quantity_product, location_tree
+    ):
+        """Regression: the view used to pass reservation.created_at.date()
+        as occurred_at instead of today — releasing a months-old reservation
+        would then permanently misrecord the release transaction's date in
+        the append-only ledger, throwing off every date-filtered report.
+        """
+        receive_stock(
+            user=administrator,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=10,
+        )
+        reserve_stock(
+            user=administrator,
+            occurred_at=date.today(),
+            project_reference="PRJ-UI-OLD",
+            quantity_lines=[
+                {"product": quantity_product, "location": location_tree["room"], "quantity": 3}
+            ],
+        )
+        reservation = StockReservation.objects.get(project_reference="PRJ-UI-OLD")
+        backdated = timezone.make_aware(
+            datetime.combine(date.today() - timedelta(days=45), datetime.min.time())
+        )
+        StockReservation.objects.filter(pk=reservation.pk).update(created_at=backdated)
+
+        client.force_login(stock_manager_with_room_access)
+        client.post(reverse("inventory:release_reservation", kwargs={"pk": reservation.pk}))
+
+        release_txn = InventoryTransaction.objects.get(
+            movement_type=MovementType.RESERVATION_RELEASE
+        )
+        assert release_txn.occurred_at == date.today()
 
     def test_reservation_list_view_scoped(
         self, client, stock_manager_with_room_access, quantity_product, location_tree
@@ -500,6 +646,78 @@ class TestReserveAndReleaseViews:
 
         assert response.status_code == 302
         assert StockReservation.objects.filter(project_reference="PRJ-MULTI-QTY").count() == 2
+
+    def test_out_of_scope_balance_rejects_without_burning_the_token(
+        self,
+        client,
+        stock_manager_with_room_access,
+        administrator,
+        quantity_product,
+        location_tree,
+        other_location_tree,
+    ):
+        """Same regression as TransferView's equivalent test, for
+        ReserveView — it had no except PermissionDenied clause either.
+        """
+        import json
+
+        from apps.locations.models import Location
+        from apps.locations.services import create_location
+
+        other_floor = create_location(
+            level=Location.Level.FLOOR,
+            name="Other Reserve Floor",
+            parent=other_location_tree["site"],
+            user=administrator,
+        )
+        other_room = create_location(
+            level=Location.Level.STORAGE_ROOM,
+            name="Other Reserve Room",
+            parent=other_floor,
+            user=administrator,
+        )
+        receive_stock(
+            user=administrator,
+            product=quantity_product,
+            location=other_room,
+            occurred_at=date.today(),
+            quantity=10,
+        )
+        out_of_scope_balance = StockBalance.objects.get(
+            product=quantity_product, location=other_room
+        )
+        receive_stock(
+            user=stock_manager_with_room_access,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=5,
+        )
+        in_scope_balance = StockBalance.objects.get(
+            product=quantity_product, location=location_tree["room"]
+        )
+
+        client.force_login(stock_manager_with_room_access)
+        get_response = client.get(reverse("inventory:reserve"))
+        token = get_response.context["form"]["submission_token"].value()
+
+        payload = {
+            "occurred_at": date.today().isoformat(),
+            "project_reference": "PRJ-XSCOPE",
+            "submission_token": token,
+            "quantity_lines_json": json.dumps(
+                [{"balance_id": str(out_of_scope_balance.pk), "quantity": 3}]
+            ),
+        }
+        response = client.post(reverse("inventory:reserve"), payload)
+        assert response.status_code == 403
+
+        payload["quantity_lines_json"] = json.dumps(
+            [{"balance_id": str(in_scope_balance.pk), "quantity": 3}]
+        )
+        retry = client.post(reverse("inventory:reserve"), payload)
+        assert retry.status_code == 302
+        assert StockReservation.objects.filter(project_reference="PRJ-XSCOPE").exists()
 
 
 @pytest.mark.django_db
@@ -1037,6 +1255,99 @@ class TestDispositionViews:
         assert response.status_code == 302
         asset.refresh_from_db()
         assert asset.status == UnitStatus.DAMAGED
+
+    def test_confirm_messages_are_grammatically_complete_per_action(
+        self, client, stock_manager_with_room_access
+    ):
+        """Regression test: the confirm dialog used to be built as
+        f"{page_title} the selected asset(s)?", which read as "Mark damaged
+        the selected asset(s)?" — broken English at the exact moment
+        (a destructive-action confirmation) clear copy matters most. Each
+        view now supplies its own grammatically-complete confirm_message.
+        """
+        client.force_login(stock_manager_with_room_access)
+        cases = {
+            "inventory:mark_damaged": "Mark the selected asset(s) as damaged?",
+            "inventory:mark_lost": "Mark the selected asset(s) as lost?",
+            "inventory:dispose": "Dispose of the selected asset(s)?",
+        }
+        for url_name, expected_start in cases.items():
+            response = client.get(reverse(url_name))
+            assert expected_start in response.content.decode()
+
+    def test_out_of_scope_balance_rejects_without_burning_the_token(
+        self,
+        client,
+        stock_manager_with_room_access,
+        administrator,
+        quantity_product,
+        location_tree,
+        other_location_tree,
+    ):
+        """Same regression as TransferView's/ReserveView's equivalent tests,
+        for _DispositionView.post() (shared by Mark damaged/Mark lost/
+        Dispose) — it had no except PermissionDenied clause either.
+        """
+        import json
+
+        from apps.locations.models import Location
+        from apps.locations.services import create_location
+
+        other_floor = create_location(
+            level=Location.Level.FLOOR,
+            name="Other Damaged Floor",
+            parent=other_location_tree["site"],
+            user=administrator,
+        )
+        other_room = create_location(
+            level=Location.Level.STORAGE_ROOM,
+            name="Other Damaged Room",
+            parent=other_floor,
+            user=administrator,
+        )
+        receive_stock(
+            user=administrator,
+            product=quantity_product,
+            location=other_room,
+            occurred_at=date.today(),
+            quantity=10,
+        )
+        out_of_scope_balance = StockBalance.objects.get(
+            product=quantity_product, location=other_room
+        )
+        receive_stock(
+            user=stock_manager_with_room_access,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=5,
+        )
+        in_scope_balance = StockBalance.objects.get(
+            product=quantity_product, location=location_tree["room"]
+        )
+
+        client.force_login(stock_manager_with_room_access)
+        get_response = client.get(reverse("inventory:mark_damaged"))
+        token = get_response.context["form"]["submission_token"].value()
+
+        payload = {
+            "occurred_at": date.today().isoformat(),
+            "notes": "damaged in transit",
+            "submission_token": token,
+            "quantity_lines_json": json.dumps(
+                [{"balance_id": str(out_of_scope_balance.pk), "quantity": 3}]
+            ),
+        }
+        response = client.post(reverse("inventory:mark_damaged"), payload)
+        assert response.status_code == 403
+
+        payload["quantity_lines_json"] = json.dumps(
+            [{"balance_id": str(in_scope_balance.pk), "quantity": 3}]
+        )
+        retry = client.post(reverse("inventory:mark_damaged"), payload)
+        assert retry.status_code == 302
+        in_scope_balance.refresh_from_db()
+        assert in_scope_balance.on_hand_quantity == 2
 
     def test_mark_lost_without_acknowledgement_is_rejected(
         self, client, stock_manager_with_room_access, unit_product, location_tree

@@ -478,7 +478,7 @@ class QuickReceiveView(LoginRequiredMixin, RoleRequiredMixin, View):
     template_name = "inventory/quick_receive_form.html"
 
     def get(self, request):
-        initial = {"occurred_at": timezone.localdate()}
+        initial = {"occurred_at": timezone.localdate(), "submission_token": new_submission_token()}
         product_id = request.GET.get("product")
         if product_id:
             product = (
@@ -509,6 +509,12 @@ class QuickReceiveView(LoginRequiredMixin, RoleRequiredMixin, View):
         if not form.is_valid():
             return render(request, self.template_name, {"form": form, **_catalog_choices()})
 
+        if not claim_submission_token(request.POST.get("submission_token")):
+            messages.info(
+                request, "This receipt was already submitted — no duplicate stock was created."
+            )
+            return redirect("inventory:movements_hub")
+
         data = form.cleaned_data
         try:
             with transaction.atomic():
@@ -537,6 +543,7 @@ class QuickReceiveView(LoginRequiredMixin, RoleRequiredMixin, View):
                     notes=data["notes"],
                 )
         except DuplicateProductError as exc:
+            release_submission_token(request.POST.get("submission_token"))
             return render(
                 request,
                 self.template_name,
@@ -548,6 +555,7 @@ class QuickReceiveView(LoginRequiredMixin, RoleRequiredMixin, View):
                 },
             )
         except ValidationError as exc:
+            release_submission_token(request.POST.get("submission_token"))
             form.add_error(None, exc)
             return render(request, self.template_name, {"form": form, **_catalog_choices()})
 
@@ -571,6 +579,7 @@ class QuickReceiveView(LoginRequiredMixin, RoleRequiredMixin, View):
                         "location": data["location"].pk,
                         "occurred_at": data["occurred_at"],
                         "stock_purpose": data["stock_purpose"],
+                        "submission_token": new_submission_token(),
                     },
                 ),
                 "results": results,
@@ -2115,6 +2124,11 @@ class TransferView(LoginRequiredMixin, RoleRequiredMixin, View):
                 quantity_lines=quantity_lines,
                 notes=data["notes"],
             )
+        except PermissionDenied:
+            # See AssignView.post's identical block — an unauthorized
+            # selection must not permanently burn the token.
+            release_submission_token(request.POST.get("submission_token"))
+            raise
         except ValidationError as exc:
             release_submission_token(request.POST.get("submission_token"))
             form.add_error(None, exc)
@@ -2164,15 +2178,21 @@ class ReserveView(LoginRequiredMixin, RoleRequiredMixin, View):
 
         data = form.cleaned_data
         try:
+            quantity_lines = _quantity_lines_from_balance_picker(request, request.user)
             txn = reserve_stock(
                 user=request.user,
                 occurred_at=data["occurred_at"],
                 project_reference=data["project_reference"],
                 final_customer=data["final_customer"],
                 unit_asset_ids=unit_asset_ids,
-                quantity_lines=_quantity_lines_from_balance_picker(request, request.user),
+                quantity_lines=quantity_lines,
                 notes=data["notes"],
             )
+        except PermissionDenied:
+            # See AssignView.post's identical block — an unauthorized
+            # selection must not permanently burn the token.
+            release_submission_token(request.POST.get("submission_token"))
+            raise
         except ValidationError as exc:
             release_submission_token(request.POST.get("submission_token"))
             form.add_error(None, exc)
@@ -2222,7 +2242,7 @@ class ReleaseReservationView(LoginRequiredMixin, RoleRequiredMixin, View):
         try:
             release_reservation(
                 user=request.user,
-                occurred_at=reservation.created_at.date(),
+                occurred_at=timezone.localdate(),
                 reservations=[reservation],
             )
         except ValidationError as exc:
@@ -2636,6 +2656,7 @@ class _DispositionView(LoginRequiredMixin, RoleRequiredMixin, View):
     service = None
     verb = ""
     page_title = ""
+    confirm_message = ""
     # Mark Damaged leaves this False (repairable, see RepairDamagedView);
     # MarkLostView/DisposeView set it True — see DispositionForm's docstring.
     requires_acknowledgement = False
@@ -2661,6 +2682,7 @@ class _DispositionView(LoginRequiredMixin, RoleRequiredMixin, View):
                 "assets": assets,
                 "balances": _eligible_balances_for_fallback(request),
                 "page_title": self.page_title,
+                "confirm_message": self.confirm_message,
                 "preselected_ids": _preselected_ids(request),
                 "eligible_statuses": _status_param(self.eligible_statuses),
             },
@@ -2682,6 +2704,7 @@ class _DispositionView(LoginRequiredMixin, RoleRequiredMixin, View):
                     "assets": assets,
                     "balances": balances,
                     "page_title": self.page_title,
+                    "confirm_message": self.confirm_message,
                 },
             )
 
@@ -2693,14 +2716,20 @@ class _DispositionView(LoginRequiredMixin, RoleRequiredMixin, View):
 
         data = form.cleaned_data
         try:
+            quantity_lines = _quantity_lines_from_balance_picker(request, request.user)
             txn = self.service(
                 user=request.user,
                 occurred_at=data["occurred_at"],
                 unit_asset_ids=unit_asset_ids,
-                quantity_lines=_quantity_lines_from_balance_picker(request, request.user),
+                quantity_lines=quantity_lines,
                 notes=data["notes"],
                 **self._extra_service_kwargs(data),
             )
+        except PermissionDenied:
+            # See AssignView.post's identical block — an unauthorized
+            # selection must not permanently burn the token.
+            release_submission_token(request.POST.get("submission_token"))
+            raise
         except ValidationError as exc:
             release_submission_token(request.POST.get("submission_token"))
             form.add_error(None, exc)
@@ -2712,6 +2741,7 @@ class _DispositionView(LoginRequiredMixin, RoleRequiredMixin, View):
                     "assets": assets,
                     "balances": balances,
                     "page_title": self.page_title,
+                    "confirm_message": self.confirm_message,
                 },
             )
 
@@ -2723,6 +2753,7 @@ class MarkDamagedView(_DispositionView):
     service = staticmethod(mark_damaged)
     verb = "Marked damaged"
     page_title = "Mark damaged"
+    confirm_message = "Mark the selected asset(s) as damaged? This is recorded in their history."
 
 
 class MarkLostView(_DispositionView):
@@ -2730,6 +2761,7 @@ class MarkLostView(_DispositionView):
     service = staticmethod(mark_lost)
     verb = "Marked lost"
     page_title = "Mark lost"
+    confirm_message = "Mark the selected asset(s) as lost? This is recorded in their history."
     requires_acknowledgement = True
 
 
@@ -2744,6 +2776,7 @@ class DisposeView(_DispositionView):
     service = staticmethod(dispose)
     verb = "Disposed"
     page_title = "Dispose"
+    confirm_message = "Dispose of the selected asset(s)? This is recorded in their history."
     form_class = DisposeForm
     requires_acknowledgement = True
 
@@ -2763,6 +2796,7 @@ class RepairDamagedView(LoginRequiredMixin, RoleRequiredMixin, View):
                 "form": RepairDamagedForm(user=request.user),
                 "assets": _eligible_assets(request, [UnitStatus.DAMAGED]),
                 "page_title": "Return repaired assets to stock",
+                "confirm_message": "Return the selected asset(s) to stock as repaired?",
                 "preselected_ids": _preselected_ids(request),
                 "eligible_statuses": _status_param([UnitStatus.DAMAGED]),
             },
@@ -2791,7 +2825,12 @@ class RepairDamagedView(LoginRequiredMixin, RoleRequiredMixin, View):
         return render(
             request,
             self.template_name,
-            {"form": form, "assets": assets, "page_title": "Return repaired assets to stock"},
+            {
+                "form": form,
+                "assets": assets,
+                "page_title": "Return repaired assets to stock",
+                "confirm_message": "Return the selected asset(s) to stock as repaired?",
+            },
         )
 
 
