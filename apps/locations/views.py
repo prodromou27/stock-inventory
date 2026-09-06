@@ -159,9 +159,15 @@ class LocationCreateView(LoginRequiredMixin, RoleRequiredMixin, View):
             not request.user.is_superuser
             and request.user.groups.filter(name=STOCK_MANAGER).exists()
             and request.POST.get("level")
-            not in (Location.Level.STORAGE_ROOM, Location.Level.SHELF_BIN)
+            not in (
+                Location.Level.STORAGE_ROOM,
+                Location.Level.RACK_CABINET,
+                Location.Level.SHELF_BIN,
+            )
         ):
-            raise PermissionDenied("Stock Managers may create storage rooms and shelves only.")
+            raise PermissionDenied(
+                "Stock Managers may create storage rooms, racks/cabinets, and shelves only."
+            )
         form = LocationForm(request.POST, user=request.user)
         if not form.is_valid():
             return render(request, "locations/location_form.html", {"form": form})

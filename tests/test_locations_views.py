@@ -212,6 +212,52 @@ class TestLocationMutationPermissions:
         location_tree["room"].refresh_from_db()
         assert location_tree["room"].is_active is False
 
+    def test_room_scoped_stock_manager_can_bootstrap_a_rack_and_a_shelf(
+        self, client, stock_manager_with_room_access, location_tree
+    ):
+        """Regression test: a Stock Manager granted at exactly Storage Room
+        level — this app's own standard scenario (see conftest.
+        stock_manager_with_room_access, used throughout the inventory test
+        suite) — previously had no way to create *anything* through this
+        form: Storage Room creation needs a Floor parent (never in scope for
+        someone granted below Floor level), and Rack/Cabinet wasn't even an
+        offered level, so Shelf/Bin creation (needs a Rack parent) was also
+        a dead end on a freshly-granted room with no existing rack. The
+        parent dropdown for such a user was literally just the empty "---"
+        placeholder. Confirmed live: "creating new location is not working"
+        was the exact reported symptom for this exact real scenario.
+        """
+        client.force_login(stock_manager_with_room_access)
+
+        get_response = client.get(reverse("locations:create"))
+        level_values = [value for value, _ in get_response.context["form"].fields["level"].choices]
+        assert Location.Level.RACK_CABINET in level_values
+        parent_ids = {str(loc.pk) for loc in get_response.context["form"].fields["parent"].queryset}
+        assert str(location_tree["room"].pk) in parent_ids
+
+        rack_response = client.post(
+            reverse("locations:create"),
+            {
+                "level": Location.Level.RACK_CABINET,
+                "name": "Bootstrapped Rack",
+                "parent": location_tree["room"].pk,
+            },
+        )
+        assert rack_response.status_code == 302
+        rack = Location.objects.get(name="Bootstrapped Rack")
+        assert rack.parent_id == location_tree["room"].pk
+
+        shelf_response = client.post(
+            reverse("locations:create"),
+            {
+                "level": Location.Level.SHELF_BIN,
+                "name": "Bootstrapped Shelf",
+                "parent": rack.pk,
+            },
+        )
+        assert shelf_response.status_code == 302
+        assert Location.objects.filter(name="Bootstrapped Shelf", parent=rack).exists()
+
     def test_stock_manager_can_create_room_in_assigned_country(
         self, client, administrator, stock_manager, location_tree
     ):

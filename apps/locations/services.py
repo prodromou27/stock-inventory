@@ -31,15 +31,26 @@ def create_location(*, level, name, user, parent=None, code=""):
     """Create a location allowed by the actor's role and country scope.
 
     Administrators manage the complete hierarchy. Stock Managers may add
-    storage rooms and shelf/bins under existing, accessible parents only.
-    Validates level ordering before writing, so the
+    storage rooms, racks/cabinets, and shelf/bins under existing, accessible
+    parents only — racks/shelves are reachable under a Stock Manager's own
+    granted Storage Room (accessible_locations() includes the granted node
+    itself), so someone granted at exactly Room level, this app's own
+    standard scenario, can still bootstrap fixtures inside it rather than
+    being stuck with no valid parent at all once level is restricted to
+    Storage Room alone. Validates level ordering before writing, so the
     error the user sees is a clear ValidationError rather than the database
     trigger's exception (docs/architecture/02-data-model.md).
     """
     require_role(user, ADMINISTRATOR, STOCK_MANAGER)
     if not is_administrator(user):
-        if level not in (Location.Level.STORAGE_ROOM, Location.Level.SHELF_BIN):
-            raise PermissionDenied("Stock Managers may create storage rooms and shelves only.")
+        if level not in (
+            Location.Level.STORAGE_ROOM,
+            Location.Level.RACK_CABINET,
+            Location.Level.SHELF_BIN,
+        ):
+            raise PermissionDenied(
+                "Stock Managers may create storage rooms, racks/cabinets, and shelves only."
+            )
         require_location_access(user, parent)
 
     name = normalize_name(name)

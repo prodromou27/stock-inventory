@@ -5,6 +5,7 @@ from .scoping import accessible_locations
 
 MANAGER_LEVELS = (
     (Location.Level.STORAGE_ROOM, Location.Level.STORAGE_ROOM.label),
+    (Location.Level.RACK_CABINET, Location.Level.RACK_CABINET.label),
     (Location.Level.SHELF_BIN, Location.Level.SHELF_BIN.label),
 )
 
@@ -35,7 +36,20 @@ class LocationForm(forms.Form):
                 accessible_locations(user)
                 .filter(
                     is_active=True,
-                    level__in=(Location.Level.FLOOR, Location.Level.RACK_CABINET),
+                    # FLOOR: parent for a new Storage Room (only reachable
+                    # if granted at Floor level or above). STORAGE_ROOM:
+                    # parent for a new Rack/Cabinet — accessible_locations()
+                    # includes the granted node itself, so a Stock Manager
+                    # granted at exactly Storage Room level (this app's own
+                    # standard scenario — see tests.conftest.
+                    # stock_manager_with_room_access) can still bootstrap
+                    # fixtures inside their own room. RACK_CABINET: parent
+                    # for a new Shelf/Bin.
+                    level__in=(
+                        Location.Level.FLOOR,
+                        Location.Level.STORAGE_ROOM,
+                        Location.Level.RACK_CABINET,
+                    ),
                 )
                 .order_by("level", "name")
             )
