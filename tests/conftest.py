@@ -91,7 +91,13 @@ def other_location_tree(administrator):
     site = create_location(
         level=Location.Level.SITE, name="Other HQ", parent=country, user=administrator
     )
-    return {"country": country, "site": site}
+    floor = create_location(
+        level=Location.Level.FLOOR, name="Ground Floor", parent=site, user=administrator
+    )
+    room = create_location(
+        level=Location.Level.STORAGE_ROOM, name="Other Room", parent=floor, user=administrator
+    )
+    return {"country": country, "site": site, "floor": floor, "room": room}
 
 
 @pytest.fixture

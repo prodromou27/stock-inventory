@@ -2,9 +2,19 @@ import re
 
 from django import forms
 
-from .models import REPORT_COLUMNS, FontChoice, LogoPosition, PageMargin, PageOrientation, PageSize
+from .models import (
+    REPORT_COLUMNS,
+    FontChoice,
+    LogoPosition,
+    PageMargin,
+    PageOrientation,
+    PageSize,
+    SectionSpacing,
+)
+from .pdf import sanitize_css_content_text
 
 _HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+_VALID_REPORT_COLUMN_KEYS = {key for key, _ in REPORT_COLUMNS}
 
 
 class AttachmentUploadForm(forms.Form):
@@ -39,6 +49,36 @@ class DocumentTemplateStyleForm(forms.Form):
     page_margin = forms.ChoiceField(
         choices=PageMargin.choices, label="Page margins", initial=PageMargin.NORMAL
     )
+    section_spacing = forms.ChoiceField(
+        choices=SectionSpacing.choices, label="Section spacing", initial=SectionSpacing.NORMAL
+    )
+    heading_text_color = forms.CharField(
+        max_length=7,
+        required=False,
+        label="Heading text color (optional — defaults to the accent color)",
+        widget=forms.TextInput(attrs={"type": "color"}),
+    )
+    table_header_bg_color = forms.CharField(
+        max_length=7,
+        required=False,
+        label="Table header background (optional — defaults to light grey)",
+        widget=forms.TextInput(attrs={"type": "color"}),
+    )
+    document_title = forms.CharField(
+        max_length=120,
+        required=False,
+        label="Document title override (optional — defaults to the transaction type, e.g. "
+        "'Customer delivery')",
+    )
+    company_name = forms.CharField(max_length=200, required=False, label="Company name (optional)")
+    company_address = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 2}),
+        label="Company address (optional)",
+    )
+    company_tax_id = forms.CharField(
+        max_length=60, required=False, label="Company tax/registration ID (optional)"
+    )
     page_size = forms.ChoiceField(choices=PageSize.choices, label="Page size", initial=PageSize.A4)
     orientation = forms.ChoiceField(
         choices=PageOrientation.choices, label="Orientation", initial=PageOrientation.PORTRAIT
@@ -69,6 +109,20 @@ class DocumentTemplateStyleForm(forms.Form):
         widget=forms.CheckboxSelectMultiple,
         label="Hide these line-item columns",
     )
+    column_order = forms.CharField(
+        max_length=200,
+        required=False,
+        label="Column order (optional)",
+        help_text='Comma-separated column keys, e.g. "serial,brand,model,quantity" — '
+        f"valid keys: {', '.join(key for key, _ in REPORT_COLUMNS)}. Leave blank for the default "
+        "order. A visual drag-and-drop editor is planned for a later phase.",
+    )
+    column_labels = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 3}),
+        label="Custom column labels (optional)",
+        help_text='One override per line as "key:Label", e.g. "sku:Part Number".',
+    )
 
     def clean_accent_color(self):
         value = self.cleaned_data["accent_color"]
@@ -76,21 +130,60 @@ class DocumentTemplateStyleForm(forms.Form):
             raise forms.ValidationError("Enter a color as #rrggbb.")
         return value.lower()
 
+    def _clean_optional_color(self, field_name):
+        value = self.cleaned_data[field_name]
+        if value and not _HEX_COLOR_RE.match(value):
+            raise forms.ValidationError("Enter a color as #rrggbb.")
+        return value.lower() if value else value
+
+    def clean_heading_text_color(self):
+        return self._clean_optional_color("heading_text_color")
+
+    def clean_table_header_bg_color(self):
+        return self._clean_optional_color("table_header_bg_color")
+
+    def clean_header_text(self):
+        return sanitize_css_content_text(self.cleaned_data["header_text"])
+
+    def clean_footer_text(self):
+        return sanitize_css_content_text(self.cleaned_data["footer_text"])
+
+    def clean_column_order(self):
+        raw = self.cleaned_data["column_order"]
+        if not raw:
+            return []
+        keys = [key.strip() for key in raw.split(",") if key.strip()]
+        unknown = [key for key in keys if key not in _VALID_REPORT_COLUMN_KEYS]
+        if unknown:
+            raise forms.ValidationError(f"Unknown column key(s): {', '.join(unknown)}.")
+        return keys
+
+    def clean_column_labels(self):
+        raw = self.cleaned_data["column_labels"]
+        labels = {}
+        for line in raw.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            if ":" not in line:
+                raise forms.ValidationError(f'"{line}" must be in "key:Label" form.')
+            key, _, label = line.partition(":")
+            key = key.strip()
+            label = label.strip()
+            if key not in _VALID_REPORT_COLUMN_KEYS:
+                raise forms.ValidationError(f'Unknown column key "{key}".')
+            if label:
+                labels[key] = label
+        return labels
+
     def layout_config(self):
         """The subset of cleaned_data apps.documents.template_services.
         update_template()/render_preview_pdf() store/preview as
         DocumentTemplate.layout_config — a plain dict, not a nested form, so
         the view doesn't need to know this form's field names individually.
+        Keyed off models.LAYOUT_CONFIG_DEFAULTS so adding a new layout_config
+        key only ever requires a matching form field of the same name.
         """
-        data = self.cleaned_data
-        return {
-            "page_size": data["page_size"],
-            "orientation": data["orientation"],
-            "header_text": data["header_text"],
-            "footer_text": data["footer_text"],
-            "show_page_numbers": data["show_page_numbers"],
-            "show_signature_block": data["show_signature_block"],
-            "notes_text": data["notes_text"],
-            "terms_text": data["terms_text"],
-            "hidden_columns": data["hidden_columns"],
-        }
+        from .models import LAYOUT_CONFIG_DEFAULTS
+
+        return {key: self.cleaned_data[key] for key in LAYOUT_CONFIG_DEFAULTS}

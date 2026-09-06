@@ -186,6 +186,106 @@ class TestAssignToEmployee:
 
 
 @pytest.mark.django_db
+class TestReservedUnitBindingEnforcement:
+    """A unit reserved for a project/customer must not silently deliver or
+    assign to someone else — reserve_stock() snapshots project_reference/
+    final_customer onto the asset (ledger.write_unit_line), and _issue_stock
+    hard-blocks any non-blank mismatch against that snapshot.
+    """
+
+    def test_delivering_reserved_unit_to_a_different_customer_is_blocked(
+        self, administrator, unit_product, location_tree
+    ):
+        from apps.inventory.services.reservations import reserve_stock
+
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-RESERVED-1",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-RESERVED-1")
+        reserve_stock(
+            user=administrator,
+            occurred_at=date.today(),
+            project_reference="PRJ-A",
+            final_customer="Acme Corp",
+            unit_asset_ids=[asset.pk],
+        )
+        with pytest.raises(ValidationError):
+            deliver_to_customer(
+                user=administrator,
+                final_customer="Different Co",
+                project_reference="PRJ-A",
+                occurred_at=date.today(),
+                unit_asset_ids=[asset.pk],
+            )
+        asset.refresh_from_db()
+        assert asset.status == UnitStatus.RESERVED
+
+    def test_delivering_reserved_unit_to_the_matching_customer_succeeds(
+        self, administrator, unit_product, location_tree
+    ):
+        from apps.inventory.services.reservations import reserve_stock
+
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-RESERVED-2",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-RESERVED-2")
+        reserve_stock(
+            user=administrator,
+            occurred_at=date.today(),
+            project_reference="PRJ-B",
+            final_customer="Acme Corp",
+            unit_asset_ids=[asset.pk],
+        )
+        deliver_to_customer(
+            user=administrator,
+            final_customer="Acme Corp",
+            project_reference="PRJ-B",
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+        )
+        asset.refresh_from_db()
+        assert asset.status == UnitStatus.DELIVERED
+
+    def test_assigning_reserved_unit_to_the_wrong_project_is_blocked(
+        self, administrator, unit_product, location_tree
+    ):
+        from apps.inventory.services.reservations import reserve_stock
+
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-RESERVED-3",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-RESERVED-3")
+        reserve_stock(
+            user=administrator,
+            occurred_at=date.today(),
+            project_reference="PRJ-C",
+            unit_asset_ids=[asset.pk],
+        )
+        with pytest.raises(ValidationError):
+            assign_to_employee(
+                user=administrator,
+                employee_name="Henry",
+                project_reference="PRJ-OTHER",
+                occurred_at=date.today(),
+                unit_asset_ids=[asset.pk],
+            )
+        asset.refresh_from_db()
+        assert asset.status == UnitStatus.RESERVED
+
+
+@pytest.mark.django_db
 class TestDeliverToCustomer:
     def test_unit_delivery_sets_delivered_status(self, administrator, unit_product, location_tree):
         receive_stock(

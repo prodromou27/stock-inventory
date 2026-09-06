@@ -52,6 +52,7 @@ from apps.locations.scoping import (
 from .access import (
     require_asset_access,
     require_transaction_access,
+    scope_asset_queryset,
     scope_transaction_line_queryset,
     scope_transaction_queryset,
 )
@@ -781,7 +782,7 @@ class UnitAssetListView(LoginRequiredMixin, CSVExportMixin, SortableListMixin, L
     csv_non_exportable_fields = frozenset({"id", "detail_url", "quick_actions"})
 
     def get_queryset(self):
-        queryset = scope_queryset(
+        queryset = scope_asset_queryset(
             self.request.user,
             UnitAsset.objects.select_related(
                 "product",
@@ -790,7 +791,6 @@ class UnitAssetListView(LoginRequiredMixin, CSVExportMixin, SortableListMixin, L
                 "current_location",
                 "current_custody_transaction",
             ),
-            location_field="current_location",
         )
         product_id = self.request.GET.get("product")
         if product_id:
@@ -876,8 +876,8 @@ ASSET_GRID_SORT_FIELDS = {
 class UnitAssetGridDataView(LoginRequiredMixin, View):
     """JSON data source for the Excel-like grid (static/js/inventory_grid.js)
     on templates/inventory/asset_list.html. Reuses UnitAssetListView's exact
-    scoping/filtering — scope_queryset() + filter_unit_assets() — so this
-    view has no authorization logic of its own to get wrong; it only adds
+    scoping/filtering — scope_asset_queryset() + filter_unit_assets() — so
+    this view has no authorization logic of its own to get wrong; it only adds
     multi-column sort (apply_multi_sort(), single-sort's multi-column
     sibling), a derived location breadcrumb, and JSON pagination on top.
 
@@ -895,7 +895,7 @@ class UnitAssetGridDataView(LoginRequiredMixin, View):
     MAX_PAGE_SIZE = 200
 
     def get(self, request, *args, **kwargs):
-        queryset = scope_queryset(
+        queryset = scope_asset_queryset(
             request.user,
             UnitAsset.objects.select_related(
                 "product",
@@ -904,7 +904,6 @@ class UnitAssetGridDataView(LoginRequiredMixin, View):
                 "current_location",
                 "current_custody_transaction",
             ),
-            location_field="current_location",
         )
         product_id = request.GET.get("product")
         if product_id:
@@ -2286,6 +2285,13 @@ class AssignView(LoginRequiredMixin, RoleRequiredMixin, View):
                 accessories=data["accessories"] or None,
                 notes=data["notes"],
             )
+        except PermissionDenied:
+            # An unauthorized selection (a manipulated request choosing an
+            # asset/location outside the user's scope) must not permanently
+            # burn the token — the operator retrying with a valid selection
+            # is a legitimate resubmission, not a duplicate.
+            release_submission_token(request.POST.get("submission_token"))
+            raise
         except ValidationError as exc:
             release_submission_token(request.POST.get("submission_token"))
             form.add_error(None, exc)
@@ -2419,6 +2425,11 @@ class DeliverView(LoginRequiredMixin, RoleRequiredMixin, View):
                 accessories=data["accessories"] or None,
                 notes=data["notes"],
             )
+        except PermissionDenied:
+            # See AssignView.post's identical handling: an unauthorized
+            # selection must not permanently burn the token.
+            release_submission_token(request.POST.get("submission_token"))
+            raise
         except ValidationError as exc:
             release_submission_token(request.POST.get("submission_token"))
             form.add_error(None, exc)

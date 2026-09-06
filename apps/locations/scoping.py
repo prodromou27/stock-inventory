@@ -10,7 +10,7 @@ onward) must go through accessible_locations()/scope_queryset()/
 require_location_access() — never query those models directly.
 """
 
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db.models import Q
 
 from apps.core.authorization import is_administrator
@@ -84,6 +84,26 @@ def require_location_access(user, location):
             return
 
     raise PermissionDenied("You do not have access to this location.")
+
+
+def require_room_or_below(location):
+    """Raises ValidationError unless `location` is a Storage Room, Rack/
+    Cabinet, or Shelf/Bin — a Country/Site/Floor is an authorization
+    boundary and a tree parent, never a valid place to actually hold stock.
+    `location=None` passes (a field that's optional at this layer, e.g. an
+    admin-correction leaving a location unset, is a different concern from
+    "the level chosen is too high"); callers that require a location at all
+    enforce that separately.
+    """
+    from .models import LocationLevel
+
+    if location is None:
+        return
+    if location.level in (LocationLevel.COUNTRY, LocationLevel.SITE, LocationLevel.FLOOR):
+        raise ValidationError(
+            f"'{location}' is a {location.get_level_display()}, not a storage location. "
+            "Select a Storage Room (or a Rack/Shelf within one)."
+        )
 
 
 def _location_queryset():

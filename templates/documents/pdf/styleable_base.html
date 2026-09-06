@@ -12,12 +12,12 @@
     {% if show_page_numbers %}@bottom-right { content: "Page " counter(page) " of " counter(pages); font-size: 8pt; color: #666; }{% endif %}
   }
   body { font-family: __FONT_STACK__; font-size: 10.5pt; color: #111; }
-  h1 { font-size: 16pt; margin: 0; color: __ACCENT_COLOR__; }
+  h1 { font-size: 16pt; margin: 0; color: {{ heading_text_color }}; }
   .letterhead {
     display: flex;
     align-items: center;
     gap: 1em;
-    margin-bottom: 1em;
+    margin-bottom: var(--section-gap, 1em);
     padding-bottom: 0.5em;
     border-bottom: 2px solid __ACCENT_COLOR__;
   }
@@ -25,8 +25,11 @@
   .letterhead--center { justify-content: center; flex-direction: column; text-align: center; gap: 0.3em; }
   .letterhead--right { justify-content: flex-end; flex-direction: row-reverse; }
   .letterhead__logo { max-height: 2.2cm; max-width: 6cm; }
+  .company-info { margin: 0 0 var(--section-gap, 1em); font-size: 8.5pt; color: #333; }
+  .company-info p { margin: 0.1em 0; }
+  .meta { margin-top: var(--section-gap, 1em); }
   .meta p { margin: 0.15em 0; }
-  table { width: 100%; border-collapse: collapse; margin-top: 1em; }
+  table { width: 100%; border-collapse: collapse; margin-top: var(--section-gap, 1em); }
   /* Multipage line-item tables: repeat the header row on every page and
      never split a row across a page break — without these two rules a long
      delivery/disposal's line items render fine on page 1 and then silently
@@ -34,21 +37,29 @@
   thead { display: table-header-group; }
   tr { break-inside: avoid; }
   th, td { border: 1px solid #444; padding: 4px 6px; text-align: left; font-size: 9pt; vertical-align: top; }
-  th { background: #eee; }
-  .notes { margin-top: 1em; }
-  .terms { margin-top: 1em; font-size: 8.5pt; color: #333; }
-  .disposal-certificate { margin-top: 1em; padding: 0.6em 0.8em; border: 1px solid #444; }
+  th { background: {{ table_header_bg_color }}; }
+  .notes { margin-top: var(--section-gap, 1em); }
+  .terms { margin-top: var(--section-gap, 1em); font-size: 8.5pt; color: #333; }
+  .disposal-certificate { margin-top: var(--section-gap, 1em); padding: 0.6em 0.8em; border: 1px solid #444; }
   .disposal-certificate p { margin: 0.2em 0; }
   .signatures { margin-top: 3em; width: 100%; }
   .signatures td { border: none; padding: 0 1em 0 0; width: 50%; }
   .signature-line { border-bottom: 1px solid #000; height: 2.5em; }
   .signature-caption { margin-top: 0.3em; font-size: 9pt; }
+  :root { --section-gap: {{ section_spacing_em }}; }
 </style>
 </head>
 <body>
+  {% if company_name or company_address or company_tax_id %}
+    <div class="company-info">
+      {% if company_name %}<p><strong>{{ company_name }}</strong></p>{% endif %}
+      {% if company_address %}<p>{{ company_address|linebreaksbr }}</p>{% endif %}
+      {% if company_tax_id %}<p>Tax ID: {{ company_tax_id }}</p>{% endif %}
+    </div>
+  {% endif %}
   <div class="letterhead __LOGO_POSITION_CLASS__">
     {% if logo_data_uri %}<img src="{{ logo_data_uri }}" class="letterhead__logo">{% endif %}
-    <h1>{{ movement_type_display }}</h1>
+    <h1>{% if document_title %}{{ document_title }}{% else %}{{ movement_type_display }}{% endif %}</h1>
   </div>
   <div class="meta">
     <p>Document number: {{ document_number }}</p>

@@ -568,6 +568,50 @@ class TestAssignAndDeliverViews:
         asset.refresh_from_db()
         assert asset.status == UnitStatus.DELIVERED
 
+    def test_assign_out_of_scope_asset_releases_token_for_retry(
+        self,
+        client,
+        administrator,
+        stock_manager_with_room_access,
+        unit_product,
+        other_location_tree,
+    ):
+        """Regression test: unit_asset_ids is a plain POST getlist (not a
+        scoped ModelChoiceField, unlike destination_location), so a
+        manipulated request naming an asset outside the operator's scope
+        only gets caught deep in _issue_stock() via require_asset_access(),
+        which raises PermissionDenied, not ValidationError. AssignView.post()
+        used to only release the submission token on ValidationError,
+        permanently burning it for a legitimate retry with a real asset.
+        """
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=other_location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-AV-OOS",
+        )
+        out_of_scope_asset = UnitAsset.objects.get(vendor_serial="SN-AV-OOS")
+
+        client.force_login(stock_manager_with_room_access)
+        get_response = client.get(reverse("inventory:assign"))
+        token = get_response.context["form"]["submission_token"].value()
+
+        response = client.post(
+            reverse("inventory:assign"),
+            {
+                "employee_name": "Priya",
+                "occurred_at": date.today().isoformat(),
+                "unit_asset_ids": [str(out_of_scope_asset.pk)],
+                "submission_token": token,
+            },
+        )
+        assert response.status_code == 403
+
+        from apps.core.models import SubmissionClaim
+
+        assert not SubmissionClaim.objects.filter(token=token).exists()
+
     def test_deliver_quantity_via_balance_picker(
         self, client, stock_manager_with_room_access, quantity_product, location_tree
     ):

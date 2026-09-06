@@ -54,6 +54,32 @@ class TestResolveLocation:
         assert location == location_tree["room"]
         assert "not found" in detail
 
+    def test_exact_match_above_storage_room_is_unresolved(self, location_tree):
+        """A Country/Site/Floor is never a valid final stock location — even
+        an unambiguous exact-name match must be reported as needing a more
+        specific override, not silently accepted (spec: "do not guess
+        locations").
+        """
+        location, detail = resolve_location("HQ", "")
+        assert location is None
+        assert "not a storage location" in detail
+
+    def test_sub_location_not_found_does_not_fall_back_above_storage_room(self, location_tree):
+        location, detail = resolve_location("HQ", "99")
+        assert location is None
+        assert "not a storage location" in detail
+
+    def test_narrowed_child_above_storage_room_is_unresolved(self, administrator, location_tree):
+        extra_floor = create_location(
+            level=Location.Level.FLOOR,
+            name="2nd Floor",
+            parent=location_tree["site"],
+            user=administrator,
+        )
+        location, detail = resolve_location("HQ", extra_floor.name)
+        assert location is None
+        assert "not a storage location" in detail
+
     def test_ambiguous_top_level_name_is_unresolved(
         self, administrator, location_tree, other_location_tree
     ):

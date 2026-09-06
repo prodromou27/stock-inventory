@@ -5,7 +5,7 @@ from apps.audit.models import AuditEvent
 from apps.audit.services import record_event
 from apps.catalog.models import TrackingMethod
 from apps.core.authorization import ADMINISTRATOR, STOCK_MANAGER, require_role
-from apps.locations.scoping import require_location_access
+from apps.locations.scoping import require_location_access, require_room_or_below
 
 from ..models import Condition, MovementType, StockPurpose
 from .duplicates import check_duplicate_serial, duplicate_serial_count
@@ -56,6 +56,7 @@ def receive_stock(
     """
     require_role(user, ADMINISTRATOR, STOCK_MANAGER)
     require_location_access(user, location)
+    require_room_or_below(location)
 
     if not product.is_active:
         raise ValidationError("Cannot receive stock for an inactive product.")
@@ -256,6 +257,7 @@ def receive_stock_batch(*, user, product, location, occurred_at, vendor_serials,
     """
     require_role(user, ADMINISTRATOR, STOCK_MANAGER)
     require_location_access(user, location)
+    require_room_or_below(location)
     if not product.is_active:
         raise ValidationError("Cannot receive stock for an inactive product.")
     if product.tracking_method != TrackingMethod.UNIT:
@@ -312,6 +314,7 @@ def receive_stock_units_atomic(
     """
     require_role(user, ADMINISTRATOR, STOCK_MANAGER)
     require_location_access(user, location)
+    require_room_or_below(location)
     if not product.is_active:
         raise ValidationError("Cannot receive stock for an inactive product.")
     if product.tracking_method != TrackingMethod.UNIT:
@@ -389,6 +392,7 @@ def receive_stock_bulk(
         location = raw_line.get("location") or default_location
         stock_purpose = raw_line.get("stock_purpose") or default_stock_purpose
         require_location_access(user, location)
+        require_room_or_below(location)
         if not product.is_active:
             raise ValidationError(f"Line {index}: cannot receive stock for an inactive product.")
 

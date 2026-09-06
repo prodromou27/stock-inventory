@@ -36,7 +36,7 @@ class TestReceiveUnitStock:
         receive_stock(
             user=administrator,
             product=unit_product,
-            location=other_location_tree["site"],
+            location=other_location_tree["room"],
             occurred_at=date.today(),
             vendor_serial="SN-GLOBAL-DUP",
         )

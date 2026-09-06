@@ -46,7 +46,12 @@ class TestAccessibleLocations:
         )
 
         names = set(accessible_locations(read_only_user).values_list("name", flat=True))
-        assert names == {location_tree["room"].name, other_location_tree["site"].name}
+        assert names == {
+            location_tree["room"].name,
+            other_location_tree["site"].name,
+            other_location_tree["floor"].name,
+            other_location_tree["room"].name,
+        }
 
     def test_country_grant_automatically_covers_a_location_created_afterward(
         self, administrator, stock_manager, location_tree

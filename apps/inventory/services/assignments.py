@@ -6,6 +6,7 @@ from apps.audit.services import record_event
 from apps.core.authorization import ADMINISTRATOR, STOCK_MANAGER, require_role
 from apps.locations.scoping import require_location_access
 
+from ..access import require_asset_access
 from ..models import (
     MovementType,
     ReservationStatus,
@@ -115,13 +116,43 @@ def _issue_stock(
         raise ValidationError("One or more selected assets could not be found.")
 
     for asset in assets:
-        require_location_access(user, asset.current_location)
+        require_asset_access(user, asset)
         validate_unit_transition(asset.status, to_status)
+        if asset.status == UnitStatus.RESERVED:
+            # reserve_stock() snapshots the reservation's project/customer
+            # onto the asset (ledger.write_unit_line) — a mismatch here means
+            # this delivery/assignment is trying to consume a unit reserved
+            # for someone else. Hard block (not just warn), matching how a
+            # quantity reservation's project/customer already restricts which
+            # transaction can consume it.
+            if asset.project_reference and asset.project_reference != project_reference:
+                raise ValidationError(
+                    f"{asset} is reserved for project '{asset.project_reference}', not "
+                    f"'{project_reference or '(none)'}'."
+                )
+            if asset.final_customer and asset.final_customer != final_customer:
+                raise ValidationError(
+                    f"{asset} is reserved for '{asset.final_customer}', not "
+                    f"'{final_customer or '(none)'}'."
+                )
 
     for entry in quantity_lines:
         require_location_access(user, entry["location"])
         if entry["quantity"] <= 0:
             raise ValidationError("Quantity must be positive.")
+
+    # Stable (product, location, stock_purpose) lock order — two concurrent
+    # multi-line movements touching the same StockBalance rows in different
+    # orders can otherwise deadlock on adjust_balance()'s select_for_update()
+    # (doc 03's multi-line rules; unit assets are already pk-ordered above).
+    quantity_lines = sorted(
+        quantity_lines,
+        key=lambda e: (
+            str(e["product"].pk),
+            str(e["location"].pk),
+            e.get("stock_purpose") or StockPurpose.INTERNAL,
+        ),
+    )
 
     txn = create_transaction_header(
         movement_type=movement_type,

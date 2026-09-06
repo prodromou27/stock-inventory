@@ -4,7 +4,7 @@ from django.db import transaction
 from apps.audit.models import AuditEvent
 from apps.audit.services import record_event
 from apps.core.authorization import ADMINISTRATOR, STOCK_MANAGER, require_role
-from apps.locations.scoping import require_location_access
+from apps.locations.scoping import require_location_access, require_room_or_below
 
 from ..access import require_asset_access
 from ..models import MovementType, StockPurpose, UnitAsset
@@ -28,6 +28,7 @@ def bulk_transfer(
     """
     require_role(user, ADMINISTRATOR, STOCK_MANAGER)
     require_location_access(user, destination_location)
+    require_room_or_below(destination_location)
     if not destination_location.is_active:
         raise ValidationError("Cannot transfer stock into an inactive location.")
 
@@ -52,6 +53,18 @@ def bulk_transfer(
         require_location_access(user, entry["source_location"])
         if entry["quantity"] <= 0:
             raise ValidationError("Transfer quantity must be positive.")
+
+    # Stable (product, location, stock_purpose) lock order — see
+    # apps.inventory.services.assignments._issue_stock's identical comment
+    # for why this matters between concurrent multi-line movements.
+    quantity_lines = sorted(
+        quantity_lines,
+        key=lambda e: (
+            str(e["product"].pk),
+            str(e["source_location"].pk),
+            e.get("stock_purpose") or StockPurpose.INTERNAL,
+        ),
+    )
 
     txn = create_transaction_header(
         movement_type=MovementType.TRANSFER,
@@ -80,15 +93,38 @@ def bulk_transfer(
             entry["quantity"],
         )
         stock_purpose = entry.get("stock_purpose") or StockPurpose.INTERNAL
-        adjust_balance(
-            product=product, location=source_location, delta=-quantity, stock_purpose=stock_purpose
-        )
-        adjust_balance(
-            product=product,
-            location=destination_location,
-            delta=quantity,
-            stock_purpose=stock_purpose,
-        )
+        # Lock the two StockBalance rows this line touches in a direction-
+        # agnostic order (by location pk, not "source then destination") —
+        # a concurrent transfer of the same product the other way between
+        # these same two locations would otherwise lock them in the opposite
+        # order and deadlock. Applying the two deltas is order-independent
+        # (separate rows); only the lock *acquisition* order matters here.
+        if str(source_location.pk) <= str(destination_location.pk):
+            adjust_balance(
+                product=product,
+                location=source_location,
+                delta=-quantity,
+                stock_purpose=stock_purpose,
+            )
+            adjust_balance(
+                product=product,
+                location=destination_location,
+                delta=quantity,
+                stock_purpose=stock_purpose,
+            )
+        else:
+            adjust_balance(
+                product=product,
+                location=destination_location,
+                delta=quantity,
+                stock_purpose=stock_purpose,
+            )
+            adjust_balance(
+                product=product,
+                location=source_location,
+                delta=-quantity,
+                stock_purpose=stock_purpose,
+            )
         write_quantity_line(
             transaction=txn,
             line_number=line_number,

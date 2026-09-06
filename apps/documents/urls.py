@@ -51,4 +51,19 @@ urlpatterns = [
         views.DocumentTemplateResetView.as_view(),
         name="template_reset",
     ),
+    path(
+        "templates/<str:document_type>/publish/",
+        views.DocumentTemplatePublishView.as_view(),
+        name="template_publish",
+    ),
+    path(
+        "templates/<str:document_type>/duplicate/",
+        views.DocumentTemplateDuplicateView.as_view(),
+        name="template_duplicate",
+    ),
+    path(
+        "templates/<str:document_type>/versions/<uuid:version_pk>/restore/",
+        views.DocumentTemplateRestoreVersionView.as_view(),
+        name="template_restore_version",
+    ),
 ]

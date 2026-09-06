@@ -24,7 +24,11 @@
           <td>{{ row.label }}</td>
           <td>
             {% if row.template_obj %}
-              <span class="badge badge--info">Custom</span>
+              {% if row.template_obj.status == "published" %}
+                <span class="badge badge--success">Custom — Published</span>
+              {% else %}
+                <span class="badge badge--warning">Custom — Draft</span>
+              {% endif %}
             {% else %}
               <span class="badge badge--neutral">Packaged default</span>
             {% endif %}

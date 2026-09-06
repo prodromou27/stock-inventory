@@ -5,7 +5,7 @@ from apps.core.models import TimestampedModel, UUIDPrimaryKeyModel
 
 
 class DataQualityIssueType(models.TextChoices):
-    """The 12 checks apps.dataquality.checks runs. Each maps to exactly one
+    """The 13 checks apps.dataquality.checks runs. Each maps to exactly one
     check function there — see that module's docstring for what each one
     actually looks for and why.
     """
@@ -33,6 +33,10 @@ class DataQualityIssueType(models.TextChoices):
     ORPHANED_TRANSACTION_REFERENCE = (
         "orphaned_transaction_reference",
         "Orphaned transaction reference",
+    )
+    COUNTRY_ONLY_LOCATION = (
+        "country_only_location",
+        "Stock held above Storage Room level",
     )
 
 

@@ -1,6 +1,7 @@
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied, ValidationError
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
 from django.views.generic import DetailView, ListView
@@ -9,7 +10,7 @@ from apps.core.authorization import ADMINISTRATOR, STOCK_MANAGER, RoleRequiredMi
 from apps.core.sorting import SortableListMixin
 
 from .forms import LocationEditForm, LocationForm
-from .models import Location
+from .models import Location, LocationLevel
 from .scoping import require_location_access, scope_queryset
 from .services import (
     can_manage_location,
@@ -225,3 +226,66 @@ class LocationToggleActiveView(LoginRequiredMixin, RoleRequiredMixin, View):
             reactivate_location(location=location, user=request.user)
             messages.success(request, f"Reactivated '{location.name}'.")
         return redirect(location.get_absolute_url())
+
+
+class RoomOptionsForCountryView(LoginRequiredMixin, View):
+    """JSON data source for the "Select Country -> load its Storage Rooms"
+    dependent control every stock-receiving/movement form now uses (spec:
+    "Country is a location parent, not a valid final stock location — the
+    Storage Room is required"). Storage Rooms sit exactly three levels below
+    their Country (Country > Site > Floor > Storage Room, a fixed ordering
+    enforced by a DB trigger — see apps.locations.models.Location's
+    docstring), so this is an ltree descendant query, never `parent_id`.
+    Scoped the same way every other location-bearing endpoint in this app
+    is — a Stock Manager only ever sees rooms in a country they're granted.
+    """
+
+    def get(self, request):
+        country_id = request.GET.get("country")
+        if not country_id:
+            return JsonResponse({"rooms": []})
+        country = (
+            scope_queryset(request.user, Location.objects.all(), location_field=None)
+            .filter(pk=country_id, level=LocationLevel.COUNTRY)
+            .first()
+        )
+        if country is None:
+            return JsonResponse({"rooms": []})
+        rooms = Location.objects.filter(
+            level=LocationLevel.STORAGE_ROOM,
+            is_active=True,
+            path__descendant_or_self=country.path,
+        ).order_by("name")
+        return JsonResponse({"rooms": [{"id": str(r.pk), "name": r.name} for r in rooms]})
+
+
+class ShelfOptionsForRoomView(LoginRequiredMixin, View):
+    """JSON data source for the optional Shelf/Bin picker once a Storage
+    Room is selected — every active Rack/Cabinet or Shelf/Bin under that
+    room, labeled with its own local breadcrumb (a Shelf under a Rack is
+    disambiguated as "Rack 1 > Shelf A") since a room can hold more than
+    one rack.
+    """
+
+    def get(self, request):
+        room_id = request.GET.get("room")
+        if not room_id:
+            return JsonResponse({"shelves": []})
+        room = (
+            scope_queryset(request.user, Location.objects.all(), location_field=None)
+            .filter(pk=room_id, level=LocationLevel.STORAGE_ROOM)
+            .first()
+        )
+        if room is None:
+            return JsonResponse({"shelves": []})
+        descendants = list(
+            Location.objects.filter(is_active=True, path__descendant_or_self=room.path)
+            .exclude(pk=room.pk)
+            .select_related("parent")
+            .order_by("path")
+        )
+        shelves = []
+        for node in descendants:
+            label = node.name if node.parent_id == room.pk else f"{node.parent.name} > {node.name}"
+            shelves.append({"id": str(node.pk), "name": label})
+        return JsonResponse({"shelves": shelves})

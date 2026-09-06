@@ -5,7 +5,7 @@ from django.db.models import Sum
 from apps.audit.models import AuditEvent
 from apps.audit.services import record_event
 from apps.core.authorization import ADMINISTRATOR, STOCK_MANAGER, require_role
-from apps.locations.scoping import require_location_access
+from apps.locations.scoping import require_location_access, require_room_or_below
 
 from ..access import require_asset_access, require_transaction_access
 from ..models import (
@@ -116,6 +116,7 @@ def return_stock(
     )
     require_transaction_access(user, original_transaction)
     require_location_access(user, location)
+    require_room_or_below(location)
 
     if original_transaction.movement_type not in (MovementType.ASSIGNMENT, MovementType.DELIVERY):
         raise ValidationError(
@@ -201,6 +202,13 @@ def return_stock(
                 f"the {remaining} outstanding."
             )
 
+    # Stable (product, location, stock_purpose) lock order — see
+    # apps.inventory.services.assignments._issue_stock's identical comment.
+    quantity_lines = sorted(
+        quantity_lines,
+        key=lambda e: (str(e["product"].pk), e.get("stock_purpose") or StockPurpose.INTERNAL),
+    )
+
     txn = create_transaction_header(
         movement_type=MovementType.RETURN,
         performed_by=user,
@@ -284,7 +292,7 @@ def assess_return(*, user, to_status, occurred_at, unit_asset_ids, notes=""):
         raise ValidationError("One or more selected assets could not be found.")
 
     for asset in assets:
-        require_location_access(user, asset.current_location)
+        require_asset_access(user, asset)
         validate_unit_transition(asset.status, to_status)
 
     txn = create_transaction_header(

@@ -10,6 +10,7 @@ from apps.documents.pdf import default_template_source, render_styleable_source
 from apps.documents.services import generate_document
 from apps.documents.template_services import (
     get_template,
+    publish_template,
     render_preview_pdf,
     reset_template,
     update_template,
@@ -275,15 +276,30 @@ class TestRenderPreviewPdf:
 @pytest.mark.django_db
 class TestGenerateDocumentUsesOverride:
     def test_custom_template_is_used_when_present(self, administrator, delivery_txn):
+        """A brand-new template saves as Draft — real generation keeps using
+        the packaged default until it's explicitly published (Draft/
+        Published, request #6/#7). Publish here, matching what this test
+        actually exercises.
+        """
         update_template(
             user=administrator,
             document_type=DocumentType.DELIVERY,
             html_source="<html><body><h1>OVERRIDE {{ document_number }}</h1></body></html>",
         )
+        publish_template(user=administrator, document_type=DocumentType.DELIVERY)
         document = generate_document(txn=delivery_txn, user=administrator)
         content = document.pdf_file.open("rb").read()
         document.pdf_file.close()
         assert content[:4] == b"%PDF"
+
+    def test_a_draft_template_is_not_used_for_real_generation(self, administrator, delivery_txn):
+        template_obj = update_template(
+            user=administrator, document_type=DocumentType.DELIVERY, html_source=VALID_HTML
+        )
+        assert template_obj.status == "draft"
+        document = generate_document(txn=delivery_txn, user=administrator)
+        assert document.template_id is None
+        assert document.template_version == "form_v1"
 
     def test_falls_back_to_packaged_default_when_no_override(self, administrator, delivery_txn):
         assert get_template(DocumentType.DELIVERY) is None
@@ -298,6 +314,7 @@ class TestGenerateDocumentUsesOverride:
         template_obj = update_template(
             user=administrator, document_type=DocumentType.DELIVERY, html_source=VALID_HTML
         )
+        publish_template(user=administrator, document_type=DocumentType.DELIVERY)
         document = generate_document(txn=delivery_txn, user=administrator)
         assert document.template_id == template_obj.pk
         assert document.template_version == f"v{template_obj.version}"
@@ -312,21 +329,25 @@ class TestGenerateDocumentUsesOverride:
     def test_resetting_the_template_does_not_break_a_historical_document(
         self, administrator, delivery_txn
     ):
-        """GeneratedDocument.template is SET_NULL, not PROTECT — a later
-        reset must never be blocked by history that already has its own
-        frozen context_snapshot/pdf_file (doc 06's immutability guarantee
-        doesn't depend on this FK staying populated).
+        """reset_template() deactivates (is_active=False), it never deletes
+        the row (spec: "templates referenced by history may be deactivated
+        but not deleted") — a later reset must never orphan the FK a
+        GeneratedDocument already has, unlike this app's old
+        template_obj.delete() behavior which SET_NULL'd it.
         """
-        update_template(
+        template_obj = update_template(
             user=administrator, document_type=DocumentType.DELIVERY, html_source=VALID_HTML
         )
+        publish_template(user=administrator, document_type=DocumentType.DELIVERY)
         document = generate_document(txn=delivery_txn, user=administrator)
         assert document.template_id is not None
 
         reset_template(user=administrator, document_type=DocumentType.DELIVERY)
 
         document.refresh_from_db()
-        assert document.template_id is None
+        assert document.template_id == template_obj.pk  # still resolvable — deactivated, not gone
+        template_obj.refresh_from_db()
+        assert template_obj.is_active is False
         assert document.template_version == "v1"  # unchanged — a frozen snapshot, not recomputed
 
 

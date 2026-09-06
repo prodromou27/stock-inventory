@@ -582,7 +582,7 @@ class TestQuantityReversalIntegrity:
         self, administrator, quantity_product, location_tree, other_location_tree
     ):
         source = location_tree["room"]
-        destination = other_location_tree["site"]
+        destination = other_location_tree["room"]
         receive_stock(
             user=administrator,
             product=quantity_product,

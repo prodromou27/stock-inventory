@@ -10,7 +10,11 @@ from datetime import timedelta
 from django.db.models import Count, F, OuterRef, Subquery, Sum
 from django.utils import timezone
 
-from apps.inventory.access import scope_asset_status_history_queryset, scope_transaction_queryset
+from apps.inventory.access import (
+    scope_asset_queryset,
+    scope_asset_status_history_queryset,
+    scope_transaction_queryset,
+)
 from apps.inventory.filters import duplicate_serial_values
 from apps.inventory.models import (
     AssetStatusHistory,
@@ -32,9 +36,7 @@ _BALANCE_RELATED = ("product", "product__brand", "product__product_type", "locat
 
 
 def _scoped_assets(user, **status_filter):
-    queryset = scope_queryset(
-        user, UnitAsset.objects.select_related(*_ASSET_RELATED), location_field="current_location"
-    )
+    queryset = scope_asset_queryset(user, UnitAsset.objects.select_related(*_ASSET_RELATED))
     return queryset.filter(**status_filter)
 
 

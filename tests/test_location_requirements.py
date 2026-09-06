@@ -1,0 +1,109 @@
+import pytest
+from django.core.exceptions import ValidationError
+from django.urls import reverse
+
+from apps.locations.models import Location
+from apps.locations.scoping import require_room_or_below
+from apps.locations.services import create_location
+
+
+@pytest.mark.django_db
+class TestRequireRoomOrBelow:
+    def test_country_site_floor_are_rejected(self, location_tree):
+        for level_key in ("country", "site", "floor"):
+            with pytest.raises(ValidationError):
+                require_room_or_below(location_tree[level_key])
+
+    def test_storage_room_is_accepted(self, location_tree):
+        require_room_or_below(location_tree["room"])  # must not raise
+
+    def test_rack_and_shelf_are_accepted(self, administrator, location_tree):
+        rack = create_location(
+            level=Location.Level.RACK_CABINET,
+            name="Rack 1",
+            parent=location_tree["room"],
+            user=administrator,
+        )
+        shelf = create_location(
+            level=Location.Level.SHELF_BIN, name="Shelf A", parent=rack, user=administrator
+        )
+        require_room_or_below(rack)
+        require_room_or_below(shelf)
+
+    def test_none_is_accepted(self):
+        require_room_or_below(None)  # a separate "is it required at all" concern
+
+
+@pytest.mark.django_db
+class TestRoomOptionsForCountryView:
+    def test_returns_rooms_under_the_selected_country(self, client, administrator, location_tree):
+        client.force_login(administrator)
+        response = client.get(
+            reverse("locations:rooms_for_country"), {"country": location_tree["country"].pk}
+        )
+        assert response.status_code == 200
+        names = {r["name"] for r in response.json()["rooms"]}
+        assert names == {"Room A"}
+
+    def test_scoped_to_accessible_countries(
+        self, client, stock_manager_with_room_access, location_tree, other_location_tree
+    ):
+        client.force_login(stock_manager_with_room_access)
+        response = client.get(
+            reverse("locations:rooms_for_country"), {"country": other_location_tree["country"].pk}
+        )
+        assert response.json()["rooms"] == []
+
+    def test_empty_country_returns_no_rooms(self, client, administrator):
+        empty_country = create_location(
+            level=Location.Level.COUNTRY, name="No Rooms Yet", user=administrator
+        )
+        client.force_login(administrator)
+        response = client.get(reverse("locations:rooms_for_country"), {"country": empty_country.pk})
+        assert response.json()["rooms"] == []
+
+    def test_missing_country_param_returns_empty(self, client, administrator):
+        client.force_login(administrator)
+        response = client.get(reverse("locations:rooms_for_country"))
+        assert response.json()["rooms"] == []
+
+
+@pytest.mark.django_db
+class TestShelfOptionsForRoomView:
+    def test_returns_racks_and_shelves_under_the_room(self, client, administrator, location_tree):
+        rack = create_location(
+            level=Location.Level.RACK_CABINET,
+            name="Rack 1",
+            parent=location_tree["room"],
+            user=administrator,
+        )
+        create_location(
+            level=Location.Level.SHELF_BIN, name="Shelf A", parent=rack, user=administrator
+        )
+        client.force_login(administrator)
+        response = client.get(
+            reverse("locations:shelves_for_room"), {"room": location_tree["room"].pk}
+        )
+        shelves = response.json()["shelves"]
+        labels = {s["name"] for s in shelves}
+        assert "Rack 1" in labels
+        assert "Rack 1 > Shelf A" in labels
+
+    def test_scoped_to_accessible_rooms(
+        self, client, stock_manager_with_room_access, other_location_tree, administrator
+    ):
+        other_floor = create_location(
+            level=Location.Level.FLOOR,
+            name="Other Floor",
+            parent=other_location_tree["site"],
+            user=administrator,
+        )
+        other_room = create_location(
+            level=Location.Level.STORAGE_ROOM,
+            name="Other Room",
+            parent=other_floor,
+            user=administrator,
+        )
+        client.force_login(stock_manager_with_room_access)
+        response = client.get(reverse("locations:shelves_for_room"), {"room": other_room.pk})
+        assert response.json()["shelves"] == []

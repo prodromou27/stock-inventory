@@ -12,6 +12,7 @@ VALID_STYLE = {
     "accent_color": "#336699",
     "font_choice": "serif",
     "page_margin": "compact",
+    "section_spacing": "normal",
     "page_size": "A4",
     "orientation": "portrait",
 }
@@ -162,13 +163,19 @@ class TestLivePreviewView:
 @pytest.mark.django_db
 class TestResetView:
     def test_resets_and_redirects(self, client, administrator):
+        """Reset deactivates, never deletes (spec: "deactivated but not
+        deleted") — the row still exists, just is_active=False, so
+        get_template() (and this screen) treats the type as back to the
+        packaged default.
+        """
         update_template(
             user=administrator, document_type=DocumentType.DELIVERY, html_source=VALID_HTML
         )
         client.force_login(administrator)
         response = client.post(reverse("documents:template_reset", args=["delivery"]))
         assert response.status_code == 302
-        assert not DocumentTemplate.objects.filter(document_type="delivery").exists()
+        template_obj = DocumentTemplate.objects.get(document_type="delivery")
+        assert template_obj.is_active is False
 
     def test_stock_manager_cannot_reset(self, client, administrator, stock_manager):
         update_template(

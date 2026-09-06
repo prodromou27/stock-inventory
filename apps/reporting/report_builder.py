@@ -20,6 +20,7 @@ from django.db import models
 from django.db.models import Q, Sum
 
 from apps.inventory.access import (
+    scope_asset_queryset,
     scope_asset_status_history_queryset,
     scope_transaction_line_queryset,
     scope_transaction_queryset,
@@ -147,7 +148,7 @@ def normalize_filter_value(*, base_model, field_key, op, value):
 
 def _scoped_base_queryset(base_model, user):
     if base_model == ReportBaseModel.UNIT_ASSET:
-        return scope_queryset(user, UnitAsset.objects.all(), location_field="current_location")
+        return scope_asset_queryset(user, UnitAsset.objects.all())
     if base_model == ReportBaseModel.STOCK_BALANCE:
         return scope_queryset(user, StockBalance.objects.all(), location_field="location")
     if base_model == ReportBaseModel.TRANSACTION:

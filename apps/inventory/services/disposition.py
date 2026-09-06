@@ -4,7 +4,7 @@ from django.db import transaction
 from apps.audit.models import AuditEvent
 from apps.audit.services import record_event
 from apps.core.authorization import ADMINISTRATOR, STOCK_MANAGER, require_role
-from apps.locations.scoping import require_location_access
+from apps.locations.scoping import require_location_access, require_room_or_below
 
 from ..access import require_asset_access
 from ..models import MovementType, StockPurpose, UnitAsset, UnitStatus
@@ -174,6 +174,7 @@ def return_repaired_to_stock(*, user, location, occurred_at, unit_asset_ids, not
     """Record completion of a repair and return damaged units to stock."""
     require_role(user, ADMINISTRATOR, STOCK_MANAGER)
     require_location_access(user, location)
+    require_room_or_below(location)
     if not location.is_active:
         raise ValidationError("Cannot return repaired stock to an inactive location.")
 

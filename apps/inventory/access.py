@@ -14,7 +14,7 @@ on top of it) gets it right.
 """
 
 from django.core.exceptions import PermissionDenied
-from django.db.models import Exists, OuterRef, Q
+from django.db.models import Exists, OuterRef, Q, Subquery
 
 from apps.core.authorization import is_administrator
 from apps.locations.models import Location
@@ -68,6 +68,49 @@ def require_asset_access(user, asset):
     if not last_location_id:
         raise PermissionDenied("This asset has no authorization scope.")
     require_location_access(user, Location.objects.get(pk=last_location_id))
+
+
+def scope_asset_queryset(user, queryset):
+    """Queryset-level counterpart of require_asset_access() above: includes
+    assets whose current_location is accessible, PLUS assets that have
+    physically left storage (current_location is NULL after a delivery or
+    assignment) whose *last known* location — their own most recent
+    transaction line's from_location — is accessible. Exactly the same
+    fallback require_asset_access() applies per-object.
+
+    Without this, a plain scope_queryset(..., location_field="current_location")
+    silently drops every delivered/assigned asset for every non-Administrator:
+    NULL never matches a path__descendant_or_self comparison, so those assets
+    vanish from search/lists/reports even though the person delivering or
+    assigning them was authorized to do so and should still be able to find
+    them (spec: "delivered items must remain searchable").
+    """
+    if is_administrator(user):
+        return queryset
+
+    paths = granted_location_paths(user)
+    if not paths:
+        return queryset.none()
+
+    accessible_query = Q()
+    for path in paths:
+        accessible_query |= Q(path__descendant_or_self=path)
+    accessible_ids = Location.objects.filter(accessible_query)
+
+    from .models import InventoryTransactionLine
+
+    last_from_location_id = Subquery(
+        InventoryTransactionLine.objects.filter(
+            unit_asset_id=OuterRef("pk"), from_location__isnull=False
+        )
+        .order_by("-transaction__created_at", "-line_number")
+        .values("from_location_id")[:1]
+    )
+
+    return queryset.annotate(_last_from_location_id=last_from_location_id).filter(
+        Q(current_location__in=accessible_ids)
+        | Q(current_location__isnull=True, _last_from_location_id__in=accessible_ids)
+    )
 
 
 def scope_transaction_queryset(user, queryset):

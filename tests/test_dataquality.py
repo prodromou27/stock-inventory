@@ -417,6 +417,63 @@ class TestCheckOrphanedTransactionReference:
 
 
 @pytest.mark.django_db
+class TestCheckCountryOnlyLocation:
+    """apps.dataquality.checks.check_country_only_location — every write path
+    now enforces apps.locations.scoping.require_room_or_below(), so this only
+    ever finds pre-existing/legacy data; simulated here the same way
+    TestCheckOrphanedTransactionReference does, via a direct queryset
+    .update() that bypasses the service layer's own validation entirely.
+    """
+
+    def test_flags_a_unit_asset_at_site_level(self, administrator, unit_product, location_tree):
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-LEGACY-SITE",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-LEGACY-SITE")
+        UnitAsset.objects.filter(pk=asset.pk).update(current_location=location_tree["site"])
+        run_detection(user=None)
+        assert DataQualityFinding.objects.filter(
+            issue_type="country_only_location", object_type="UnitAsset", object_id=str(asset.pk)
+        ).exists()
+
+    def test_flags_a_stock_balance_at_country_level(
+        self, administrator, quantity_product, location_tree
+    ):
+        from apps.inventory.models import StockBalance
+
+        receive_stock(
+            user=administrator,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=5,
+        )
+        balance = StockBalance.objects.get(product=quantity_product, location=location_tree["room"])
+        StockBalance.objects.filter(pk=balance.pk).update(location=location_tree["country"])
+        run_detection(user=None)
+        assert DataQualityFinding.objects.filter(
+            issue_type="country_only_location",
+            object_type="StockBalance",
+            object_id=str(balance.pk),
+        ).exists()
+
+    def test_a_room_level_asset_is_not_flagged(self, administrator, unit_product, location_tree):
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-VALID-ROOM",
+        )
+        run_detection(user=None)
+        assert not DataQualityFinding.objects.filter(issue_type="country_only_location").exists()
+
+
+@pytest.mark.django_db
 class TestRunDetectionLifecycle:
     def test_requires_administrator_when_a_user_is_given(self, stock_manager):
         with pytest.raises(PermissionDenied):

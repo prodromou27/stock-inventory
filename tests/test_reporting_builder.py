@@ -33,7 +33,7 @@ def out_of_scope_asset(administrator, unit_product, other_location_tree):
     receive_stock(
         user=administrator,
         product=unit_product,
-        location=other_location_tree["site"],
+        location=other_location_tree["room"],
         occurred_at=date.today(),
         vendor_serial="SN-REPORT-OUT-OF-SCOPE",
     )

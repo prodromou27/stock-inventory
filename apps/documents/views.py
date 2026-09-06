@@ -10,10 +10,18 @@ from apps.inventory.access import require_transaction_access
 from apps.inventory.models import InventoryTransaction
 
 from .forms import AttachmentUploadForm, DocumentTemplateStyleForm
-from .models import Attachment, DocumentType, GeneratedDocument
+from .models import Attachment, DocumentTemplateVersion, DocumentType, GeneratedDocument
 from .pdf import render_pdf, render_styleable_source, sample_document_context
 from .services import delete_attachment, generate_document, regenerate_document, upload_attachment
-from .template_services import get_template, render_preview_pdf, reset_template, update_template
+from .template_services import (
+    duplicate_template,
+    get_template,
+    publish_template,
+    render_preview_pdf,
+    reset_template,
+    restore_template_version,
+    update_template,
+)
 
 
 class GenerateDocumentView(LoginRequiredMixin, RoleRequiredMixin, View):
@@ -184,12 +192,35 @@ def _require_valid_document_type(document_type):
         raise Http404("Unknown document type.")
 
 
+# Every DocumentTemplate plain style/branding field the structured editor
+# exposes, beyond the four render_styleable_source() bakes into html_source
+# — shared by DocumentTemplateEditView and DocumentTemplatePreviewView so
+# neither can drift from the other about which fields exist.
+_STYLE_KWARG_FIELDS = (
+    "section_spacing",
+    "heading_text_color",
+    "table_header_bg_color",
+    "document_title",
+    "company_name",
+    "company_address",
+    "company_tax_id",
+)
+
+
+def _style_kwargs(data):
+    return {field: data[field] for field in _STYLE_KWARG_FIELDS}
+
+
 class DocumentTemplateEditView(LoginRequiredMixin, RoleRequiredMixin, View):
     """A structured branding panel, not an HTML editor — logo, its position,
-    an accent color, a font, and page margins are the only things an
-    Administrator chooses. The report's actual data fields are always
-    placed automatically by the packaged skeleton (apps.documents.pdf.
+    colors, font, margins/spacing, and company/title text are the only
+    things an Administrator chooses. The report's actual data fields are
+    always placed automatically by the packaged skeleton (apps.documents.pdf.
     render_styleable_source()); nothing here is typed as template syntax.
+
+    A brand-new template always saves as Draft (see the "Publish" action);
+    an already-Published one keeps saving live on every edit, unchanged
+    from this feature's pre-Draft/Published behavior.
     """
 
     allowed_roles = (ADMINISTRATOR,)
@@ -226,6 +257,7 @@ class DocumentTemplateEditView(LoginRequiredMixin, RoleRequiredMixin, View):
                 font_choice=data["font_choice"],
                 page_margin=data["page_margin"],
                 layout_config=form.layout_config(),
+                **_style_kwargs(data),
             )
         except ValidationError as exc:
             form.add_error(None, "; ".join(exc.messages) if hasattr(exc, "messages") else str(exc))
@@ -238,13 +270,20 @@ class DocumentTemplateEditView(LoginRequiredMixin, RoleRequiredMixin, View):
     def _initial(template_obj):
         if template_obj is None:
             return {}
-        return {
+        initial = {
             "logo_position": template_obj.logo_position,
             "accent_color": template_obj.accent_color,
             "font_choice": template_obj.font_choice,
             "page_margin": template_obj.page_margin,
+            **{field: getattr(template_obj, field) for field in _STYLE_KWARG_FIELDS},
             **template_obj.layout_config,
         }
+        initial["column_order"] = ",".join(template_obj.layout_config.get("column_order") or [])
+        initial["column_labels"] = "\n".join(
+            f"{key}:{label}"
+            for key, label in (template_obj.layout_config.get("column_labels") or {}).items()
+        )
+        return initial
 
     def _render(self, request, document_type, form, template_obj):
         return render(
@@ -255,6 +294,14 @@ class DocumentTemplateEditView(LoginRequiredMixin, RoleRequiredMixin, View):
                 "document_type": document_type,
                 "document_type_label": dict(DocumentType.choices)[document_type],
                 "template_obj": template_obj,
+                "other_document_types": [
+                    (value, label)
+                    for value, label in DocumentType.choices
+                    if value != document_type
+                ],
+                "versions": (
+                    template_obj.versions.select_related("saved_by")[:20] if template_obj else []
+                ),
             },
         )
 
@@ -283,6 +330,8 @@ class DocumentTemplatePreviewView(LoginRequiredMixin, RoleRequiredMixin, View):
                 html_source=html_source,
                 logo_file=data.get("logo"),
                 layout_config=form.layout_config(),
+                accent_color=data["accent_color"],
+                **_style_kwargs(data),
             )
         except ValidationError as exc:
             return HttpResponseBadRequest(
@@ -298,4 +347,68 @@ class DocumentTemplateResetView(LoginRequiredMixin, RoleRequiredMixin, View):
         _require_valid_document_type(document_type)
         reset_template(user=request.user, document_type=document_type)
         messages.success(request, "Template reset to the packaged default.")
+        return redirect("documents:template_edit", document_type=document_type)
+
+
+class DocumentTemplatePublishView(LoginRequiredMixin, RoleRequiredMixin, View):
+    """Makes the current Draft's configuration live for real document
+    generation. A no-op (still succeeds) if it's already Published.
+    """
+
+    allowed_roles = (ADMINISTRATOR,)
+
+    def post(self, request, document_type):
+        _require_valid_document_type(document_type)
+        try:
+            publish_template(user=request.user, document_type=document_type)
+        except ValidationError as exc:
+            messages.error(request, "; ".join(exc.messages))
+        else:
+            messages.success(request, "Template published.")
+        return redirect("documents:template_edit", document_type=document_type)
+
+
+class DocumentTemplateDuplicateView(LoginRequiredMixin, RoleRequiredMixin, View):
+    """Copies `document_type`'s current template into a different document
+    type's brand-new Draft — see duplicate_template()'s docstring for why
+    same-type duplication (an alternate draft alongside a live published
+    one) isn't offered in this first increment.
+    """
+
+    allowed_roles = (ADMINISTRATOR,)
+
+    def post(self, request, document_type):
+        _require_valid_document_type(document_type)
+        target = request.POST.get("target_document_type", "")
+        try:
+            new_template = duplicate_template(
+                user=request.user, source_document_type=document_type, target_document_type=target
+            )
+        except ValidationError as exc:
+            messages.error(request, "; ".join(exc.messages))
+            return redirect("documents:template_edit", document_type=document_type)
+
+        messages.success(
+            request,
+            f"Duplicated into a new {new_template.get_document_type_display()} draft template.",
+        )
+        return redirect("documents:template_edit", document_type=new_template.document_type)
+
+
+class DocumentTemplateRestoreVersionView(LoginRequiredMixin, RoleRequiredMixin, View):
+    """Restores an old DocumentTemplateVersion snapshot as a new save on the
+    live row — never edits the version history itself.
+    """
+
+    allowed_roles = (ADMINISTRATOR,)
+
+    def post(self, request, document_type, version_pk):
+        _require_valid_document_type(document_type)
+        version_obj = get_object_or_404(
+            DocumentTemplateVersion.objects.select_related("template"),
+            pk=version_pk,
+            template__document_type=document_type,
+        )
+        restore_template_version(user=request.user, version_obj=version_obj)
+        messages.success(request, f"Restored v{version_obj.version}.")
         return redirect("documents:template_edit", document_type=document_type)

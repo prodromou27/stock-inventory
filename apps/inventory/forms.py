@@ -3,8 +3,8 @@ from django.forms import formset_factory
 from django.utils import timezone
 
 from apps.catalog.models import CATEGORY_TRACKING_METHOD, ItemCategory, Product, TrackingMethod
-from apps.locations.models import Location
-from apps.locations.scoping import accessible_locations, scope_queryset
+from apps.locations.models import Location, LocationLevel
+from apps.locations.scoping import accessible_locations, require_room_or_below, scope_queryset
 
 from .models import Condition, Customer, StockPurpose, UnitAsset, UnitStatus, WipeMethod
 
@@ -37,6 +37,41 @@ def _apply_scoped_location(field, user):
     """
     field.queryset = _scoped_location_queryset(user)
     field.widget.attrs["data-filterable"] = "true"
+
+
+# A Country/Site/Floor is an authorization boundary and a tree parent, never
+# a place stock is actually held (apps.locations.scoping.require_room_or_below)
+# — every field below that names where stock ends up is restricted to these
+# levels, in addition to the ordinary user-access scoping.
+ROOM_OR_BELOW_LEVELS = (
+    LocationLevel.STORAGE_ROOM,
+    LocationLevel.RACK_CABINET,
+    LocationLevel.SHELF_BIN,
+)
+
+
+def _apply_scoped_room_location(field, user):
+    """Like _apply_scoped_location, but additionally restricted to Storage
+    Room/Rack/Shelf levels — for the fields above that name where stock is
+    actually held (as opposed to e.g. a Transfer's destination search scope,
+    which may legitimately span a whole country).
+    """
+    field.queryset = _scoped_location_queryset(user).filter(level__in=ROOM_OR_BELOW_LEVELS)
+    field.widget.attrs["data-filterable"] = "true"
+
+
+def _validate_room_or_below(value):
+    """clean_<field>() helper: re-raises apps.locations.scoping's
+    ValidationError as one attached to this field. Belt-and-braces alongside
+    the queryset restriction above — the queryset keeps a well-behaved
+    client from ever offering a bad option; this keeps a manipulated POST
+    (a Country's pk, still a real row, just outside the restricted queryset)
+    from surfacing Django's generic "not one of the available choices"
+    instead of the specific reason.
+    """
+    if value is not None:
+        require_room_or_below(value)
+    return value
 
 
 class TrackingMethodSelect(forms.Select):
@@ -171,7 +206,10 @@ class ReceiveStockForm(forms.Form):
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
-        _apply_scoped_location(self.fields["location"], user)
+        _apply_scoped_room_location(self.fields["location"], user)
+
+    def clean_location(self):
+        return _validate_room_or_below(self.cleaned_data["location"])
 
     def clean_occurred_at(self):
         value = self.cleaned_data["occurred_at"]
@@ -276,7 +314,10 @@ class QuickReceiveForm(forms.Form):
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
-        _apply_scoped_location(self.fields["location"], user)
+        _apply_scoped_room_location(self.fields["location"], user)
+
+    def clean_location(self):
+        return _validate_room_or_below(self.cleaned_data["location"])
 
     def clean_vendor_serials(self):
         lines = self.cleaned_data["vendor_serials"].splitlines()
@@ -336,7 +377,10 @@ class TransferForm(_BaseMovementForm):
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, user=user, **kwargs)
-        _apply_scoped_location(self.fields["destination_location"], user)
+        _apply_scoped_room_location(self.fields["destination_location"], user)
+
+    def clean_destination_location(self):
+        return _validate_room_or_below(self.cleaned_data["destination_location"])
 
 
 class ReserveForm(_BaseMovementForm):
@@ -426,10 +470,13 @@ class ReturnForm(forms.Form):
 
     def __init__(self, *args, user=None, quantity_product_choices=None, **kwargs):
         super().__init__(*args, **kwargs)
-        _apply_scoped_location(self.fields["location"], user)
+        _apply_scoped_room_location(self.fields["location"], user)
         self.fields["quantity_product"].queryset = (
             quantity_product_choices or Product.objects.none()
         )
+
+    def clean_location(self):
+        return _validate_room_or_below(self.cleaned_data["location"])
 
     def clean(self):
         cleaned = super().clean()
@@ -499,7 +546,10 @@ class RepairDamagedForm(forms.Form):
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
-        _apply_scoped_location(self.fields["location"], user)
+        _apply_scoped_room_location(self.fields["location"], user)
+
+    def clean_location(self):
+        return _validate_room_or_below(self.cleaned_data["location"])
 
 
 class AdminCorrectUnitForm(forms.Form):
@@ -523,9 +573,12 @@ class AdminCorrectUnitForm(forms.Form):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["to_location"].queryset = Location.objects.filter(is_active=True).order_by(
-            "level", "name"
-        )
+        self.fields["to_location"].queryset = Location.objects.filter(
+            is_active=True, level__in=ROOM_OR_BELOW_LEVELS
+        ).order_by("level", "name")
+
+    def clean_to_location(self):
+        return _validate_room_or_below(self.cleaned_data["to_location"])
 
     def clean_arrival_date(self):
         value = self.cleaned_data["arrival_date"]
@@ -607,7 +660,10 @@ class ReceiveBulkBatchForm(forms.Form):
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
-        _apply_scoped_location(self.fields["default_location"], user)
+        _apply_scoped_room_location(self.fields["default_location"], user)
+
+    def clean_default_location(self):
+        return _validate_room_or_below(self.cleaned_data["default_location"])
 
     def clean_occurred_at(self):
         value = self.cleaned_data["occurred_at"]
@@ -677,7 +733,10 @@ class ReceiveBulkLineForm(forms.Form):
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
-        _apply_scoped_location(self.fields["location"], user)
+        _apply_scoped_room_location(self.fields["location"], user)
+
+    def clean_location(self):
+        return _validate_room_or_below(self.cleaned_data["location"])
 
     def clean_arrival_date_override(self):
         value = self.cleaned_data["arrival_date_override"]

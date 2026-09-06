@@ -7,6 +7,8 @@ app_name = "locations"
 urlpatterns = [
     path("", views.LocationListView.as_view(), name="list"),
     path("new/", views.LocationCreateView.as_view(), name="create"),
+    path("rooms-for-country/", views.RoomOptionsForCountryView.as_view(), name="rooms_for_country"),
+    path("shelves-for-room/", views.ShelfOptionsForRoomView.as_view(), name="shelves_for_room"),
     path("<uuid:pk>/", views.LocationDetailView.as_view(), name="detail"),
     path("<uuid:pk>/edit/", views.LocationEditView.as_view(), name="edit"),
     path(

@@ -13,7 +13,15 @@ from django.template import Context, Template, engines
 from django.template.loader import render_to_string
 from weasyprint import HTML
 
-from .models import REPORT_COLUMNS, FontChoice, PageMargin, _default_layout_config
+from .models import (
+    LAYOUT_CONFIG_DEFAULTS,
+    REPORT_COLUMNS,
+    FontChoice,
+    PageMargin,
+    SectionSpacing,
+    TemplateStatus,
+    _default_layout_config,
+)
 
 CURRENT_TEMPLATE_VERSION = "form_v1"
 STYLEABLE_TEMPLATE_NAME = "documents/pdf/styleable_base.html"
@@ -32,6 +40,15 @@ _PAGE_MARGINS_CM = {
     PageMargin.NORMAL: "2",
     PageMargin.SPACIOUS: "2.5",
 }
+
+_SECTION_SPACING_EM = {
+    SectionSpacing.COMPACT: "0.5em",
+    SectionSpacing.NORMAL: "1em",
+    SectionSpacing.SPACIOUS: "2em",
+}
+
+_DEFAULT_HEADING_COLOR = "#444444"
+_DEFAULT_TABLE_HEADER_BG = "#eeeeee"
 
 _LOGO_SIGNATURES = (
     (b"\x89PNG\r\n\x1a\n", "image/png"),
@@ -208,9 +225,16 @@ def build_logo_data_uri(document_template):
 
 
 def active_template_for(document_type):
+    """The template actually used for a *real* generated document — a Draft
+    is never picked up here, only Published (preview ignores persisted
+    state entirely and reads straight from the in-progress form, so it
+    already shows a Draft's changes without needing this function to).
+    """
     from .models import DocumentTemplate
 
-    return DocumentTemplate.objects.filter(document_type=document_type).first()
+    return DocumentTemplate.objects.filter(
+        document_type=document_type, is_active=True, status=TemplateStatus.PUBLISHED
+    ).first()
 
 
 def render_pdf_from_source(html_source, context):
@@ -226,33 +250,74 @@ def render_pdf_from_source(html_source, context):
     return HTML(string=html_string).write_pdf()
 
 
-def visible_report_columns(hidden_columns):
-    """[(key, label), ...] from REPORT_COLUMNS with any key named in
-    `hidden_columns` removed — unrecognized keys are silently ignored
-    (never an arbitrary computed column; see REPORT_COLUMNS's docstring).
+def sanitize_css_content_text(value):
+    """Strips characters that could break out of the CSS `content: "..."`
+    string header_text/footer_text are interpolated into (styleable_base.html's
+    @page rule). Django's HTML autoescaping happens to neutralize a literal
+    double-quote (-> &quot;, inert inside a CSS string) but leaves a backslash
+    or an embedded newline untouched, either of which can produce broken or
+    surprising CSS — never a script-execution risk, but real enough to close
+    outright rather than rely on incidental escaping. Applied primarily at
+    the form layer (apps.documents.forms) and again here, defensively, for
+    any other caller of layout_context()/render_styleable_source().
+    """
+    if not value:
+        return value
+    return value.replace("\\", "").replace('"', "").replace("\n", " ").replace("\r", " ")
+
+
+def visible_report_columns(hidden_columns, column_order=None, column_labels=None):
+    """[(key, label), ...] from REPORT_COLUMNS, filtered/reordered/relabeled
+    by an Administrator's layout_config — unrecognized keys are always
+    silently ignored (never an arbitrary computed column; see
+    REPORT_COLUMNS's docstring). `column_order` only ever reorders; it can't
+    introduce a column hidden_columns removed. `column_labels` only ever
+    renames a key that's already in REPORT_COLUMNS.
     """
     hidden = set(hidden_columns or [])
-    return [(key, label) for key, label in REPORT_COLUMNS if key not in hidden]
+    columns = [(key, label) for key, label in REPORT_COLUMNS if key not in hidden]
+    if column_order:
+        valid_keys = {key for key, _ in REPORT_COLUMNS}
+        order_index = {key: i for i, key in enumerate(column_order) if key in valid_keys}
+        columns.sort(key=lambda pair: order_index.get(pair[0], len(order_index)))
+    if column_labels:
+        columns = [(key, column_labels.get(key) or label) for key, label in columns]
+    return columns
 
 
 def layout_context(template_obj):
-    """The DocumentTemplate.layout_config fields a rendered PDF needs in its
-    context, always present with sane defaults — form_v1.html (used when no
-    DocumentTemplate row exists at all) simply never references most of
-    these, so merging them in unconditionally is harmless there too.
+    """The per-generation context a rendered PDF needs beyond the
+    transaction data itself — DocumentTemplate.layout_config (spacing,
+    header/footer, notes, page numbers, column layout) plus the template's
+    own plain style/branding fields (section spacing, heading/table-header
+    colors, document title, company info), always present with sane
+    defaults so form_v1.html (used when no DocumentTemplate row exists at
+    all) can reference any of these harmlessly even with template_obj=None.
     """
     config = {**_default_layout_config(), **(template_obj.layout_config if template_obj else {})}
-    return {
-        "page_size": config.get("page_size", "A4"),
-        "orientation": config.get("orientation", "portrait"),
-        "header_text": config.get("header_text", ""),
-        "footer_text": config.get("footer_text", ""),
-        "show_page_numbers": config.get("show_page_numbers", False),
-        "show_signature_block": config.get("show_signature_block", True),
-        "notes_text": config.get("notes_text", ""),
-        "terms_text": config.get("terms_text", ""),
-        "report_columns": visible_report_columns(config.get("hidden_columns")),
-    }
+    context = {key: config.get(key, default) for key, default in LAYOUT_CONFIG_DEFAULTS.items()}
+    context["header_text"] = sanitize_css_content_text(context["header_text"])
+    context["footer_text"] = sanitize_css_content_text(context["footer_text"])
+    context["report_columns"] = visible_report_columns(
+        context.pop("hidden_columns"), context.pop("column_order"), context.pop("column_labels")
+    )
+
+    accent_color = template_obj.accent_color if template_obj else _DEFAULT_HEADING_COLOR
+    heading_color = (template_obj.heading_text_color if template_obj else "") or accent_color
+    table_header_bg = (
+        template_obj.table_header_bg_color if template_obj else ""
+    ) or _DEFAULT_TABLE_HEADER_BG
+    section_spacing = template_obj.section_spacing if template_obj else SectionSpacing.NORMAL
+    context.update(
+        heading_text_color=heading_color,
+        table_header_bg_color=table_header_bg,
+        section_spacing_em=_SECTION_SPACING_EM.get(section_spacing, "1em"),
+        document_title=template_obj.document_title if template_obj else "",
+        company_name=template_obj.company_name if template_obj else "",
+        company_address=template_obj.company_address if template_obj else "",
+        company_tax_id=template_obj.company_tax_id if template_obj else "",
+    )
+    return context
 
 
 def render_pdf(context, *, document_type, template_obj=None):

@@ -66,6 +66,17 @@ def reserve_stock(
         if entry["quantity"] <= 0:
             raise ValidationError("Reservation quantity must be positive.")
 
+    # Stable (product, location, stock_purpose) lock order — see
+    # apps.inventory.services.assignments._issue_stock's identical comment.
+    quantity_lines = sorted(
+        quantity_lines,
+        key=lambda e: (
+            str(e["product"].pk),
+            str(e["location"].pk),
+            e.get("stock_purpose") or StockPurpose.INTERNAL,
+        ),
+    )
+
     txn = create_transaction_header(
         movement_type=MovementType.RESERVATION,
         performed_by=user,
@@ -144,7 +155,7 @@ def release_reservation(*, user, occurred_at, unit_asset_ids=None, reservations=
         raise ValidationError("One or more selected assets could not be found.")
 
     for asset in assets:
-        require_location_access(user, asset.current_location)
+        require_asset_access(user, asset)
         validate_unit_transition(asset.status, UnitStatus.IN_STOCK)
 
     for reservation in reservations:

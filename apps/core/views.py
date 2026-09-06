@@ -79,9 +79,8 @@ def _search_results(user, query, limit):
     from django.db.models import Q
 
     from apps.catalog.models import Product
-    from apps.inventory.access import scope_transaction_queryset
+    from apps.inventory.access import scope_asset_queryset, scope_transaction_queryset
     from apps.inventory.models import InventoryTransaction, UnitAsset
-    from apps.locations.scoping import scope_queryset
 
     if not query:
         return {"products": [], "assets": [], "transactions": []}
@@ -120,10 +119,9 @@ def _search_results(user, query, limit):
         .order_by("-similarity", "brand__name", "model")[:limit]
     )
     assets = list(
-        scope_queryset(
+        scope_asset_queryset(
             user,
             UnitAsset.objects.select_related("product", "product__brand", "current_location"),
-            location_field="current_location",
         )
         .filter(
             Q(normalized_serial__trigram_similar=query.upper())

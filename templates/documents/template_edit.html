@@ -6,6 +6,17 @@
   <p><a href="{% url 'documents:template_hub' %}">&larr; All document templates</a></p>
   <div class="page-header">
     <h1>{{ document_type_label }} document template</h1>
+    <div class="page-header__actions">
+      {% if template_obj %}
+        {% if template_obj.status == "published" %}
+          <span class="badge badge--success">Published</span>
+        {% else %}
+          <span class="badge badge--warning">Draft — not yet used for real documents</span>
+        {% endif %}
+      {% else %}
+        <span class="badge badge--neutral">Packaged default (no override saved yet)</span>
+      {% endif %}
+    </div>
   </div>
 
   {% if form.non_field_errors %}
@@ -51,6 +62,40 @@
             <label for="{{ form.page_margin.id_for_label }}">{{ form.page_margin.label }}</label>
             {{ form.page_margin }}
           </p>
+          <p>
+            <label for="{{ form.section_spacing.id_for_label }}">{{ form.section_spacing.label }}</label>
+            {{ form.section_spacing }}
+          </p>
+          <p>
+            <label for="{{ form.heading_text_color.id_for_label }}">{{ form.heading_text_color.label }}</label>
+            {{ form.heading_text_color }}
+            {% if form.heading_text_color.errors %}<div class="messages__item messages__item--error">{{ form.heading_text_color.errors }}</div>{% endif %}
+          </p>
+          <p>
+            <label for="{{ form.table_header_bg_color.id_for_label }}">{{ form.table_header_bg_color.label }}</label>
+            {{ form.table_header_bg_color }}
+            {% if form.table_header_bg_color.errors %}<div class="messages__item messages__item--error">{{ form.table_header_bg_color.errors }}</div>{% endif %}
+          </p>
+        </div>
+
+        <div class="card">
+          <h2>Company &amp; title</h2>
+          <p>
+            <label for="{{ form.document_title.id_for_label }}">{{ form.document_title.label }}</label>
+            {{ form.document_title }}
+          </p>
+          <p>
+            <label for="{{ form.company_name.id_for_label }}">{{ form.company_name.label }}</label>
+            {{ form.company_name }}
+          </p>
+          <p>
+            <label for="{{ form.company_address.id_for_label }}">{{ form.company_address.label }}</label>
+            {{ form.company_address }}
+          </p>
+          <p>
+            <label for="{{ form.company_tax_id.id_for_label }}">{{ form.company_tax_id.label }}</label>
+            {{ form.company_tax_id }}
+          </p>
         </div>
 
         <div class="card">
@@ -89,6 +134,18 @@
             <legend>{{ form.hidden_columns.label }}</legend>
             {{ form.hidden_columns }}
           </fieldset>
+          <p>
+            <label for="{{ form.column_order.id_for_label }}">{{ form.column_order.label }}</label>
+            {{ form.column_order }}
+            <span class="help-text">{{ form.column_order.help_text }}</span>
+            {% if form.column_order.errors %}<div class="messages__item messages__item--error">{{ form.column_order.errors }}</div>{% endif %}
+          </p>
+          <p>
+            <label for="{{ form.column_labels.id_for_label }}">{{ form.column_labels.label }}</label>
+            {{ form.column_labels }}
+            <span class="help-text">{{ form.column_labels.help_text }}</span>
+            {% if form.column_labels.errors %}<div class="messages__item messages__item--error">{{ form.column_labels.errors }}</div>{% endif %}
+          </p>
         </div>
 
         <div class="form-actions">
@@ -97,11 +154,62 @@
       </form>
 
       {% if template_obj %}
-        <form method="post" action="{% url 'documents:template_reset' document_type %}"
-              data-confirm="Reset to the packaged default? Your customizations will be lost.">
-          {% csrf_token %}
-          <button type="submit" class="btn btn--danger btn--sm">Reset to packaged default</button>
-        </form>
+        <div class="form-actions">
+          {% if template_obj.status != "published" %}
+            <form method="post" action="{% url 'documents:template_publish' document_type %}">
+              {% csrf_token %}
+              <button type="submit" class="btn btn--primary btn--sm">Publish this draft</button>
+            </form>
+          {% endif %}
+          <form method="post" action="{% url 'documents:template_reset' document_type %}"
+                data-confirm="Reset to the packaged default? The current configuration is deactivated, not deleted — existing generated documents keep referencing it.">
+            {% csrf_token %}
+            <button type="submit" class="btn btn--danger btn--sm">Reset to packaged default</button>
+          </form>
+        </div>
+
+        <div class="card">
+          <h2>Duplicate into another document type</h2>
+          <p class="text-muted">Start a different document type's template from this one's configuration — only offered when that type has no template of its own yet.</p>
+          <form method="post" action="{% url 'documents:template_duplicate' document_type %}">
+            {% csrf_token %}
+            <select name="target_document_type">
+              {% for value, label in other_document_types %}
+                <option value="{{ value }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+            <button type="submit" class="btn btn--sm">Duplicate</button>
+          </form>
+        </div>
+
+        {% if versions %}
+          <div class="card">
+            <h2>Version history</h2>
+            <table>
+              <thead><tr><th>Version</th><th>Saved</th><th>By</th><th></th></tr></thead>
+              <tbody>
+                {% for v in versions %}
+                  <tr>
+                    <td>v{{ v.version }}</td>
+                    <td>{{ v.created_at }}</td>
+                    <td>{{ v.saved_by|default:"—" }}</td>
+                    <td>
+                      {% if v.version != template_obj.version %}
+                        <form method="post" action="{% url 'documents:template_restore_version' document_type v.pk %}"
+                              data-confirm="Restore v{{ v.version }}? This saves its configuration as a new version — it does not delete anything in between.">
+                          {% csrf_token %}
+                          <button type="submit" class="btn btn--sm">Restore</button>
+                        </form>
+                      {% else %}
+                        <span class="text-muted">Current</span>
+                      {% endif %}
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% endif %}
       {% endif %}
     </div>
 
@@ -136,11 +244,20 @@
           <li><strong>Header / footer text</strong> — a short line repeated on every page.</li>
           <li><strong>Standing notes / terms</strong> — fixed text shown on every document, separate from that
             delivery's own notes.</li>
-          <li><strong>Hidden columns</strong> — remove line-item columns you never need (e.g. SKU).</li>
+          <li><strong>Hidden columns / order / labels</strong> — remove, reorder, or rename line-item columns.</li>
+          <li><strong>Section spacing</strong> — compact, normal, or spacious gaps between sections.</li>
+          <li><strong>Heading / table header colors</strong> — independent of the accent color if you want them
+            different.</li>
+          <li><strong>Document title</strong> — overrides the default heading (e.g. "Customer delivery").</li>
+          <li><strong>Company name / address / tax ID</strong> — shown above the logo when set.</li>
         </ul>
-        <p>Save validates the result by rendering a real sample PDF first — a problem would be reported here, never
-          discovered the next time someone prints a real document. Use the live preview as often as you like before
-          saving.</p>
+        <p>Save validates the result by rendering two sample PDFs first — a normal one and a heavier one with many
+          line items — so a problem is reported here, never discovered the next time someone prints a real
+          document. Use the live preview as often as you like before saving.</p>
+        <p>A brand-new template saves as <strong>Draft</strong>: it's fully previewable, but real "Generate Document"
+          clicks keep using the packaged default (or the previously Published template) until you click
+          <strong>Publish this draft</strong>. Every save keeps its full version history below, with one-click
+          restore.</p>
       </aside>
     </div>
   </div>

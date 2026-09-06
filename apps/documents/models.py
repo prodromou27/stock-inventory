@@ -2,6 +2,7 @@ import os
 
 from django.conf import settings
 from django.db import models
+from django.db.models import Q
 from django.urls import reverse
 
 from apps.core.models import (
@@ -62,12 +63,24 @@ class PageOrientation(models.TextChoices):
     LANDSCAPE = "landscape", "Landscape"
 
 
+class SectionSpacing(models.TextChoices):
+    COMPACT = "compact", "Compact"
+    NORMAL = "normal", "Normal"
+    SPACIOUS = "spacious", "Spacious"
+
+
+class TemplateStatus(models.TextChoices):
+    DRAFT = "draft", "Draft"
+    PUBLISHED = "published", "Published"
+
+
 # The fixed line-item column set every packaged/styleable PDF skeleton
 # renders (apps.documents.pdf.build_document_context()'s "lines" shape) —
-# DocumentTemplate.layout_config's "hidden_columns" may only ever name one
-# of these keys (apps.documents.forms.LayoutConfigForm), never an arbitrary
-# computed column: rendering stays bounded and safe by construction, the
-# same trust model doc 06 already established for html_source itself.
+# DocumentTemplate.layout_config's "hidden_columns"/"column_order"/
+# "column_labels" may only ever name one of these keys (apps.documents.
+# template_services._clean_layout_config), never an arbitrary computed
+# column: rendering stays bounded and safe by construction, the same trust
+# model doc 06 already established for html_source itself.
 REPORT_COLUMNS = [
     ("brand", "Brand"),
     ("model", "Model"),
@@ -79,19 +92,30 @@ REPORT_COLUMNS = [
     ("accessories", "Accessories"),
 ]
 
+# Single source of truth for every DocumentTemplate.layout_config key and its
+# default — apps.documents.pdf.layout_context(), apps.documents.
+# template_services.render_preview_pdf(), and apps.documents.forms.
+# DocumentTemplateStyleForm.layout_config() all iterate this instead of each
+# hand-listing the same keys (previously duplicated across all three plus
+# this module — a maintainability gap flagged during this review: adding a
+# key meant remembering to touch four separate places).
+LAYOUT_CONFIG_DEFAULTS = {
+    "page_size": PageSize.A4,
+    "orientation": PageOrientation.PORTRAIT,
+    "header_text": "",
+    "footer_text": "",
+    "show_page_numbers": False,
+    "show_signature_block": True,
+    "notes_text": "",
+    "terms_text": "",
+    "hidden_columns": [],
+    "column_order": [],
+    "column_labels": {},
+}
+
 
 def _default_layout_config():
-    return {
-        "page_size": PageSize.A4,
-        "orientation": PageOrientation.PORTRAIT,
-        "header_text": "",
-        "footer_text": "",
-        "show_page_numbers": False,
-        "show_signature_block": True,
-        "notes_text": "",
-        "terms_text": "",
-        "hidden_columns": [],
-    }
+    return dict(LAYOUT_CONFIG_DEFAULTS)
 
 
 class GeneratedDocument(UUIDPrimaryKeyModel, AppendOnlyModel):
@@ -192,11 +216,25 @@ class DocumentTemplate(UUIDPrimaryKeyModel, TimestampedModel):
 
     Not append-only: unlike GeneratedDocument (an immutable snapshot of what
     was actually printed), this is live configuration that's explicitly
-    meant to be edited and reset, not a historical record.
+    meant to be edited. It's also never hard-deleted, though: `is_active`
+    is the "soft delete" apps.documents.template_services.reset_template()
+    uses instead of DocumentTemplate.delete() — a deactivated row is hidden
+    from every UI list and from active_template_for()'s real-generation
+    lookup, but keeps existing GeneratedDocument.template FK references
+    resolvable forever (spec: "templates referenced by history may be
+    deactivated but not deleted").
+
+    `status` (Draft/Published) is the second, independent gate:
+    apps.documents.pdf.active_template_for() (real PDF generation) only ever
+    considers a Published row, while apps.documents.template_services.
+    get_template() (the editor's "what am I currently working on" lookup)
+    returns the active row regardless of status — so a brand-new or
+    in-progress edit never goes live until an Administrator explicitly
+    publishes it, but can still be freely previewed.
 
     `html_source` is never typed by an Administrator directly — the editor
-    (apps.documents.views.DocumentTemplateEditView) only exposes the four
-    fields below (logo/logo_position/accent_color/font_choice/page_margin);
+    (apps.documents.views.DocumentTemplateEditView) only exposes structured
+    fields (logo/logo_position/accent_color/font_choice/page_margin/...);
     apps.documents.pdf.render_styleable_source() composes html_source from
     those against the packaged styleable_base.html skeleton, so the actual
     data fields (document_number, lines, signatures, ...) stay exactly
@@ -205,7 +243,15 @@ class DocumentTemplate(UUIDPrimaryKeyModel, TimestampedModel):
     about PDF rendering or GeneratedDocument snapshotting changes.
     """
 
-    document_type = models.CharField(max_length=20, choices=DocumentType.choices, unique=True)
+    document_type = models.CharField(max_length=20, choices=DocumentType.choices)
+    is_active = models.BooleanField(
+        default=True,
+        help_text="False once reset/replaced — hidden everywhere but still resolvable by any "
+        "GeneratedDocument that already references it.",
+    )
+    status = models.CharField(
+        max_length=10, choices=TemplateStatus.choices, default=TemplateStatus.DRAFT
+    )
     html_source = models.TextField()
     logo = models.FileField(upload_to=_template_logo_upload_path, null=True, blank=True)
     logo_position = models.CharField(
@@ -218,16 +264,87 @@ class DocumentTemplate(UUIDPrimaryKeyModel, TimestampedModel):
     page_margin = models.CharField(
         max_length=10, choices=PageMargin.choices, default=PageMargin.NORMAL
     )
+    section_spacing = models.CharField(
+        max_length=10, choices=SectionSpacing.choices, default=SectionSpacing.NORMAL
+    )
+    heading_text_color = models.CharField(
+        max_length=7,
+        blank=True,
+        help_text="#rrggbb, or blank to reuse the accent color (matches today's behavior).",
+    )
+    table_header_bg_color = models.CharField(
+        max_length=7,
+        blank=True,
+        help_text="#rrggbb, or blank to keep the packaged default light-grey header row.",
+    )
+    document_title = models.CharField(
+        max_length=120,
+        blank=True,
+        help_text="Overrides the auto-derived movement-type heading (e.g. 'Customer delivery') "
+        "when set. Plain text — escaped like any other template variable, never HTML.",
+    )
+    company_name = models.CharField(max_length=200, blank=True)
+    company_address = models.TextField(blank=True)
+    company_tax_id = models.CharField(max_length=60, blank=True)
     layout_config = models.JSONField(default=_default_layout_config)
     version = models.PositiveIntegerField(
         default=1,
         help_text="Bumped on every save (apps.documents.template_services.update_template) — "
-        "the value snapshotted onto GeneratedDocument.template_version at generation time, so a "
-        "historical document can always name exactly which configuration produced it.",
+        "the value snapshotted onto GeneratedDocument.template_version at generation time, and "
+        "matching the DocumentTemplateVersion row created alongside it, so a historical document "
+        "can always name exactly which configuration produced it.",
     )
     updated_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+"
     )
 
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["document_type"],
+                condition=Q(is_active=True),
+                name="one_active_template_per_type",
+            )
+        ]
+
     def __str__(self):
         return f"{self.get_document_type_display()} template"
+
+
+class DocumentTemplateVersion(UUIDPrimaryKeyModel, AppendOnlyModel):
+    """One immutable snapshot per DocumentTemplate save — "restore" (apps.
+    documents.template_services.restore_template_version()) copies an old
+    snapshot's fields into a *new* save on the live row, never edits history,
+    matching this app's ledger-style append-only pattern elsewhere
+    (GeneratedDocument, AuditEvent, InventoryTransactionLine).
+
+    Deliberately doesn't snapshot the logo file itself (just whether one was
+    set) — restoring an old version restores text/style/layout fields, but
+    never silently reintroduces a since-removed branding asset from binary
+    storage; an Administrator re-uploads a logo explicitly if they want one
+    back, the same as any other edit.
+    """
+
+    template = models.ForeignKey(
+        DocumentTemplate, on_delete=models.CASCADE, related_name="versions"
+    )
+    version = models.PositiveIntegerField()
+    field_snapshot = models.JSONField(
+        help_text="html_source, style fields, document_title/company fields, and layout_config "
+        "at the moment this version was saved — enough to fully restore the configuration."
+    )
+    saved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = AppendOnlyQuerySet.as_manager()
+
+    class Meta:
+        ordering = ["-version"]
+        constraints = [
+            models.UniqueConstraint(fields=["template", "version"], name="unique_template_version")
+        ]
+
+    def __str__(self):
+        return f"{self.template} v{self.version}"

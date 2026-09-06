@@ -8,10 +8,10 @@ DataQualityFinding upsert. None of these ever mutate anything; detection is
 strictly read-only, matching the "must NOT create notifications or
 auto-change stock/history" requirement.
 
-3 of the 12 port directly from apps.reporting.queries.data_quality_summary()
+3 of the 13 port directly from apps.reporting.queries.data_quality_summary()
 (the Dashboard's existing "Data quality" panel, left completely unmodified
 — dashboard changes are out of scope for this feature): duplicate serials,
-missing location, missing custodian. The other 9 are new.
+missing location, missing custodian. The other 10 are new.
 """
 
 from django.db.models import OuterRef, Subquery
@@ -26,7 +26,7 @@ from apps.inventory.models import (
     UnitAsset,
     UnitStatus,
 )
-from apps.locations.models import Location
+from apps.locations.models import Location, LocationLevel
 
 from .models import DataQualityIssueType, DataQualitySeverity
 
@@ -370,6 +370,56 @@ def check_orphaned_transaction_reference(breadcrumbs):
             }
 
 
+_LEVELS_ABOVE_ROOM = (LocationLevel.COUNTRY, LocationLevel.SITE, LocationLevel.FLOOR)
+
+
+def check_country_only_location(breadcrumbs):
+    """Flags stock recorded at a Country/Site/Floor — a Country is an
+    authorization boundary, never a valid final stock location (spec: "do
+    not guess locations"). Only ever finds pre-existing/legacy or imported
+    data now: every write path (Add Stock, Transfer, Return, Repair, Admin
+    Correction, import execution) enforces apps.locations.scoping.
+    require_room_or_below() going forward, so this check exists purely to
+    surface what's already wrong, never to guess or auto-move it — the
+    correction is an ordinary Transfer (StockBalance) or Admin Correction/
+    Transfer (UnitAsset) into a real Storage Room, both already audited.
+    """
+    assets = UnitAsset.objects.select_related(
+        "product", "product__brand", "current_location"
+    ).filter(current_location__level__in=_LEVELS_ABOVE_ROOM)
+    for asset in assets:
+        country, location_label = _location_context(breadcrumbs, asset.current_location)
+        yield {
+            "issue_type": DataQualityIssueType.COUNTRY_ONLY_LOCATION,
+            "severity": DataQualitySeverity.HIGH,
+            "object_type": "UnitAsset",
+            "object_id": str(asset.pk),
+            "country": country,
+            "location_label": location_label,
+            "explanation": f"Recorded at {asset.current_location} "
+            f"({asset.current_location.get_level_display()}), not a Storage Room.",
+            "recommended_correction": "Transfer this asset into a specific Storage Room (or "
+            "correct it via an Administrator correction).",
+        }
+
+    balances = StockBalance.objects.select_related("product", "product__brand", "location").filter(
+        location__level__in=_LEVELS_ABOVE_ROOM, on_hand_quantity__gt=0
+    )
+    for balance in balances:
+        country, location_label = _location_context(breadcrumbs, balance.location)
+        yield {
+            "issue_type": DataQualityIssueType.COUNTRY_ONLY_LOCATION,
+            "severity": DataQualitySeverity.HIGH,
+            "object_type": "StockBalance",
+            "object_id": str(balance.pk),
+            "country": country,
+            "location_label": location_label,
+            "explanation": f"{balance.on_hand_quantity} on hand at {balance.location} "
+            f"({balance.location.get_level_display()}), not a Storage Room.",
+            "recommended_correction": "Transfer this balance into a specific Storage Room.",
+        }
+
+
 # Order matters only for a predictable scan order in logs/tests, not for
 # correctness — each check is independent and dedup_key-keyed.
 ALL_CHECKS = [
@@ -385,4 +435,5 @@ ALL_CHECKS = [
     check_missing_procurement_info,
     check_duplicate_product,
     check_orphaned_transaction_reference,
+    check_country_only_location,
 ]

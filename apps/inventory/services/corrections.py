@@ -4,6 +4,7 @@ from django.db import transaction
 from apps.audit.models import AuditEvent
 from apps.audit.services import record_event
 from apps.core.authorization import ADMINISTRATOR, require_role
+from apps.locations.scoping import require_room_or_below
 
 from ..models import (
     InventoryTransaction,
@@ -43,6 +44,11 @@ def correct_unit_status(
     require_role(user, ADMINISTRATOR)
     if not reason:
         raise ValidationError("A reason is required for an administrator correction.")
+    # Only the location a write actually assigns is validated — an existing
+    # legacy country-only location left untouched by this correction is a
+    # data-quality finding to fix via its own transfer/correction, not
+    # something this call silently re-validates or blocks on.
+    require_room_or_below(to_location)
 
     asset = UnitAsset.objects.select_for_update().get(pk=unit_asset.pk)
     from_status = asset.status

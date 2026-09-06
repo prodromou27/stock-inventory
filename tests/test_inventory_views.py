@@ -785,6 +785,7 @@ class TestTransactionDetailView:
         txn = assign_to_employee(
             user=administrator,
             employee_name="Nadia",
+            recipient_reference="EMP-042",
             occurred_at=date.today(),
             unit_asset_ids=[asset.pk],
         )
@@ -793,6 +794,10 @@ class TestTransactionDetailView:
         response = client.get(reverse("inventory:transaction_detail", kwargs={"pk": txn.pk}))
         assert response.context["can_generate_document"] is True
         assert response.context["can_return"] is True
+        # Regression: an assignment's recipient used to be invisible here —
+        # captured on the transaction but never rendered.
+        assert b"Nadia" in response.content
+        assert b"EMP-042" in response.content
 
 
 @pytest.mark.django_db
