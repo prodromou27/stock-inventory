@@ -65,6 +65,21 @@ class DocumentTemplateStyleForm(forms.Form):
     logo_intentionally_omitted = forms.BooleanField(
         required=False, label="This template doesn't need a logo"
     )
+    custom_html_enabled = forms.BooleanField(
+        required=False,
+        label="Edit the raw HTML/CSS source instead of the structured layout below",
+        help_text="Full control over layout beyond the structured fields' fixed options. The "
+        "structured fields below still populate the data placeholders available to your HTML "
+        "(document title, company details, colors, ...) but no longer auto-generate the markup "
+        "itself.",
+    )
+    custom_html_source = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 24, "class": "code-editor", "spellcheck": "false"}),
+        label="Template HTML/CSS source",
+        help_text="Django template syntax. External resources (images, fonts, stylesheets) "
+        "can't be fetched from a URL — embed a logo via the Logo field above, not an <img src>.",
+    )
     logo_position = forms.ChoiceField(
         choices=LogoPosition.choices, label="Logo position", initial=LogoPosition.LEFT
     )
@@ -168,6 +183,14 @@ class DocumentTemplateStyleForm(forms.Form):
         help_text="Required (alongside the rest of the completeness checklist) before this "
         "template can be published — resets on every save, so re-check after each change.",
     )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if cleaned_data.get("custom_html_enabled") and not cleaned_data.get("custom_html_source"):
+            self.add_error(
+                "custom_html_source", "Enter the template HTML/CSS, or turn off custom HTML."
+            )
+        return cleaned_data
 
     def clean_section_order(self):
         return [key.strip() for key in self.cleaned_data["section_order"].split(",") if key.strip()]

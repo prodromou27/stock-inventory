@@ -40,6 +40,7 @@ _STYLE_FIELDS = (
     "company_address",
     "company_tax_id",
     "logo_intentionally_omitted",
+    "custom_html_enabled",
 )
 
 
@@ -198,17 +199,21 @@ def update_template(
     company_address=None,
     company_tax_id=None,
     logo_intentionally_omitted=None,
+    custom_html_enabled=None,
     preview_confirmed=False,
     layout_config=None,
 ):
-    """`html_source` is always the final, already-composed template — the
+    """`html_source` is the final template source — by default the
     structured editor (apps.documents.views.DocumentTemplateEditView) builds
-    it via apps.documents.pdf.render_styleable_source() before calling this.
-    Every style/branding kwarg is optional and purely so the editor can show
-    the Administrator's previous choices back on the next GET — omitting
-    them (older/direct callers, e.g. this module's own tests) leaves those
-    fields at their model defaults or whatever was already saved, without
-    affecting html_source itself.
+    it via apps.documents.pdf.render_styleable_source() before calling this;
+    when `custom_html_enabled=True` it's instead an Administrator's own
+    hand-typed HTML/CSS, passed through unchanged (see DocumentTemplate's
+    docstring for what stays safe either way). Every style/branding kwarg is
+    optional and purely so the editor can show the Administrator's previous
+    choices back on the next GET — omitting them (older/direct callers,
+    e.g. this module's own tests) leaves those fields at their model
+    defaults or whatever was already saved, without affecting html_source
+    itself.
 
     A brand-new template (no existing active row for this document_type) is
     always created as Draft — see publish_template() for what makes it live.
@@ -262,6 +267,8 @@ def update_template(
         template_obj.company_tax_id = company_tax_id
     if logo_intentionally_omitted is not None:
         template_obj.logo_intentionally_omitted = logo_intentionally_omitted
+    if custom_html_enabled is not None:
+        template_obj.custom_html_enabled = custom_html_enabled
     if logo is not None:
         template_obj.logo = logo
     elif remove_logo and template_obj.logo:

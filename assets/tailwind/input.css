@@ -1890,6 +1890,16 @@
   .template-editor__advanced[open] > summary { border-bottom: 1px solid var(--color-border); }
   .template-editor__advanced[open] > summary::after { content: "−"; }
   .template-editor__advanced-content { padding: 1.1rem 1.25rem; }
+  .code-editor {
+    font-family: "Liberation Mono", "Courier New", monospace;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    tab-size: 2;
+    min-height: 22rem;
+    white-space: pre;
+    overflow-wrap: normal;
+    overflow-x: auto;
+  }
   .layout-arranger { list-style: none; padding: 0; }
   .layout-arranger li { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; padding: .65rem; margin: .35rem 0; border: 1px solid var(--color-border); border-radius: .4rem; }
   .layout-arranger li > span { flex: 1; min-width: 6rem; }

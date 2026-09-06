@@ -11,7 +11,7 @@ import base64
 
 from django.template import Context, Template, engines
 from django.template.loader import render_to_string
-from weasyprint import HTML
+from weasyprint import HTML, URLFetcher
 
 from .layout import SECTIONS, clean_presentation
 from .models import (
@@ -258,6 +258,20 @@ def active_template_for(document_type):
     ).first()
 
 
+# Rejects every URL except `data:` — WeasyPrint's default fetcher would
+# otherwise make the *server* fetch whatever URL appears in a template's
+# HTML/CSS (an <img src>, a CSS url(), an @font-face src), which becomes a
+# real SSRF vector once an Administrator can type raw HTML directly (see
+# DocumentTemplate.custom_html_enabled) rather than only choosing from the
+# structured editor's fixed style options. The app already never needs
+# this: a logo is always embedded as a data URI (build_logo_data_uri())
+# specifically so WeasyPrint never has to fetch it from anywhere. Applied to
+# every render, not just custom-HTML templates, as defense in depth. A
+# disallowed URL becomes a ValueError, which WeasyPrint catches per-resource
+# and simply omits (a missing image/font), never aborting the whole render.
+_DATA_URI_ONLY_FETCHER = URLFetcher(allowed_protocols=["data"])
+
+
 def render_pdf_from_source(html_source, context):
     """Renders arbitrary Django-template-syntax HTML (an Administrator's
     saved or in-progress override) against `context` and returns PDF bytes.
@@ -265,10 +279,12 @@ def render_pdf_from_source(html_source, context):
     template language has no arbitrary code execution (no function calls
     with arguments, no attribute access starting with "_"), and every value
     in `context` is always a plain string/number/list (build_document_context()),
-    never a live model instance with callable methods.
+    never a live model instance with callable methods. External resource
+    fetching is separately locked to data: URIs only — see
+    _DATA_URI_ONLY_FETCHER above.
     """
     html_string = Template(html_source).render(Context(context))
-    return HTML(string=html_string).write_pdf()
+    return HTML(string=html_string, url_fetcher=_DATA_URI_ONLY_FETCHER).write_pdf()
 
 
 def sanitize_css_content_text(value):
@@ -360,4 +376,4 @@ def render_pdf(context, *, document_type, template_obj=None, country=None):
     if template_obj is not None:
         return render_pdf_from_source(template_obj.html_source, context)
     html_string = render_to_string(f"documents/pdf/{CURRENT_TEMPLATE_VERSION}.html", context)
-    return HTML(string=html_string).write_pdf()
+    return HTML(string=html_string, url_fetcher=_DATA_URI_ONLY_FETCHER).write_pdf()

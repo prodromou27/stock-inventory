@@ -185,6 +185,19 @@
             {% include "_form_field.html" with field=form.signature_right_label %}
           </div>
         </details>
+        <details class="card template-editor__advanced" {% if form.custom_html_enabled.value %}open{% endif %}>
+          <summary>
+            <span>Raw HTML/CSS</span>
+            <span class="text-muted">Full layout control, beyond the structured options above</span>
+          </summary>
+          <div class="template-editor__advanced-content">
+            <p>
+              <label>{{ form.custom_html_enabled }} {{ form.custom_html_enabled.label }}</label>
+              <span class="helptext">{{ form.custom_html_enabled.help_text }}</span>
+            </p>
+            {% include "_form_field.html" with field=form.custom_html_source %}
+          </div>
+        </details>
         <p>
           <label>{{ form.preview_confirmed }} {{ form.preview_confirmed.label }}</label>
           <span class="helptext">{{ form.preview_confirmed.help_text }}</span>

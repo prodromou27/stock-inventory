@@ -41,7 +41,9 @@ def test_document_editor_browser(live_server, administrator, stock_manager, loca
             assert spacious_guide["width"] < normal_guide["width"]
             page.select_option('[name="page_margin"]', "normal")
             page.wait_for_timeout(1000)
-            advanced_layout = page.locator("details.template-editor__advanced")
+            advanced_layout = page.locator(
+                "details.template-editor__advanced", has_text="Advanced visual layout"
+            )
             expect(advanced_layout).not_to_have_attribute("open", "")
             expect(page.locator('[name="column_labels"]')).not_to_be_visible()
             advanced_layout.locator("summary").click()
@@ -205,5 +207,51 @@ def test_template_publish_and_restore_browser(live_server, administrator, second
         restore_button.click()
         page.wait_for_url(edit_url)
         assert page.locator('[name="document_title"]').input_value() == "QA v1 title"
+
+        browser.close()
+
+
+def test_custom_html_editing_drives_the_live_preview(live_server, administrator, location_tree):
+    """Toggling on raw HTML/CSS and typing a template actually changes what
+    the live preview iframe renders — catches a wiring mistake between the
+    checkbox/textarea and refreshPreview()'s form submission that a pure-
+    Python test of the view/service layer never would.
+    """
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch()
+        page = browser.new_page(viewport={"width": 1400, "height": 1000})
+        errors = []
+        page.on("pageerror", lambda exc: errors.append(str(exc)))
+        page.goto(live_server.url + reverse("login"))
+        page.locator('[name="username"]').fill(administrator.username)
+        page.locator('[name="password"]').fill("a-strong-test-password-123")
+        page.locator('button[type="submit"]').click()
+        page.wait_for_url(live_server.url + "/")
+        page.goto(live_server.url + reverse("documents:template_edit", args=["delivery"]))
+
+        details = page.locator("details.template-editor__advanced", has_text="Raw HTML/CSS")
+        details.locator("summary").click()
+        page.locator('[name="custom_html_enabled"]').check()
+        page.locator('[name="custom_html_source"]').fill(
+            '<html><body><h1 style="color:red">CUSTOM HTML WORKS '
+            "{{ document_number }}</h1></body></html>"
+        )
+        page.wait_for_timeout(1200)
+        frame = page.locator("#template-preview-frame").content_frame
+        assert "CUSTOM HTML WORKS" in frame.locator("h1").text_content()
+        assert errors == []
+
+        page.get_by_role("button", name="Save").click()
+        page.wait_for_url(live_server.url + reverse("documents:template_edit", args=["delivery"]))
+        # Reload to confirm the save round-tripped through the database, not
+        # just the in-progress form state — checked and prefilled from the
+        # persisted row (this ORM-free check runs before browser.close() so
+        # the assertion still uses the live rendered page, not a direct
+        # query, since a direct ORM call would fight Playwright's sync API
+        # for the current thread's asyncio event loop).
+        assert page.locator('[name="custom_html_enabled"]').is_checked()
+        assert "CUSTOM HTML WORKS" in page.locator('[name="custom_html_source"]').input_value()
 
         browser.close()

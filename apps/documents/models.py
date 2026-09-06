@@ -249,15 +249,34 @@ class DocumentTemplate(UUIDPrimaryKeyModel, TimestampedModel):
     changed content was never actually reviewed, so the pending submission
     is no longer valid and must be resubmitted.
 
-    `html_source` is never typed by an Administrator directly — the editor
-    (apps.documents.views.DocumentTemplateEditView) only exposes structured
-    fields (logo/logo_position/accent_color/font_choice/page_margin/...);
-    apps.documents.pdf.render_styleable_source() composes html_source from
-    those against the packaged styleable_base.html skeleton, so the actual
-    data fields (document_number, lines, signatures, ...) stay exactly
-    where the packaged template puts them — never hand-placed. html_source
-    itself remains the one thing pdf.py's render_pdf() reads, so nothing
-    about PDF rendering or GeneratedDocument snapshotting changes.
+    By default `html_source` is never typed by an Administrator directly —
+    the editor (apps.documents.views.DocumentTemplateEditView) exposes
+    structured fields (logo/logo_position/accent_color/font_choice/
+    page_margin/...); apps.documents.pdf.render_styleable_source() composes
+    html_source from those against the packaged styleable_base.html
+    skeleton, so the actual data fields (document_number, lines,
+    signatures, ...) stay exactly where the packaged template puts them —
+    never hand-placed.
+
+    `custom_html_enabled=True` switches that: the editor instead saves an
+    Administrator's own HTML/CSS (still Django template syntax) as
+    html_source verbatim, for full layout control beyond the structured
+    fields' fixed set of options. This is deliberately not a bigger trust
+    boundary than the rest of this model already crosses — Administrator is
+    already the most-trusted role in this system (spec's permission
+    matrix), and Django's template language still has no arbitrary code
+    execution (no function calls with arguments, no leading-underscore
+    attribute access) regardless of who authored the template text or how.
+    The one capability hand-typed HTML genuinely adds is referencing an
+    external resource (an `<img src="https://...">`, a CSS `url(...)`) —
+    apps.documents.pdf.render_pdf_from_source() closes that specifically by
+    restricting WeasyPrint's URL fetcher to `data:` URIs only, applied to
+    every render regardless of custom_html_enabled, so this never becomes
+    an SSRF vector against internal-only endpoints from the render host.
+    Every other guarantee (render-validated before saving, versioned,
+    gated behind the same completeness checklist and two-Administrator
+    publish workflow) is unchanged — html_source itself remains the one
+    thing pdf.py's render_pdf() reads either way.
     """
 
     document_type = models.CharField(max_length=20, choices=DocumentType.choices)
@@ -307,6 +326,12 @@ class DocumentTemplate(UUIDPrimaryKeyModel, TimestampedModel):
         default=False,
         help_text="Acknowledges this template has no logo on purpose — lets the completeness "
         "checklist pass without one, instead of treating a blank logo as an oversight forever.",
+    )
+    custom_html_enabled = models.BooleanField(
+        default=False,
+        help_text="When set, html_source is an Administrator's hand-typed HTML/CSS instead of "
+        "being auto-composed from the structured fields above (apps.documents.pdf."
+        "render_styleable_source()) — see this model's docstring for what stays safe either way.",
     )
     preview_confirmed = models.BooleanField(
         default=False,

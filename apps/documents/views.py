@@ -34,7 +34,10 @@ from .models import (
     DocumentRenderLog,
     DocumentTemplateVersion,
     DocumentType,
+    FontChoice,
     GeneratedDocument,
+    LogoPosition,
+    PageMargin,
 )
 from .pdf import render_pdf, render_styleable_source, sample_document_context
 from .services import delete_attachment, generate_document, regenerate_document, upload_attachment
@@ -259,6 +262,7 @@ _STYLE_KWARG_FIELDS = (
     "company_address",
     "company_tax_id",
     "logo_intentionally_omitted",
+    "custom_html_enabled",
 )
 
 
@@ -295,16 +299,20 @@ class DocumentTemplateEditView(LoginRequiredMixin, RoleRequiredMixin, View):
             return self._render(request, document_type, form, template_obj)
 
         data = form.cleaned_data
+        if data["custom_html_enabled"]:
+            html_source = data["custom_html_source"]
+        else:
+            html_source = render_styleable_source(
+                logo_position=data["logo_position"],
+                accent_color=data["accent_color"],
+                font_choice=data["font_choice"],
+                page_margin=data["page_margin"],
+            )
         try:
             update_template(
                 user=request.user,
                 document_type=document_type,
-                html_source=render_styleable_source(
-                    logo_position=data["logo_position"],
-                    accent_color=data["accent_color"],
-                    font_choice=data["font_choice"],
-                    page_margin=data["page_margin"],
-                ),
+                html_source=html_source,
                 logo=data.get("logo"),
                 remove_logo=data.get("remove_logo", False),
                 logo_position=data["logo_position"],
@@ -325,7 +333,21 @@ class DocumentTemplateEditView(LoginRequiredMixin, RoleRequiredMixin, View):
     @staticmethod
     def _initial(template_obj):
         if template_obj is None:
-            return {}
+            # Turning the raw-HTML toggle on for a brand-new template
+            # starts from the same skeleton the structured composer would
+            # have produced with its own defaults — a copy of something
+            # real, not a blank page (default_template_source()'s own
+            # philosophy, applied here to the styleable skeleton instead of
+            # the packaged form_v1.html, since that's what a structured
+            # save would otherwise have produced).
+            return {
+                "custom_html_source": render_styleable_source(
+                    logo_position=LogoPosition.LEFT,
+                    accent_color="#444444",
+                    font_choice=FontChoice.SANS,
+                    page_margin=PageMargin.NORMAL,
+                )
+            }
         initial = {
             "logo_position": template_obj.logo_position,
             "accent_color": template_obj.accent_color,
@@ -333,6 +355,10 @@ class DocumentTemplateEditView(LoginRequiredMixin, RoleRequiredMixin, View):
             "page_margin": template_obj.page_margin,
             **{field: getattr(template_obj, field) for field in _STYLE_KWARG_FIELDS},
             **template_obj.layout_config,
+            # Always prefilled from the current source, on or off — turning
+            # the toggle on starts from a copy of what's already live/
+            # composed, not a blank page.
+            "custom_html_source": template_obj.html_source,
         }
         initial["column_order"] = ",".join(template_obj.layout_config.get("column_order") or [])
         initial["section_order"] = ",".join(template_obj.layout_config.get("section_order") or [])
@@ -379,12 +405,15 @@ class DocumentTemplatePreviewView(LoginRequiredMixin, RoleRequiredMixin, View):
             )
 
         data = form.cleaned_data
-        html_source = render_styleable_source(
-            logo_position=data["logo_position"],
-            accent_color=data["accent_color"],
-            font_choice=data["font_choice"],
-            page_margin=data["page_margin"],
-        )
+        if data["custom_html_enabled"]:
+            html_source = data["custom_html_source"]
+        else:
+            html_source = render_styleable_source(
+                logo_position=data["logo_position"],
+                accent_color=data["accent_color"],
+                font_choice=data["font_choice"],
+                page_margin=data["page_margin"],
+            )
         try:
             pdf_bytes = render_preview_pdf(
                 document_type=document_type,

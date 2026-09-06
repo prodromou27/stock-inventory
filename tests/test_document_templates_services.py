@@ -198,6 +198,91 @@ class TestUpdateTemplate:
 
 
 @pytest.mark.django_db
+class TestCustomHtmlEditing:
+    """custom_html_enabled=True stores html_source exactly as given —
+    everything else about update_template()'s validation, versioning, and
+    draft/publish gating is unchanged (see DocumentTemplate's docstring for
+    the security reasoning: no bigger a trust boundary than Administrator
+    already crosses elsewhere, external-resource fetching separately locked
+    to data: URIs regardless of this flag).
+    """
+
+    def test_saves_hand_typed_html_verbatim(self, administrator):
+        custom_html = "<html><body><h1>Custom {{ document_number }}</h1></body></html>"
+        template_obj = update_template(
+            user=administrator,
+            document_type=DocumentType.DELIVERY,
+            html_source=custom_html,
+            custom_html_enabled=True,
+        )
+        assert template_obj.html_source == custom_html
+        assert template_obj.custom_html_enabled is True
+
+    def test_defaults_to_false(self, administrator):
+        template_obj = update_template(
+            user=administrator, document_type=DocumentType.DELIVERY, html_source=VALID_HTML
+        )
+        assert template_obj.custom_html_enabled is False
+
+    def test_still_rejects_a_broken_custom_template(self, administrator):
+        with pytest.raises(ValidationError, match="failed to render"):
+            update_template(
+                user=administrator,
+                document_type=DocumentType.DELIVERY,
+                html_source=BROKEN_HTML,
+                custom_html_enabled=True,
+            )
+
+    def test_turning_it_back_off_is_a_plain_field_update(self, administrator):
+        update_template(
+            user=administrator,
+            document_type=DocumentType.DELIVERY,
+            html_source="<html><body>Custom</body></html>",
+            custom_html_enabled=True,
+        )
+        restructured = update_template(
+            user=administrator,
+            document_type=DocumentType.DELIVERY,
+            html_source=VALID_HTML,
+            custom_html_enabled=False,
+        )
+        assert restructured.custom_html_enabled is False
+        assert restructured.html_source == VALID_HTML
+
+    def test_duplicate_carries_the_flag_and_source_across(self, administrator):
+        update_template(
+            user=administrator,
+            document_type=DocumentType.DELIVERY,
+            html_source="<html><body>Custom {{ document_number }}</body></html>",
+            custom_html_enabled=True,
+        )
+        new_template = duplicate_template(
+            user=administrator,
+            source_document_type=DocumentType.DELIVERY,
+            target_document_type=DocumentType.ASSIGNMENT,
+        )
+        assert new_template.custom_html_enabled is True
+        assert "Custom" in new_template.html_source
+
+    def test_external_url_in_custom_html_does_not_crash_rendering(self, administrator):
+        """The resource is simply blocked/omitted (apps.documents.pdf's
+        data:-URI-only fetcher) — never a 500, and never an outbound
+        request from the render host to an attacker-chosen URL.
+        """
+        html_with_external_url = (
+            '<html><body><img src="https://example.com/x.png">'
+            "<h1>{{ document_number }}</h1></body></html>"
+        )
+        template_obj = update_template(
+            user=administrator,
+            document_type=DocumentType.DELIVERY,
+            html_source=html_with_external_url,
+            custom_html_enabled=True,
+        )
+        assert template_obj.html_source == html_with_external_url
+
+
+@pytest.mark.django_db
 class TestRenderStyleableSource:
     """apps.documents.pdf.render_styleable_source() — what the structured,
     no-HTML editor (apps.documents.views.DocumentTemplateEditView) uses to

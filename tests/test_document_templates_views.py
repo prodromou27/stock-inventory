@@ -75,13 +75,25 @@ class TestHub:
 
 @pytest.mark.django_db
 class TestEditView:
-    def test_get_shows_no_html_and_defaults_to_packaged_style(self, client, administrator):
+    def test_get_defaults_to_packaged_style_with_the_raw_html_section_collapsed(
+        self, client, administrator
+    ):
+        """The structured fields (logo, colors, fonts, ...) are the default,
+        prominent editing surface — raw template syntax only appears inside
+        the opt-in "Raw HTML/CSS" <details>, which starts collapsed unless a
+        template already has custom_html_enabled=True (none does here, this
+        is a fresh document type). There's no field literally named
+        html_source; TestCustomHtmlEditingView covers custom_html_source.
+        """
         client.force_login(administrator)
         response = client.get(reverse("documents:template_edit", args=["delivery"]))
         assert response.status_code == 200
         content = response.content.decode()
-        assert "{{ document_number }}" not in content
         assert 'name="html_source"' not in content
+        assert "Raw HTML/CSS" in content
+        # Neither <details> block (advanced layout, raw HTML) starts open
+        # for a fresh template with no saved custom_html_enabled=True.
+        assert 'template-editor__advanced" open' not in content
 
     def test_saves_valid_style_choices(self, client, administrator):
         client.force_login(administrator)
@@ -160,6 +172,81 @@ class TestEditView:
         client.post(reverse("documents:template_edit", args=["delivery"]), VALID_STYLE)
         response = client.get(reverse("documents:template_edit", args=["delivery"]))
         assert b"Start from a layout" not in response.content
+
+
+@pytest.mark.django_db
+class TestCustomHtmlEditingView:
+    def test_toggle_on_saves_the_typed_html_verbatim_not_the_composed_skeleton(
+        self, client, administrator
+    ):
+        client.force_login(administrator)
+        custom_html = "<html><body><h1>Hand-typed {{ document_number }}</h1></body></html>"
+        response = client.post(
+            reverse("documents:template_edit", args=["delivery"]),
+            {
+                **VALID_STYLE,
+                "custom_html_enabled": "on",
+                "custom_html_source": custom_html,
+            },
+        )
+        assert response.status_code == 302
+        template_obj = DocumentTemplate.objects.get(document_type="delivery")
+        assert template_obj.html_source == custom_html
+        assert template_obj.custom_html_enabled is True
+
+    def test_get_shows_the_section_open_once_already_enabled(self, client, administrator):
+        client.force_login(administrator)
+        client.post(
+            reverse("documents:template_edit", args=["delivery"]),
+            {
+                **VALID_STYLE,
+                "custom_html_enabled": "on",
+                "custom_html_source": "<html><body>Custom</body></html>",
+            },
+        )
+        response = client.get(reverse("documents:template_edit", args=["delivery"]))
+        assert 'template-editor__advanced" open' in response.content.decode()
+
+    def test_enabling_without_source_shows_a_form_error(self, client, administrator):
+        client.force_login(administrator)
+        response = client.post(
+            reverse("documents:template_edit", args=["delivery"]),
+            {**VALID_STYLE, "custom_html_enabled": "on", "custom_html_source": ""},
+        )
+        assert response.status_code == 200
+        assert b"Enter the template HTML" in response.content
+        assert not DocumentTemplate.objects.filter(document_type="delivery").exists()
+
+    def test_turning_it_back_off_recomposes_from_the_structured_fields(self, client, administrator):
+        client.force_login(administrator)
+        client.post(
+            reverse("documents:template_edit", args=["delivery"]),
+            {
+                **VALID_STYLE,
+                "custom_html_enabled": "on",
+                "custom_html_source": "<html><body>Custom</body></html>",
+            },
+        )
+        client.post(
+            reverse("documents:template_edit", args=["delivery"]),
+            {**VALID_STYLE, "custom_html_enabled": "", "custom_html_source": ""},
+        )
+        template_obj = DocumentTemplate.objects.get(document_type="delivery")
+        assert template_obj.custom_html_enabled is False
+        assert "{{ document_number }}" in template_obj.html_source
+
+    def test_get_prefills_the_current_source_for_a_fresh_template(self, client, administrator):
+        client.force_login(administrator)
+        response = client.get(reverse("documents:template_edit", args=["delivery"]))
+        assert "{{ document_number }}" in response.context["form"].initial["custom_html_source"]
+
+    def test_stock_manager_cannot_enable_custom_html(self, client, stock_manager):
+        client.force_login(stock_manager)
+        response = client.post(
+            reverse("documents:template_edit", args=["delivery"]),
+            {**VALID_STYLE, "custom_html_enabled": "on", "custom_html_source": "<html></html>"},
+        )
+        assert response.status_code == 403
 
 
 @pytest.mark.django_db
