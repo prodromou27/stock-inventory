@@ -106,6 +106,26 @@ def require_room_or_below(location):
         )
 
 
+def country_for_location(location):
+    """Walks up to `location`'s Country-level ancestor (or returns it
+    directly if it already is one). Used wherever a country/legal-entity
+    scope needs deriving from a specific stock location — e.g. apps.documents.
+    services.generate_document() resolving which CountryBrandingProfile
+    applies to a transaction. Returns None for `location=None` or an
+    orphaned/mid-migration node with no Country ancestor.
+    """
+    from .models import LocationLevel
+
+    if location is None:
+        return None
+    if location.level == LocationLevel.COUNTRY:
+        return location
+    for ancestor in location.ancestors():
+        if ancestor.level == LocationLevel.COUNTRY:
+            return ancestor
+    return None
+
+
 def _location_queryset():
     from .models import Location
 

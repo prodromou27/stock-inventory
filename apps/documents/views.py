@@ -16,8 +16,15 @@ from django.views import View
 from apps.core.authorization import ADMINISTRATOR, STOCK_MANAGER, RoleRequiredMixin
 from apps.inventory.access import require_transaction_access
 from apps.inventory.models import InventoryTransaction
+from apps.locations.models import Location, LocationLevel
 
-from .forms import AttachmentUploadForm, DocumentTemplateStyleForm
+from .branding import (
+    eligible_countries,
+    get_branding_profile,
+    list_branding_profiles,
+    save_branding_profile,
+)
+from .forms import AttachmentUploadForm, CountryBrandingForm, DocumentTemplateStyleForm
 from .gallery import STARTER_TEMPLATES
 from .layout import SECTIONS
 from .models import (
@@ -576,4 +583,92 @@ class PdfHealthDiagnosticsView(LoginRequiredMixin, RoleRequiredMixin, View):
                 "latest_integrity_run": latest_integrity_run,
                 "missing_documents": missing_documents,
             },
+        )
+
+
+class CountryBrandingListView(LoginRequiredMixin, RoleRequiredMixin, View):
+    """Every Country-level location, with whether it already has a branding
+    profile — the entry point into apps.documents.branding, linked from both
+    the document template hub and the Settings hub.
+    """
+
+    allowed_roles = (ADMINISTRATOR,)
+    template_name = "documents/branding_list.html"
+
+    def get(self, request):
+        profiles = list_branding_profiles()
+        rows = [
+            {"country": country, "profile": profiles.get(country.id)}
+            for country in eligible_countries()
+        ]
+        return render(request, self.template_name, {"rows": rows})
+
+
+class CountryBrandingEditView(LoginRequiredMixin, RoleRequiredMixin, View):
+    """Create/update the one branding profile for a single country — a plain
+    save, unlike DocumentTemplateEditView's Draft/Publish workflow: a
+    branding override is identity data (logo, address, terms wording), not a
+    structural layout change, so it takes effect on the next generated
+    document immediately, the same as an ordinary edit to an already-
+    published template.
+    """
+
+    allowed_roles = (ADMINISTRATOR,)
+    template_name = "documents/branding_edit.html"
+
+    def _country(self, country_id):
+        return get_object_or_404(Location, pk=country_id, level=LocationLevel.COUNTRY)
+
+    def get(self, request, country_id):
+        country = self._country(country_id)
+        profile = get_branding_profile(country)
+        form = CountryBrandingForm(initial=self._initial(profile))
+        return self._render(request, country, form, profile)
+
+    def post(self, request, country_id):
+        country = self._country(country_id)
+        profile = get_branding_profile(country)
+        form = CountryBrandingForm(request.POST, request.FILES)
+        if not form.is_valid():
+            return self._render(request, country, form, profile)
+
+        data = form.cleaned_data
+        try:
+            save_branding_profile(
+                user=request.user,
+                country=country,
+                logo=data.get("logo"),
+                remove_logo=data.get("remove_logo", False),
+                company_name=data["company_name"],
+                company_address=data["company_address"],
+                company_tax_id=data["company_tax_id"],
+                terms_text=data["terms_text"],
+                signature_left_label=data["signature_left_label"],
+                signature_right_label=data["signature_right_label"],
+            )
+        except ValidationError as exc:
+            form.add_error(None, "; ".join(exc.messages) if hasattr(exc, "messages") else str(exc))
+            return self._render(request, country, form, profile)
+
+        messages.success(request, f"Branding profile saved for {country}.")
+        return redirect("documents:branding_edit", country_id=country_id)
+
+    @staticmethod
+    def _initial(profile):
+        if profile is None:
+            return {}
+        return {
+            "company_name": profile.company_name,
+            "company_address": profile.company_address,
+            "company_tax_id": profile.company_tax_id,
+            "terms_text": profile.terms_text,
+            "signature_left_label": profile.signature_left_label,
+            "signature_right_label": profile.signature_right_label,
+        }
+
+    def _render(self, request, country, form, profile):
+        return render(
+            request,
+            self.template_name,
+            {"form": form, "country": country, "profile": profile},
         )

@@ -1,6 +1,7 @@
 import os
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
 from django.urls import reverse
@@ -27,6 +28,11 @@ def _attachment_upload_path(instance, filename):
 def _template_logo_upload_path(instance, filename):
     ext = os.path.splitext(filename)[1].lower()
     return f"document_template_logos/{instance.id}{ext}"
+
+
+def _branding_logo_upload_path(instance, filename):
+    ext = os.path.splitext(filename)[1].lower()
+    return f"country_branding_logos/{instance.id}{ext}"
 
 
 class DocumentType(models.TextChoices):
@@ -474,3 +480,62 @@ class DocumentIntegrityCheckRun(UUIDPrimaryKeyModel, AppendOnlyModel):
 
     def __str__(self):
         return f"Integrity check {self.created_at:%Y-%m-%d} — {self.missing_count} missing"
+
+
+class CountryBrandingProfile(UUIDPrimaryKeyModel, TimestampedModel):
+    """A legal entity's branding, applied on top of the shared structural
+    DocumentTemplate for every document generated from a location under this
+    Country — spec: "document branding presets per country/company if
+    different legal entities use different logos, addresses, terms, or
+    signature wording."
+
+    Deliberately scoped by country alone, not by (document_type, country):
+    a legal entity's letterhead is normally the same across its assignment,
+    delivery, and disposal documents, so one profile per country covers all
+    three without asking an Administrator to re-enter the same address and
+    tax ID three times. The document's actual *structure* (sections, line
+    columns, page layout) stays the single shared DocumentTemplate per
+    document_type — this only ever overrides identity fields, and only the
+    ones actually filled in; a blank field here means "inherit whatever the
+    document type's own template already has", so a country can override
+    just its logo while leaving everything else alone. Country-specific
+    structural templates (a different layout entirely per country) remain
+    explicitly out of scope for this first increment.
+
+    Applied in apps.documents.pdf.render_pdf() via apply_branding_override()
+    at real generation time (apps.documents.services.generate_document(),
+    country derived from the transaction's location) — never persisted onto
+    GeneratedDocument itself, since the rendered pdf_file already bakes the
+    branding in permanently, same as any other template change.
+    """
+
+    country = models.OneToOneField(
+        "locations.Location",
+        on_delete=models.CASCADE,
+        related_name="branding_profile",
+        help_text="Must be a Country-level location.",
+    )
+    logo = models.FileField(upload_to=_branding_logo_upload_path, null=True, blank=True)
+    company_name = models.CharField(max_length=200, blank=True)
+    company_address = models.TextField(blank=True)
+    company_tax_id = models.CharField(max_length=60, blank=True)
+    terms_text = models.TextField(
+        blank=True, help_text="Overrides the document type's own terms and conditions wording."
+    )
+    signature_left_label = models.CharField(max_length=120, blank=True)
+    signature_right_label = models.CharField(max_length=120, blank=True)
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+"
+    )
+
+    def clean(self):
+        from apps.locations.models import LocationLevel
+
+        super().clean()
+        if self.country_id and self.country.level != LocationLevel.COUNTRY:
+            raise ValidationError(
+                f"'{self.country}' is a {self.country.get_level_display()}, not a Country."
+            )
+
+    def __str__(self):
+        return f"Branding profile — {self.country}"

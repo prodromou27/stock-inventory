@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block title %}{{ country.name }} Branding — Stock Inventory{% endblock %}
+
+{% block content %}
+  <p><a href="{% url 'documents:branding_list' %}">&larr; All country branding</a></p>
+  <div class="page-header">
+    <h1>{{ country.name }} branding</h1>
+    <div class="page-header__actions">
+      {% if profile %}
+        <span class="badge badge--success">Custom branding</span>
+      {% else %}
+        <span class="badge badge--neutral">No override yet — inherits every field</span>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if form.non_field_errors %}
+    <ul class="messages">
+      {% for error in form.non_field_errors %}
+        <li class="messages__item messages__item--error">{{ error }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  <form method="post" enctype="multipart/form-data" class="form-card">
+    {% csrf_token %}
+    <div class="card">
+      <p><label for="{{ form.logo.id_for_label }}">{{ form.logo.label }}</label></p>
+      <div class="dropzone" data-dropzone>
+        <img class="dropzone__preview" data-dropzone-preview alt="Logo preview"
+             {% if profile.logo %}src="{{ profile.logo.url }}"{% else %}hidden{% endif %}>
+        <p class="dropzone__prompt" data-dropzone-prompt {% if profile.logo %}hidden{% endif %}>
+          Drag and drop a PNG or JPEG here, or click to browse.
+        </p>
+        {{ form.logo }}
+      </div>
+      {% if form.logo.errors %}<div class="messages__item messages__item--error">{{ form.logo.errors }}</div>{% endif %}
+      <p>
+        <label>{{ form.remove_logo }} {{ form.remove_logo.label }}</label>
+      </p>
+      <p class="helptext">Leave blank to keep using the document type's own logo for this country.</p>
+    </div>
+
+    <div class="card">
+      <h2>Company details</h2>
+      <p>
+        <label for="{{ form.company_name.id_for_label }}">{{ form.company_name.label }}</label>
+        {{ form.company_name }}
+      </p>
+      <p>
+        <label for="{{ form.company_address.id_for_label }}">{{ form.company_address.label }}</label>
+        {{ form.company_address }}
+      </p>
+      <p>
+        <label for="{{ form.company_tax_id.id_for_label }}">{{ form.company_tax_id.label }}</label>
+        {{ form.company_tax_id }}
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>Terms and signatures</h2>
+      <p>
+        <label for="{{ form.terms_text.id_for_label }}">{{ form.terms_text.label }}</label>
+        {{ form.terms_text }}
+        <span class="helptext">{{ form.terms_text.help_text }}</span>
+      </p>
+      <p>
+        <label for="{{ form.signature_left_label.id_for_label }}">Left signature label</label>
+        {{ form.signature_left_label }}
+      </p>
+      <p>
+        <label for="{{ form.signature_right_label.id_for_label }}">Right signature label</label>
+        {{ form.signature_right_label }}
+      </p>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn--primary">Save</button>
+    </div>
+  </form>
+
+  <aside class="template-field-reference">
+    <p>Every field above is optional. A blank field keeps using whatever the assignment/delivery/disposal
+      template already has for it — this only overrides the fields you actually fill in, for every document
+      generated from a location under {{ country.name }}.</p>
+    <p>The document's structure (sections, columns, page layout) is unaffected — that stays the shared
+      template configured under <a href="{% url 'documents:template_hub' %}">Document templates</a>.</p>
+  </aside>
+{% endblock %}

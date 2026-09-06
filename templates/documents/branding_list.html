@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Country Branding — Stock Inventory{% endblock %}
+
+{% block content %}
+  <p><a href="{% url 'documents:template_hub' %}">&larr; All document templates</a></p>
+  <div class="page-header">
+    <div>
+      <h1>Country branding</h1>
+      <div class="page-header__subtitle">
+        Override the logo, company details, terms wording, or signature labels for one legal entity —
+        applied on top of the shared assignment/delivery/disposal template for every document generated
+        from a location in that country. Leave a field blank to keep inheriting from the document type's
+        own template.
+      </div>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr><th>Country</th><th>Status</th><th>Last updated</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+        <tr>
+          <td>{{ row.country.name }}</td>
+          <td>
+            {% if row.profile %}
+              <span class="badge badge--success">Custom branding</span>
+            {% else %}
+              <span class="badge badge--neutral">Inherits the document type's template</span>
+            {% endif %}
+          </td>
+          <td>{{ row.profile.updated_at|default:"—" }}</td>
+          <td>
+            <a class="btn btn--sm" href="{% url 'documents:branding_edit' row.country.pk %}">
+              {% if row.profile %}Edit{% else %}Add override{% endif %}
+            </a>
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="4" class="empty-state">No countries exist yet — create one under Locations first.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}

@@ -10,6 +10,7 @@ from apps.audit.services import record_event
 from apps.core.authorization import ADMINISTRATOR, STOCK_MANAGER, require_role
 from apps.inventory.access import require_transaction_access
 from apps.inventory.models import MovementType
+from apps.locations.scoping import country_for_location
 
 from .models import Attachment, DocumentRenderLog, GeneratedDocument
 from .pdf import (
@@ -44,6 +45,29 @@ def document_type_for(transaction):
 
 
 _PRINTABLE_MOVEMENT_TYPES = (MovementType.ASSIGNMENT, MovementType.DELIVERY, MovementType.DISPOSAL)
+
+
+def _transaction_country(txn):
+    """The Country-level branding scope for this transaction — apps.documents.
+    branding.CountryBrandingProfile. Assignment/delivery lines always carry
+    their own `from_location` (set at the ledger write path); the
+    transaction header's source_location/destination_location fields are
+    only populated by some other movement types, so the per-line value
+    (the same field build_document_context() already reads to list
+    "source_locations" on the document itself) is the reliable source here,
+    with the header fields only as a defensive fallback.
+    """
+    first_line = (
+        txn.lines.filter(stock_reservation=None, from_location__isnull=False)
+        .select_related("from_location")
+        .order_by("line_number")
+        .first()
+    )
+    if first_line:
+        location = first_line.from_location
+    else:
+        location = txn.source_location or txn.destination_location
+    return country_for_location(location)
 
 
 def _record_render_log(
@@ -102,10 +126,14 @@ def generate_document(*, txn, user, supersedes=None):
         with transaction.atomic():
             document_number = next_document_number()
             template_obj = active_template_for(document_type)
+            country = _transaction_country(txn)
             context = build_document_context(transaction=txn, document_number=document_number)
             try:
                 pdf_bytes = render_pdf(
-                    context, document_type=document_type, template_obj=template_obj
+                    context,
+                    document_type=document_type,
+                    template_obj=template_obj,
+                    country=country,
                 )
             except ValidationError:
                 raise

@@ -82,4 +82,10 @@ urlpatterns = [
         name="template_restore_version",
     ),
     path("pdf-health/", views.PdfHealthDiagnosticsView.as_view(), name="pdf_health"),
+    path("branding/", views.CountryBrandingListView.as_view(), name="branding_list"),
+    path(
+        "branding/<uuid:country_id>/",
+        views.CountryBrandingEditView.as_view(),
+        name="branding_edit",
+    ),
 ]

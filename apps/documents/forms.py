@@ -22,6 +22,33 @@ class AttachmentUploadForm(forms.Form):
     file = forms.FileField(label="File (PDF, JPEG, or PNG)")
 
 
+class CountryBrandingForm(forms.Form):
+    """One legal entity's branding overrides (apps.documents.branding) —
+    every field optional; blank always means "inherit from the document
+    type's own template", never "render blank".
+    """
+
+    logo = forms.FileField(
+        required=False, label="Logo (PNG or JPEG) — leave blank to keep the current one"
+    )
+    remove_logo = forms.BooleanField(required=False, label="Remove the current logo")
+    company_name = forms.CharField(max_length=200, required=False, label="Company name")
+    company_address = forms.CharField(
+        required=False, widget=forms.Textarea(attrs={"rows": 2}), label="Company address"
+    )
+    company_tax_id = forms.CharField(
+        max_length=60, required=False, label="Company tax/registration ID"
+    )
+    terms_text = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 3}),
+        label="Terms and conditions override",
+        help_text="Overrides every document type's own terms wording when set.",
+    )
+    signature_left_label = forms.CharField(max_length=120, required=False)
+    signature_right_label = forms.CharField(max_length=120, required=False)
+
+
 class DocumentTemplateStyleForm(forms.Form):
     """The whole document-template editor (apps.documents.views.
     DocumentTemplateEditView) — no HTML/template-syntax field on purpose.

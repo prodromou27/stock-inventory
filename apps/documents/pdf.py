@@ -345,7 +345,7 @@ def layout_context(template_obj):
     return context
 
 
-def render_pdf(context, *, document_type, template_obj=None):
+def render_pdf(context, *, document_type, template_obj=None, country=None):
     if template_obj is None:
         template_obj = active_template_for(document_type)
     context = {
@@ -353,6 +353,10 @@ def render_pdf(context, *, document_type, template_obj=None):
         "logo_data_uri": build_logo_data_uri(template_obj),
         **layout_context(template_obj),
     }
+    if country is not None:
+        from .branding import apply_branding_override
+
+        context = apply_branding_override(context, country=country)
     if template_obj is not None:
         return render_pdf_from_source(template_obj.html_source, context)
     html_string = render_to_string(f"documents/pdf/{CURRENT_TEMPLATE_VERSION}.html", context)
