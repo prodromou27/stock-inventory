@@ -20,7 +20,6 @@ from apps.catalog.models import ItemCategory, Product
 from apps.inventory.filters import duplicate_serial_values
 from apps.inventory.models import (
     AssetStatusHistory,
-    Condition,
     StockBalance,
     StockPurpose,
     UnitAsset,
@@ -293,31 +292,6 @@ def _hierarchy_finding(location, explanation):
     }
 
 
-def check_missing_procurement_info(breadcrumbs):
-    """Scoped to New-condition units only — a New item was presumably just
-    purchased, so its supplier/invoice should be known; a Refurbished/Used/
-    Damaged unit may have entered inventory (an internal transfer, a return)
-    with no purchase paper trail of its own, which isn't a data problem.
-    """
-    assets = UnitAsset.objects.select_related(
-        "product", "product__brand", "current_location"
-    ).filter(condition=Condition.NEW, supplier="", invoice_number="")
-    for asset in assets:
-        country, location_label = _location_context(breadcrumbs, asset.current_location)
-        yield {
-            "issue_type": DataQualityIssueType.MISSING_PROCUREMENT_INFO,
-            "severity": DataQualitySeverity.LOW,
-            "object_type": "UnitAsset",
-            "object_id": str(asset.pk),
-            "country": country,
-            "location_label": location_label,
-            "explanation": "Condition is New but neither a supplier nor an invoice number is "
-            "recorded.",
-            "recommended_correction": "Fill in the supplier and/or invoice number from the "
-            "purchase records, if available.",
-        }
-
-
 def check_duplicate_product(breadcrumbs):
     products = Product.objects.filter(is_active=True).select_related("brand", "product_type")
     groups = {}
@@ -459,7 +433,6 @@ ALL_CHECKS = [
     check_customer_stock_missing_reference,
     check_inactive_location_with_active_stock,
     check_invalid_location_hierarchy,
-    check_missing_procurement_info,
     check_duplicate_product,
     check_orphaned_transaction_reference,
     check_country_only_location,

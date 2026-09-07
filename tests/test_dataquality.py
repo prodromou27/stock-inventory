@@ -9,7 +9,7 @@ from apps.catalog.models import ItemCategory
 from apps.catalog.services import create_product
 from apps.dataquality.models import DataQualityFinding, DataQualityStatus
 from apps.dataquality.services import dismiss_finding, resolve_finding, run_detection
-from apps.inventory.models import Condition, StockPurpose, UnitAsset, UnitStatus
+from apps.inventory.models import StockPurpose, UnitAsset, UnitStatus
 from apps.inventory.services.corrections import correct_reference_fields
 from apps.inventory.services.receipts import receive_stock
 
@@ -301,38 +301,6 @@ class TestCheckInactiveLocationWithActiveStock:
 
 
 @pytest.mark.django_db
-class TestCheckMissingProcurementInfo:
-    def test_flags_a_new_unit_with_no_supplier_or_invoice(
-        self, administrator, unit_product, location_tree
-    ):
-        receive_stock(
-            user=administrator,
-            product=unit_product,
-            location=location_tree["room"],
-            occurred_at=date.today(),
-            vendor_serial="SN-NEW-NOPROC",
-            condition=Condition.NEW,
-        )
-        asset = UnitAsset.objects.get(vendor_serial="SN-NEW-NOPROC")
-        run_detection(user=None)
-        assert DataQualityFinding.objects.filter(
-            issue_type="missing_procurement_info", object_id=str(asset.pk)
-        ).exists()
-
-    def test_used_condition_is_not_flagged(self, administrator, unit_product, location_tree):
-        receive_stock(
-            user=administrator,
-            product=unit_product,
-            location=location_tree["room"],
-            occurred_at=date.today(),
-            vendor_serial="SN-USED-NOPROC",
-            condition=Condition.USED,
-        )
-        run_detection(user=None)
-        assert not DataQualityFinding.objects.filter(issue_type="missing_procurement_info").exists()
-
-
-@pytest.mark.django_db
 class TestCheckDuplicateProduct:
     def test_flags_same_brand_and_model(self, administrator):
         create_product(
@@ -564,11 +532,12 @@ class TestRunDetectionLifecycle:
             location=location_tree["room"],
             occurred_at=date.today(),
             vendor_serial="SN-DISMISS-ME",
-            condition=Condition.NEW,
         )
+        asset = UnitAsset.objects.get(vendor_serial="SN-DISMISS-ME")
+        UnitAsset.objects.filter(pk=asset.pk).update(current_location=None)
         run_detection(user=None)
         finding = DataQualityFinding.objects.get(
-            issue_type="missing_procurement_info", object_id__isnull=False
+            issue_type="missing_location", object_id=str(asset.pk)
         )
         dismiss_finding(finding=finding, user=administrator)
         run_detection(user=None)
