@@ -55,6 +55,13 @@
           searchInputSelector: "#asset-picker-search",
           storageKey: "asset-picker",
           pageSize: 100,
+          // A fixed, compact height rather than the 70vh default the
+          // full-page grids use — this picker is one step embedded partway
+          // down a longer movement form, not the page's main content, so a
+          // shorter panel with its own internal scroll keeps the rest of
+          // the form (details, review, submit) reachable without excessive
+          // page scrolling.
+          height: "360px",
           rowSelectable: true,
           extraFilters: () => ({
             {% if not picker_transaction_id %}

@@ -164,7 +164,7 @@
       paginationCounter: "rows",
       dataSendParams: { page: "page", size: "size" },
       layout: "fitDataStretch",
-      height: "70vh",
+      height: options.height || "70vh",
       placeholder: "No results — try widening your filters.",
       columns: options.columns,
       initialSort: options.initialSort || [],
@@ -172,7 +172,11 @@
       selectableRows: options.rowSelectable !== false,
       selectableRowsRangeMode: "click",
       index: "id",
-      columnDefaults: { headerFilterLiveFilter: false, tooltip: true },
+      // Live per-keystroke filtering, debounced (Tabulator's own built-in
+      // 300ms headerFilterLiveFilterDelay) rather than needing Enter/blur
+      // to apply a column filter — matches the global search box's own
+      // debounced live behavior instead of feeling inconsistent next to it.
+      columnDefaults: { headerFilterLiveFilter: true, tooltip: true },
     });
 
     table.on("tableBuildError", (error) => {
