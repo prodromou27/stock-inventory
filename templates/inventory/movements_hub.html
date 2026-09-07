@@ -35,45 +35,56 @@
     </a>
   </div>
 
-  <h2>Secondary</h2>
-  <div class="card-grid">
-    <a class="action-card" href="{% url 'inventory:reserve' %}">
-      <span class="action-card__title">Reserve</span>
-      <span class="action-card__desc">Hold quantity against a project or order.</span>
-    </a>
-    <a class="action-card" href="{% url 'inventory:reservation_list' %}">
-      <span class="action-card__title">Reservations</span>
-      <span class="action-card__desc">View and release active reservations.</span>
-    </a>
-    <a class="action-card" href="{% url 'inventory:assess_return' %}">
-      <span class="action-card__title">Assess returned assets</span>
-      <span class="action-card__desc">Triage assets that have come back.</span>
-    </a>
-    <a class="action-card" href="{% url 'inventory:repair_damaged' %}">
-      <span class="action-card__title">Return repaired assets to stock</span>
-      <span class="action-card__desc">Bring damaged assets back into stock.</span>
-    </a>
-    <a class="action-card" href="{% url 'inventory:transaction_list' %}?movement_type=assignment,delivery">
-      <span class="action-card__title">Return</span>
-      <span class="action-card__desc">Open the original assignment or delivery transaction to record a return.</span>
-    </a>
-  </div>
+  {# Collapsed by default — Reserve/Return/Damage/Loss/Disposal are all
+     real, reachable actions, just not ones most days involve, and having
+     14 action cards visible at once made this page feel like the whole
+     app's menu rather than a task list. Everything below still has its
+     own direct link elsewhere too (an asset's own detail page, the
+     dashboard's stat cards), this is just no longer the default view. #}
+  <details class="card hub-more-actions">
+    <summary>More actions</summary>
+    <div class="hub-more-actions-content">
+      <h3 class="hub-panel__subheading">Reservations &amp; returns</h3>
+      <div class="card-grid">
+        <a class="action-card" href="{% url 'inventory:reserve' %}">
+          <span class="action-card__title">Reserve</span>
+          <span class="action-card__desc">Hold quantity against a project or order.</span>
+        </a>
+        <a class="action-card" href="{% url 'inventory:reservation_list' %}">
+          <span class="action-card__title">Reservations</span>
+          <span class="action-card__desc">View and release active reservations.</span>
+        </a>
+        <a class="action-card" href="{% url 'inventory:assess_return' %}">
+          <span class="action-card__title">Assess returned assets</span>
+          <span class="action-card__desc">Triage assets that have come back.</span>
+        </a>
+        <a class="action-card" href="{% url 'inventory:repair_damaged' %}">
+          <span class="action-card__title">Return repaired assets to stock</span>
+          <span class="action-card__desc">Bring damaged assets back into stock.</span>
+        </a>
+        <a class="action-card" href="{% url 'inventory:transaction_list' %}?movement_type=assignment,delivery">
+          <span class="action-card__title">Return</span>
+          <span class="action-card__desc">Open the original assignment or delivery transaction to record a return.</span>
+        </a>
+      </div>
 
-  <h2>Problems</h2>
-  <div class="card-grid">
-    <a class="action-card action-card--problem" href="{% url 'inventory:mark_damaged' %}">
-      <span class="action-card__title">Mark damaged</span>
-      <span class="action-card__desc">Flag assets as damaged and out of service.</span>
-    </a>
-    <a class="action-card action-card--problem" href="{% url 'inventory:mark_lost' %}">
-      <span class="action-card__title">Mark lost</span>
-      <span class="action-card__desc">Record assets as lost.</span>
-    </a>
-    <a class="action-card action-card--problem" href="{% url 'inventory:dispose' %}">
-      <span class="action-card__title">Dispose</span>
-      <span class="action-card__desc">Remove assets from stock permanently.</span>
-    </a>
-  </div>
+      <h3 class="hub-panel__subheading">Damage, loss &amp; disposal</h3>
+      <div class="card-grid">
+        <a class="action-card action-card--problem" href="{% url 'inventory:mark_damaged' %}">
+          <span class="action-card__title">Mark damaged</span>
+          <span class="action-card__desc">Flag assets as damaged and out of service.</span>
+        </a>
+        <a class="action-card action-card--problem" href="{% url 'inventory:mark_lost' %}">
+          <span class="action-card__title">Mark lost</span>
+          <span class="action-card__desc">Record assets as lost.</span>
+        </a>
+        <a class="action-card action-card--problem" href="{% url 'inventory:dispose' %}">
+          <span class="action-card__title">Dispose</span>
+          <span class="action-card__desc">Remove assets from stock permanently.</span>
+        </a>
+      </div>
+    </div>
+  </details>
 
   <h2>At a glance</h2>
   <div class="card-grid">

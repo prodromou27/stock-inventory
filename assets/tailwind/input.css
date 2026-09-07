@@ -1429,6 +1429,29 @@
     margin: 0 0 0.5rem;
   }
 
+  /* Same collapsed-by-default disclosure pattern as .template-editor__advanced
+     — reused here for Operations' "More actions" (Reserve/Return/Damage/
+     Loss/Disposal), which most task-focused visits don't need front and
+     center. */
+  .hub-more-actions { padding: 0; overflow: hidden; margin-bottom: 1.5rem; }
+  .hub-more-actions > summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    cursor: pointer;
+    padding: 1rem 1.25rem;
+    font-weight: 600;
+    list-style: none;
+  }
+  .hub-more-actions > summary::-webkit-details-marker { display: none; }
+  .hub-more-actions > summary::after { content: "+"; color: var(--color-primary); font-size: 1.2rem; }
+  .hub-more-actions[open] > summary { border-bottom: 1px solid var(--color-border); }
+  .hub-more-actions[open] > summary::after { content: "−"; }
+  .hub-more-actions-content { padding: 1.1rem 1.25rem; }
+  .hub-more-actions-content .hub-panel__subheading:not(:first-child) { margin-top: 1.5rem; }
+  .hub-more-actions-content .card-grid { margin-bottom: 0; }
+
   .stat-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
