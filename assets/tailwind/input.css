@@ -76,13 +76,13 @@
   :root[data-theme="dark"] {
     color-scheme: dark;
 
-    --color-bg: #0d1210;
-    --color-surface: #151b19;
-    --color-border: #262f2c;
-    --color-border-strong: #37423e;
-    --color-text: #e7ece9;
-    --color-text-muted: #9fada7;
-    --color-text-faint: #67746e;
+    --color-bg: #0f1216;
+    --color-surface: #171b21;
+    --color-border: #2a2f37;
+    --color-border-strong: #3a4048;
+    --color-text: #e7eaee;
+    --color-text-muted: #a2aab5;
+    --color-text-faint: #6d7681;
 
     --color-primary: #4fb8ab;
     --color-primary-hover: #6bcabe;
@@ -377,8 +377,8 @@
   .sidebar {
     width: var(--sidebar-width);
     flex-shrink: 0;
-    background: #0e1917;
-    border-right: 1px solid #1c2b28;
+    background: #0f1f3d;
+    border-right: 1px solid #203456;
     display: flex;
     flex-direction: column;
     position: sticky;
@@ -439,7 +439,7 @@
     font-size: 0.68rem;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: #7fa39b;
+    color: #8fa5c5;
     font-weight: 700;
     padding: 0 0.65rem;
     margin-bottom: 0.35rem;
@@ -452,7 +452,7 @@
     padding: 0.45rem 0.7rem;
     margin-bottom: 0.1rem;
     border-radius: var(--radius-sm);
-    color: #c3d6d1;
+    color: #c8d4e5;
     font-size: 0.87rem;
     font-weight: 500;
     border-left: 2.5px solid transparent;
