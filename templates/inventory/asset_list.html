@@ -9,6 +9,7 @@
     <div class="page-header__actions">
       <a class="btn" id="asset-grid-export" href="?{{ request.GET.urlencode }}&format=csv" data-loading-link="Preparing export…">Export CSV</a>
       {% if user_is_administrator or "StockManager" in user_role_groups %}
+        <a class="btn" href="{% url 'catalog:quick_add' %}">+ Quick add (multiple)</a>
         <a class="btn btn--primary" href="{% url 'inventory:quick_receive' %}">+ Quick receive</a>
       {% endif %}
     </div>
