@@ -369,3 +369,76 @@ class TestHomeViewStats:
         assert response.status_code == 200
         assert response.context["stats"]["assets_in_stock"] == 1
         assert "Units in stock" in response.content.decode()
+
+    def test_all_cards_visible_by_default(self, client, administrator):
+        from apps.core.models import DASHBOARD_CARDS
+
+        client.force_login(administrator)
+        response = client.get(reverse("core:home"))
+        assert response.context["visible_dashboard_cards"] == [key for key, _ in DASHBOARD_CARDS]
+
+
+@pytest.mark.django_db
+class TestDashboardPreferenceView:
+    def test_anonymous_redirected(self, client):
+        response = client.get(reverse("core:dashboard_preferences"))
+        assert response.status_code == 302
+
+    def test_get_shows_every_card_checked_by_default(self, client, administrator):
+        from apps.core.models import DASHBOARD_CARDS
+
+        client.force_login(administrator)
+        response = client.get(reverse("core:dashboard_preferences"))
+        assert response.status_code == 200
+        assert all(card["visible"] for card in response.context["cards"])
+        assert len(response.context["cards"]) == len(DASHBOARD_CARDS)
+
+    def test_unchecking_cards_hides_them_from_the_dashboard(self, client, administrator):
+        from apps.core.models import DASHBOARD_CARDS, DashboardPreference
+
+        client.force_login(administrator)
+        kept = [key for key, _ in DASHBOARD_CARDS if key not in ("quantity_on_hand", "lost_count")]
+        response = client.post(reverse("core:dashboard_preferences"), {"visible_cards": kept})
+        assert response.status_code == 302
+
+        preference = DashboardPreference.objects.get(user=administrator)
+        assert set(preference.hidden_cards) == {"quantity_on_hand", "lost_count"}
+
+        home_response = client.get(reverse("core:home"))
+        visible = home_response.context["visible_dashboard_cards"]
+        assert "quantity_on_hand" not in visible
+        assert "lost_count" not in visible
+        assert "assets_in_stock" in visible
+        content = home_response.content.decode()
+        assert "Quantity on hand" not in content
+        assert "Lost" not in content
+
+    def test_is_purely_personal_not_shared(self, client, administrator, stock_manager):
+        client.force_login(administrator)
+        client.post(reverse("core:dashboard_preferences"), {"visible_cards": ["assets_in_stock"]})
+        client.logout()
+
+        client.force_login(stock_manager)
+        response = client.get(reverse("core:home"))
+        from apps.core.models import DASHBOARD_CARDS
+
+        assert response.context["visible_dashboard_cards"] == [key for key, _ in DASHBOARD_CARDS]
+
+    def test_unknown_posted_keys_do_not_break_real_ones(self, client, administrator):
+        """A manipulated POST naming a bogus card key alongside real ones
+        must not crash, and must not affect which *real* cards end up
+        hidden — everything not explicitly named 'visible' is hidden,
+        regardless of what other noise the request contains.
+        """
+        from apps.core.models import DashboardPreference
+
+        client.force_login(administrator)
+        response = client.post(
+            reverse("core:dashboard_preferences"),
+            {"visible_cards": ["assets_in_stock", "not_a_real_card"]},
+        )
+        assert response.status_code == 302
+        preference = DashboardPreference.objects.get(user=administrator)
+        assert "not_a_real_card" not in preference.hidden_cards
+        assert "assets_in_stock" not in preference.hidden_cards
+        assert "quantity_on_hand" in preference.hidden_cards

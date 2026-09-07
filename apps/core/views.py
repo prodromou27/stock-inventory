@@ -1,9 +1,15 @@
+from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db import connection
 from django.db.utils import OperationalError
 from django.http import JsonResponse
+from django.shortcuts import redirect, render
 from django.views import View
 from django.views.generic import TemplateView
+
+from .models import DASHBOARD_CARDS, DashboardPreference
+
+DASHBOARD_CARD_KEYS = {key for key, _ in DASHBOARD_CARDS}
 
 
 class HealthCheckView(View):
@@ -41,7 +47,55 @@ class HomeView(LoginRequiredMixin, TemplateView):
         context["stats"] = dashboard_summary(self.request.user)
         context["recent_activity"] = recent_transactions(self.request.user)
         context["recently_viewed"] = recently_viewed_for(self.request.user)
+        hidden = set(
+            DashboardPreference.objects.filter(user=self.request.user)
+            .values_list("hidden_cards", flat=True)
+            .first()
+            or []
+        )
+        context["visible_dashboard_cards"] = [
+            key for key, _ in DASHBOARD_CARDS if key not in hidden
+        ]
         return context
+
+
+class DashboardPreferenceView(LoginRequiredMixin, View):
+    """Lets any logged-in user pick which Dashboard stat cards they see —
+    reached from the dashboard itself and from the Settings hub. A plain
+    checkbox list rather than a ModelForm: DASHBOARD_CARDS (not the model)
+    is the source of truth for which keys are valid, so an unchecked box
+    just means "add this key to hidden_cards," with no separate form-field
+    declaration to keep in sync as cards are added or removed.
+    """
+
+    template_name = "core/dashboard_preferences_form.html"
+
+    def get(self, request):
+        hidden = set(
+            DashboardPreference.objects.filter(user=request.user)
+            .values_list("hidden_cards", flat=True)
+            .first()
+            or []
+        )
+        return render(
+            request,
+            self.template_name,
+            {
+                "cards": [
+                    {"key": key, "label": label, "visible": key not in hidden}
+                    for key, label in DASHBOARD_CARDS
+                ]
+            },
+        )
+
+    def post(self, request):
+        checked = set(request.POST.getlist("visible_cards")) & DASHBOARD_CARD_KEYS
+        hidden_cards = [key for key, _ in DASHBOARD_CARDS if key not in checked]
+        DashboardPreference.objects.update_or_create(
+            user=request.user, defaults={"hidden_cards": hidden_cards}
+        )
+        messages.success(request, "Dashboard preferences saved.")
+        return redirect("core:home")
 
 
 SEARCH_RESULT_LIMIT = 15

@@ -11,6 +11,10 @@
   <h2>Locations & documents</h2>
   <p class="settings-section__intro">The two things almost everyone in Settings is here for.</p>
   <div class="card-grid">
+    <a class="action-card" href="{% url 'core:dashboard_preferences' %}">
+      <span class="action-card__title">Dashboard</span>
+      <span class="action-card__desc">Choose which stat cards show up on your own dashboard.</span>
+    </a>
     <a class="action-card" href="{% url 'locations:list' %}">
       <span class="action-card__title">Locations</span>
       <span class="action-card__desc">

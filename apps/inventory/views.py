@@ -603,6 +603,64 @@ class QuickReceiveView(LoginRequiredMixin, RoleRequiredMixin, View):
         )
 
 
+# apps.inventory.forms.ReceiveBulkLineForm's own fields, in the exact
+# column order templates/inventory/receive_bulk_form.html's grid renders
+# them — the single source of truth for both the JS grid's column config
+# (via receive_bulk_grid_context()) and which hidden formset inputs get
+# (re)generated from the grid's data right before submit.
+BULK_LINE_FIELDS = [
+    "brand_name",
+    "model",
+    "sku",
+    "product_type_name",
+    "category",
+    "vendor_serials",
+    "quantity",
+    "location",
+    "stock_purpose",
+    "arrival_date_override",
+    "condition",
+    "accessories",
+    "notes",
+]
+
+
+def _receive_bulk_grid_context(formset):
+    """Everything templates/inventory/receive_bulk_form.html's Tabulator
+    grid needs beyond _catalog_choices()' brand/product-type name lists:
+    the option sets for every select-like column (as {stored_value: label}
+    maps, so a formatter can show the right label for a cell that's just
+    storing a raw choice/PK string), and the grid's starting row data —
+    always taken from the formset, whether that's `extra` blank rows (a
+    fresh GET) or whatever was actually submitted, with per-field errors,
+    on a validation-failure re-render. One code path for both, rather than
+    a separate "seed 5 blank rows" JS fallback only used on first load.
+    """
+    location_field = formset.forms[0].fields["location"] if formset.forms else None
+    location_choices = (
+        {str(loc.pk): loc.name for loc in location_field.queryset} if location_field else {}
+    )
+    rows = []
+    for form in formset.forms:
+        row = {}
+        errors = {}
+        for field_name in BULK_LINE_FIELDS:
+            bound_field = form[field_name]
+            value = bound_field.value()
+            row[field_name] = "" if value is None else str(value)
+            if bound_field.errors:
+                errors[field_name] = list(bound_field.errors)
+        row["_errors"] = errors
+        rows.append(row)
+    return {
+        "category_choices_json": dict(ItemCategory.choices),
+        "stock_purpose_choices_json": dict(StockPurpose.choices),
+        "condition_choices_json": dict(Condition.choices),
+        "location_choices_json": location_choices,
+        "initial_rows_json": rows,
+    }
+
+
 class ReceiveBulkView(LoginRequiredMixin, RoleRequiredMixin, View):
     """A single atomic multi-line goods receipt — several products, mixed
     serialized/quantity, one shared default location/purpose with a per-row
@@ -620,6 +678,15 @@ class ReceiveBulkView(LoginRequiredMixin, RoleRequiredMixin, View):
     allowed_roles = (ADMINISTRATOR, STOCK_MANAGER)
     template_name = "inventory/receive_bulk_form.html"
 
+    def _context(self, batch_form, formset, **extra):
+        return {
+            "batch_form": batch_form,
+            "formset": formset,
+            **_catalog_choices(),
+            **_receive_bulk_grid_context(formset),
+            **extra,
+        }
+
     def get(self, request):
         initial = {
             "occurred_at": timezone.localdate(),
@@ -630,11 +697,7 @@ class ReceiveBulkView(LoginRequiredMixin, RoleRequiredMixin, View):
             initial["default_location"] = default_location.pk
         batch_form = ReceiveBulkBatchForm(user=request.user, initial=initial)
         formset = ReceiveBulkFormSet(form_kwargs={"user": request.user})
-        return render(
-            request,
-            self.template_name,
-            {"batch_form": batch_form, "formset": formset, **_catalog_choices()},
-        )
+        return render(request, self.template_name, self._context(batch_form, formset))
 
     def post(self, request):
         batch_form = ReceiveBulkBatchForm(request.POST, user=request.user)
@@ -642,11 +705,7 @@ class ReceiveBulkView(LoginRequiredMixin, RoleRequiredMixin, View):
         batch_valid = batch_form.is_valid()
         formset_valid = formset.is_valid()
         if not (batch_valid and formset_valid):
-            return render(
-                request,
-                self.template_name,
-                {"batch_form": batch_form, "formset": formset, **_catalog_choices()},
-            )
+            return render(request, self.template_name, self._context(batch_form, formset))
 
         rows = [
             row
@@ -675,13 +734,12 @@ class ReceiveBulkView(LoginRequiredMixin, RoleRequiredMixin, View):
             return render(
                 request,
                 self.template_name,
-                {
-                    "batch_form": batch_form,
-                    "formset": formset,
-                    "duplicate_product_matches": exc.matches,
-                    "show_duplicate_product_warning": True,
-                    **_catalog_choices(),
-                },
+                self._context(
+                    batch_form,
+                    formset,
+                    duplicate_product_matches=exc.matches,
+                    show_duplicate_product_warning=True,
+                ),
             )
 
         line_rows = []
@@ -706,11 +764,7 @@ class ReceiveBulkView(LoginRequiredMixin, RoleRequiredMixin, View):
 
         if not line_rows:
             batch_form.add_error(None, "Add at least one line to the receipt.")
-            return render(
-                request,
-                self.template_name,
-                {"batch_form": batch_form, "formset": formset, **_catalog_choices()},
-            )
+            return render(request, self.template_name, self._context(batch_form, formset))
 
         if not claim_submission_token(request.POST.get("submission_token")):
             messages.info(
@@ -739,23 +793,18 @@ class ReceiveBulkView(LoginRequiredMixin, RoleRequiredMixin, View):
             return render(
                 request,
                 self.template_name,
-                {
-                    "batch_form": batch_form,
-                    "formset": formset,
-                    "duplicate_matches": exc.matches,
-                    "duplicate_by_serial": exc.by_serial,
-                    "show_duplicate_warning": True,
-                    **_catalog_choices(),
-                },
+                self._context(
+                    batch_form,
+                    formset,
+                    duplicate_matches=exc.matches,
+                    duplicate_by_serial=exc.by_serial,
+                    show_duplicate_warning=True,
+                ),
             )
         except ValidationError as exc:
             release_submission_token(request.POST.get("submission_token"))
             batch_form.add_error(None, exc)
-            return render(
-                request,
-                self.template_name,
-                {"batch_form": batch_form, "formset": formset, **_catalog_choices()},
-            )
+            return render(request, self.template_name, self._context(batch_form, formset))
 
         messages.success(
             request,

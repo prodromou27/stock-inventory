@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block title %}Customize Dashboard — Stock Inventory{% endblock %}
+
+{% block content %}
+  <p><a href="{% url 'core:home' %}">&larr; Dashboard</a></p>
+  <div class="page-header">
+    <h1>Customize dashboard</h1>
+    <div class="page-header__subtitle">Choose which stat cards show up on your own dashboard. This only affects your view — everyone else keeps their own choices.</div>
+  </div>
+
+  <form method="post" class="card">
+    {% csrf_token %}
+    <div class="checkbox-list">
+      {% for card in cards %}
+        <label class="checkbox-list__item">
+          <input type="checkbox" name="visible_cards" value="{{ card.key }}" {% if card.visible %}checked{% endif %}>
+          {{ card.label }}
+        </label>
+      {% endfor %}
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn--primary">Save</button>
+    </div>
+  </form>
+{% endblock %}

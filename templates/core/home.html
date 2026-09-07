@@ -41,56 +41,89 @@
     </div>
   {% endif %}
 
-  <div class="stat-grid">
-    <a class="stat-card" href="{% url 'inventory:asset_list' %}?status=in_stock">
-      <div class="stat-card__value">{{ stats.assets_in_stock }}</div>
-      <div class="stat-card__label">Units in stock</div>
-    </a>
-    <a class="stat-card" href="{% url 'inventory:balance_list' %}">
-      <div class="stat-card__value">{{ stats.quantity_on_hand }}</div>
-      <div class="stat-card__label">Quantity on hand</div>
-    </a>
-    <a class="stat-card" href="{% url 'inventory:asset_list' %}?stock_purpose=internal">
-      <div class="stat-card__value">{{ stats.internal_stock_count }}</div>
-      <div class="stat-card__label">Internal stock</div>
-    </a>
-    <a class="stat-card" href="{% url 'inventory:asset_list' %}?stock_purpose=customer">
-      <div class="stat-card__value">{{ stats.customer_stock_count }}</div>
-      <div class="stat-card__label">Customer stock</div>
-    </a>
-    <a class="stat-card{% if stats.low_stock_count %} stat-card--alert{% endif %}" href="{% url 'reporting:low_stock' %}">
-      <div class="stat-card__value">{{ stats.low_stock_count }}</div>
-      <div class="stat-card__label">Low stock alerts</div>
-    </a>
-    <a class="stat-card" href="{% url 'reporting:reserved_stock' %}">
-      <div class="stat-card__value">{{ stats.active_reservations }}</div>
-      <div class="stat-card__label">Active reservations</div>
-    </a>
-    <a class="stat-card" href="{% url 'inventory:asset_list' %}?status=assigned">
-      <div class="stat-card__value">{{ stats.assigned_count }}</div>
-      <div class="stat-card__label">Assigned</div>
-    </a>
-    <a class="stat-card" href="{% url 'inventory:asset_list' %}?status=delivered">
-      <div class="stat-card__value">{{ stats.delivered_count }}</div>
-      <div class="stat-card__label">Delivered</div>
-    </a>
-    <a class="stat-card{% if stats.damaged_count %} stat-card--alert{% endif %}" href="{% url 'reporting:damaged_assets' %}">
-      <div class="stat-card__value">{{ stats.damaged_count }}</div>
-      <div class="stat-card__label">Damaged</div>
-    </a>
-    <a class="stat-card{% if stats.lost_count %} stat-card--alert{% endif %}" href="{% url 'reporting:lost_assets' %}">
-      <div class="stat-card__value">{{ stats.lost_count }}</div>
-      <div class="stat-card__label">Lost</div>
-    </a>
-    <a class="stat-card" href="{% url 'reporting:disposed_items' %}">
-      <div class="stat-card__value">{{ stats.disposed_count }}</div>
-      <div class="stat-card__label">Disposed</div>
-    </a>
-    <a class="stat-card" href="{% url 'inventory:transaction_list' %}">
-      <div class="stat-card__value">{{ stats.recent_transactions }}</div>
-      <div class="stat-card__label">Transactions (7d)</div>
-    </a>
+  <div class="page-header">
+    <h2>Overview</h2>
+    <div class="page-header__actions">
+      <a class="btn btn--ghost btn--sm" href="{% url 'core:dashboard_preferences' %}">Customize</a>
+    </div>
   </div>
+  <div class="stat-grid">
+    {% if "assets_in_stock" in visible_dashboard_cards %}
+      <a class="stat-card" href="{% url 'inventory:asset_list' %}?status=in_stock">
+        <div class="stat-card__value">{{ stats.assets_in_stock }}</div>
+        <div class="stat-card__label">Units in stock</div>
+      </a>
+    {% endif %}
+    {% if "quantity_on_hand" in visible_dashboard_cards %}
+      <a class="stat-card" href="{% url 'inventory:balance_list' %}">
+        <div class="stat-card__value">{{ stats.quantity_on_hand }}</div>
+        <div class="stat-card__label">Quantity on hand</div>
+      </a>
+    {% endif %}
+    {% if "internal_stock_count" in visible_dashboard_cards %}
+      <a class="stat-card" href="{% url 'inventory:asset_list' %}?stock_purpose=internal">
+        <div class="stat-card__value">{{ stats.internal_stock_count }}</div>
+        <div class="stat-card__label">Internal stock</div>
+      </a>
+    {% endif %}
+    {% if "customer_stock_count" in visible_dashboard_cards %}
+      <a class="stat-card" href="{% url 'inventory:asset_list' %}?stock_purpose=customer">
+        <div class="stat-card__value">{{ stats.customer_stock_count }}</div>
+        <div class="stat-card__label">Customer stock</div>
+      </a>
+    {% endif %}
+    {% if "low_stock_count" in visible_dashboard_cards %}
+      <a class="stat-card{% if stats.low_stock_count %} stat-card--alert{% endif %}" href="{% url 'reporting:low_stock' %}">
+        <div class="stat-card__value">{{ stats.low_stock_count }}</div>
+        <div class="stat-card__label">Low stock alerts</div>
+      </a>
+    {% endif %}
+    {% if "active_reservations" in visible_dashboard_cards %}
+      <a class="stat-card" href="{% url 'reporting:reserved_stock' %}">
+        <div class="stat-card__value">{{ stats.active_reservations }}</div>
+        <div class="stat-card__label">Active reservations</div>
+      </a>
+    {% endif %}
+    {% if "assigned_count" in visible_dashboard_cards %}
+      <a class="stat-card" href="{% url 'inventory:asset_list' %}?status=assigned">
+        <div class="stat-card__value">{{ stats.assigned_count }}</div>
+        <div class="stat-card__label">Assigned</div>
+      </a>
+    {% endif %}
+    {% if "delivered_count" in visible_dashboard_cards %}
+      <a class="stat-card" href="{% url 'inventory:asset_list' %}?status=delivered">
+        <div class="stat-card__value">{{ stats.delivered_count }}</div>
+        <div class="stat-card__label">Delivered</div>
+      </a>
+    {% endif %}
+    {% if "damaged_count" in visible_dashboard_cards %}
+      <a class="stat-card{% if stats.damaged_count %} stat-card--alert{% endif %}" href="{% url 'reporting:damaged_assets' %}">
+        <div class="stat-card__value">{{ stats.damaged_count }}</div>
+        <div class="stat-card__label">Damaged</div>
+      </a>
+    {% endif %}
+    {% if "lost_count" in visible_dashboard_cards %}
+      <a class="stat-card{% if stats.lost_count %} stat-card--alert{% endif %}" href="{% url 'reporting:lost_assets' %}">
+        <div class="stat-card__value">{{ stats.lost_count }}</div>
+        <div class="stat-card__label">Lost</div>
+      </a>
+    {% endif %}
+    {% if "disposed_count" in visible_dashboard_cards %}
+      <a class="stat-card" href="{% url 'reporting:disposed_items' %}">
+        <div class="stat-card__value">{{ stats.disposed_count }}</div>
+        <div class="stat-card__label">Disposed</div>
+      </a>
+    {% endif %}
+    {% if "recent_transactions" in visible_dashboard_cards %}
+      <a class="stat-card" href="{% url 'inventory:transaction_list' %}">
+        <div class="stat-card__value">{{ stats.recent_transactions }}</div>
+        <div class="stat-card__label">Transactions (7d)</div>
+      </a>
+    {% endif %}
+  </div>
+  {% if not visible_dashboard_cards %}
+    <p class="empty-state">All stat cards are hidden. <a href="{% url 'core:dashboard_preferences' %}">Customize</a> to bring some back.</p>
+  {% endif %}
 
   <div class="card">
     <h2>Recently viewed</h2>

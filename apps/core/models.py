@@ -130,3 +130,46 @@ class SubmissionClaim(models.Model):
 
     token = models.UUIDField(unique=True)
     claimed_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+
+# Keys match apps.reporting.queries.dashboard_summary()'s dict exactly —
+# templates/core/home.html reads {{ stats.<key> }} for each. Order here is
+# display order on both the dashboard and the customization checklist, so
+# reordering this list reorders the page; DashboardPreference only ever
+# stores a *subset* of these keys (which ones to hide), never an order.
+DASHBOARD_CARDS = [
+    ("assets_in_stock", "Units in stock"),
+    ("quantity_on_hand", "Quantity on hand"),
+    ("internal_stock_count", "Internal stock"),
+    ("customer_stock_count", "Customer stock"),
+    ("low_stock_count", "Low stock alerts"),
+    ("active_reservations", "Active reservations"),
+    ("assigned_count", "Assigned"),
+    ("delivered_count", "Delivered"),
+    ("damaged_count", "Damaged"),
+    ("lost_count", "Lost"),
+    ("disposed_count", "Disposed"),
+    ("recent_transactions", "Transactions (7d)"),
+]
+
+
+class DashboardPreference(models.Model):
+    """Which of the Dashboard's stat cards (templates/core/home.html) one
+    user has chosen to hide — a purely personal display preference, not
+    authorization: every card's own link still enforces its own access
+    scoping regardless of whether it's shown here, exactly like every other
+    "quick link"/convenience view in this app (see RecentlyViewed's
+    docstring for the same reasoning applied to a different personal list).
+
+    `hidden_cards` stores DASHBOARD_CARDS keys above, not display labels —
+    relabeling a card in the future doesn't orphan anyone's saved
+    preference. An unknown/removed key left over from a prior version is
+    harmless: apps.core.views.HomeView only ever checks membership against
+    the *current* DASHBOARD_CARDS keys, so a stale entry just never matches
+    anything and quietly stops mattering.
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="dashboard_preference"
+    )
+    hidden_cards = models.JSONField(default=list, blank=True)

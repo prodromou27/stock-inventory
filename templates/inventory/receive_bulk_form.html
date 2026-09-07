@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block title %}Add Stock (Bulk) — Stock Inventory{% endblock %}
 
@@ -9,8 +10,9 @@
       <h1>Add Stock — multi-line</h1>
       <div class="page-header__subtitle">
         Receive several products (serialized and/or quantity) in one batch. Set a default location and stock
-        purpose below, or override either on an individual row. Nothing is saved until you submit — this whole
-        receipt is created as one transaction, or none of it is.
+        purpose below, or override either on an individual row. Click a cell to edit it, Tab/Enter/arrow keys to
+        move between cells, or copy a range of cells from Excel and paste it in starting at any cell. Nothing is
+        saved until you submit — this whole receipt is created as one transaction, or none of it is.
       </div>
     </div>
   </div>
@@ -51,7 +53,7 @@
     </div>
   {% endif %}
 
-  <form method="post" class="card">
+  <form method="post" class="card" id="receive-bulk-form">
     {% csrf_token %}
 
     <h2>Batch defaults</h2>
@@ -61,93 +63,21 @@
 
     <h2>Lines</h2>
     {{ formset.management_form }}
-    <div class="table-scroll" tabindex="0">
-      <table class="dense-table">
-        <thead>
-          <tr>
-            <th>Brand</th>
-            <th>Model</th>
-            <th>SKU</th>
-            <th>Type</th>
-            <th>Category</th>
-            <th>Serials (unit-tracked)</th>
-            <th>Quantity (quantity-tracked)</th>
-            <th>Location override</th>
-            <th>Purpose override</th>
-            <th>Arrival date override</th>
-            <th>Condition</th>
-            <th>Accessories</th>
-            <th>Notes</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for form in formset %}
-            <tr>
-              <td>
-                {{ form.id }}
-                {{ form.brand_name }}
-                {% if form.brand_name.errors %}<div class="errorlist">{{ form.brand_name.errors|join:" " }}</div>{% endif %}
-              </td>
-              <td>
-                {{ form.model }}
-                {% if form.model.errors %}<div class="errorlist">{{ form.model.errors|join:" " }}</div>{% endif %}
-              </td>
-              <td>{{ form.sku }}</td>
-              <td>
-                {{ form.product_type_name }}
-                {% if form.product_type_name.errors %}<div class="errorlist">{{ form.product_type_name.errors|join:" " }}</div>{% endif %}
-              </td>
-              <td>
-                {{ form.category }}
-                {% if form.category.errors %}<div class="errorlist">{{ form.category.errors|join:" " }}</div>{% endif %}
-              </td>
-              <td>
-                {{ form.vendor_serials }}
-                {% if form.vendor_serials.errors %}<div class="errorlist">{{ form.vendor_serials.errors|join:" " }}</div>{% endif %}
-              </td>
-              <td>
-                {{ form.quantity }}
-                {% if form.quantity.errors %}<div class="errorlist">{{ form.quantity.errors|join:" " }}</div>{% endif %}
-              </td>
-              <td>
-                {{ form.location }}
-                {% if form.location.errors %}<div class="errorlist">{{ form.location.errors|join:" " }}</div>{% endif %}
-              </td>
-              <td>{{ form.stock_purpose }}</td>
-              <td>
-                {{ form.arrival_date_override }}
-                {% if form.arrival_date_override.errors %}<div class="errorlist">{{ form.arrival_date_override.errors|join:" " }}</div>{% endif %}
-              </td>
-              <td>{{ form.condition }}</td>
-              <td>{{ form.accessories }}</td>
-              <td>{{ form.notes }}</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    <p><button type="button" id="receive-bulk-add-row" class="btn btn--ghost">+ Add row</button></p>
-
-    <template id="receive-bulk-empty-row">
-      <tr>
-        <td>
-          {{ formset.empty_form.id }}
-          {{ formset.empty_form.brand_name }}
-        </td>
-        <td>{{ formset.empty_form.model }}</td>
-        <td>{{ formset.empty_form.sku }}</td>
-        <td>{{ formset.empty_form.product_type_name }}</td>
-        <td>{{ formset.empty_form.category }}</td>
-        <td>{{ formset.empty_form.vendor_serials }}</td>
-        <td>{{ formset.empty_form.quantity }}</td>
-        <td>{{ formset.empty_form.location }}</td>
-        <td>{{ formset.empty_form.stock_purpose }}</td>
-        <td>{{ formset.empty_form.arrival_date_override }}</td>
-        <td>{{ formset.empty_form.condition }}</td>
-        <td>{{ formset.empty_form.accessories }}</td>
-        <td>{{ formset.empty_form.notes }}</td>
-      </tr>
-    </template>
+    <div id="receive-bulk-row-errors"></div>
+    <datalist id="receive-bulk-brand-options">
+      {% for name in brand_choices %}<option value="{{ name }}">{% endfor %}
+    </datalist>
+    <datalist id="receive-bulk-product-type-options">
+      {% for name in product_type_choices %}<option value="{{ name }}">{% endfor %}
+    </datalist>
+    <div id="receive-bulk-grid" class="receive-bulk-grid" tabindex="0"></div>
+    <p id="receive-bulk-click-again-hint" class="text-muted" hidden>Click the cell once more to start typing.</p>
+    <div id="receive-bulk-hidden-inputs"></div>
+    <p class="form-actions">
+      <button type="button" id="receive-bulk-add-row" class="btn btn--ghost">+ Add row</button>
+      <button type="button" id="receive-bulk-remove-row" class="btn btn--ghost">Remove selected row(s)</button>
+      <span class="text-muted">Rows with no brand or model are ignored on submit.</span>
+    </p>
 
     {% if show_duplicate_product_warning %}
       <p>
@@ -172,46 +102,231 @@
     </div>
   </form>
 
-  <datalist id="brand-options">
-    {% for name in brand_choices %}<option value="{{ name }}">{% endfor %}
-  </datalist>
-  <datalist id="product-type-options">
-    {% for name in product_type_choices %}<option value="{{ name }}">{% endfor %}
-  </datalist>
+  {{ initial_rows_json|json_script:"receive-bulk-initial-rows" }}
+  {{ category_choices_json|json_script:"receive-bulk-category-choices" }}
+  {{ stock_purpose_choices_json|json_script:"receive-bulk-stock-purpose-choices" }}
+  {{ condition_choices_json|json_script:"receive-bulk-condition-choices" }}
+  {{ location_choices_json|json_script:"receive-bulk-location-choices" }}
 
   <script>
-    // "Add row" for the Lines formset above — the initial 5 blank rows
-    // (apps.inventory.forms.ReceiveBulkFormSet's extra=5) are just a
-    // rendering default, not a real cap: the formset itself has no max_num,
-    // so the server already accepts however many rows TOTAL_FORMS names.
-    // Standard Django formset JS pattern: clone the server-rendered
-    // empty_form template, swap its __prefix__ placeholder for the next
-    // index, and bump TOTAL_FORMS to match.
     document.addEventListener("DOMContentLoaded", () => {
-      const addButton = document.getElementById("receive-bulk-add-row");
-      const template = document.getElementById("receive-bulk-empty-row");
-      const totalFormsInput = document.getElementById("id_form-TOTAL_FORMS");
-      const tbody = document.querySelector(".table-scroll table tbody");
-      if (!addButton || !template || !totalFormsInput || !tbody) return;
+      const gridEl = document.getElementById("receive-bulk-grid");
+      if (!gridEl || !window.Tabulator) return;
 
-      const MAX_ROWS = 100;
+      const readJSON = (id) => JSON.parse(document.getElementById(id).textContent);
+      const initialRows = readJSON("receive-bulk-initial-rows");
+      const categoryChoices = readJSON("receive-bulk-category-choices");
+      const stockPurposeChoices = readJSON("receive-bulk-stock-purpose-choices");
+      const conditionChoices = readJSON("receive-bulk-condition-choices");
+      const locationChoices = readJSON("receive-bulk-location-choices");
 
-      addButton.addEventListener("click", () => {
-        const index = parseInt(totalFormsInput.value, 10);
-        if (index >= MAX_ROWS) return;
-        const rowHtml = template.innerHTML.replace(/__prefix__/g, String(index));
-        const wrapper = document.createElement("tbody");
-        wrapper.innerHTML = rowHtml;
-        const row = wrapper.firstElementChild;
-        tbody.appendChild(row);
-        totalFormsInput.value = String(index + 1);
-        if (window.TomSelect) {
-          row.querySelectorAll("select[data-filterable]").forEach((select) => {
-            if (select.options.length < 8) return;
-            new TomSelect(select, { create: false, maxOptions: 300, maxItems: 1 });
-          });
+      // "" -> "(use batch default)" for the three override columns, so
+      // clearing back to "follow the batch default" is a real, selectable
+      // option rather than something only achievable by never touching the
+      // cell — matches these three fields being optional per-row overrides
+      // (apps.inventory.forms.ReceiveBulkLineForm's own docstring).
+      const withBlank = (choices) => ({ "": "(use default)", ...choices });
+
+      const MIN_ROWS = 5;
+      const MAX_ROWS = 200;
+
+      function blankRow() {
+        const row = {};
+        FIELD_ORDER.forEach((field) => (row[field] = ""));
+        return row;
+      }
+
+      const FIELD_ORDER = [
+        "brand_name",
+        "model",
+        "sku",
+        "product_type_name",
+        "category",
+        "vendor_serials",
+        "quantity",
+        "location",
+        "stock_purpose",
+        "arrival_date_override",
+        "condition",
+        "accessories",
+        "notes",
+      ];
+
+      function lookupFormatter(map) {
+        return (cell) => {
+          const value = cell.getValue();
+          if (value === null || value === undefined || value === "") return "";
+          return Object.prototype.hasOwnProperty.call(map, value) ? map[value] : value;
+        };
+      }
+
+      const listEditorParams = (values) => ({ values, autocomplete: false, listOnEmpty: true });
+
+      // Brand/Type use a plain text input wired to a native <datalist> (see
+      // the datalist elements above) rather than Tabulator's own "list"
+      // editor with freetext:true — confirmed live that freetext list
+      // editor silently discards whatever was typed on both Tab and Enter
+      // (it only commits on a plain click-away), which breaks the grid's
+      // core Tab-to-move-between-cells interaction for those two columns.
+      // A plain input always commits on Tab/Enter like every other column.
+      const datalistEditorParams = (listId) => ({ elementAttributes: { list: listId } });
+
+      const startingData =
+        initialRows && initialRows.length ? initialRows : Array.from({ length: MIN_ROWS }, blankRow);
+
+      const table = new Tabulator(gridEl, {
+        data: startingData,
+        layout: "fitDataFill",
+        maxHeight: "460px",
+        selectableRows: true,
+        clipboard: false, // paste is handled by our own listener below, for
+        // predictable row-growing behaviour when a pasted block runs past
+        // the current row count — see the "paste" listener.
+        columns: [
+          { formatter: "rowSelection", titleFormatter: "rowSelection", hozAlign: "center", headerSort: false, width: 40, frozen: true },
+          { title: "Brand", field: "brand_name", editor: "input", editorParams: datalistEditorParams("receive-bulk-brand-options"), width: 160 },
+          { title: "Model", field: "model", editor: "input", width: 150 },
+          { title: "SKU", field: "sku", editor: "input", width: 110 },
+          { title: "Type", field: "product_type_name", editor: "input", editorParams: datalistEditorParams("receive-bulk-product-type-options"), width: 150 },
+          { title: "Category", field: "category", editor: "list", editorParams: listEditorParams(withBlank(categoryChoices)), formatter: lookupFormatter(categoryChoices), width: 160 },
+          { title: "Serials (unit-tracked)", field: "vendor_serials", editor: "textarea", formatter: "textarea", width: 180 },
+          { title: "Quantity (quantity-tracked)", field: "quantity", editor: "number", editorParams: { min: 0 }, width: 130 },
+          { title: "Location override", field: "location", editor: "list", editorParams: listEditorParams(withBlank(locationChoices)), formatter: lookupFormatter(locationChoices), width: 160 },
+          { title: "Purpose override", field: "stock_purpose", editor: "list", editorParams: listEditorParams(withBlank(stockPurposeChoices)), formatter: lookupFormatter(stockPurposeChoices), width: 140 },
+          { title: "Arrival date override", field: "arrival_date_override", editor: "date", editorParams: { format: "yyyy-MM-dd" }, width: 160 },
+          { title: "Condition", field: "condition", editor: "list", editorParams: listEditorParams(withBlank(conditionChoices)), formatter: lookupFormatter(conditionChoices), width: 120 },
+          { title: "Accessories", field: "accessories", editor: "input", width: 150 },
+          { title: "Notes", field: "notes", editor: "input", width: 150 },
+        ],
+      });
+
+      // ---- Add / remove rows ----
+      document.getElementById("receive-bulk-add-row").addEventListener("click", () => {
+        if (table.getDataCount() >= MAX_ROWS) return;
+        table.addRow(blankRow());
+      });
+      document.getElementById("receive-bulk-remove-row").addEventListener("click", () => {
+        table.getSelectedRows().forEach((row) => row.delete());
+      });
+
+      // ---- Excel-style paste: fills a rectangular block of cells starting
+      // at the last-clicked cell, tab-separated columns / newline rows,
+      // growing the grid with blank rows if the paste runs past the
+      // current row count. Handled entirely ourselves (Tabulator's own
+      // Clipboard module is left off above) so growing rows never depends
+      // on a specific Tabulator version's paste-range behaviour. ----
+      let activeCell = null;
+
+      // The very first click anywhere on a freshly-built editable Tabulator
+      // grid can fail to open its editor — confirmed live, repeatedly, that
+      // this is specific to a genuinely trusted first click on the grid
+      // (nothing triggerable from our own JS — a programmatic .edit() call,
+      // a synthetic dispatched click, even a real click landing elsewhere
+      // on the page first — reliably substitutes for it), and that *every*
+      // click after that first one, on any cell, works normally from then
+      // on. Since there's nothing to pre-warm from code, make the one-time
+      // rough edge self-explanatory instead of silently doing nothing: if a
+      // click on an editable cell hasn't opened an editor shortly after,
+      // show a one-time hint: the operator's very next click anywhere on
+      // the grid resolves it for the rest of the session.
+      const clickAgainHint = document.getElementById("receive-bulk-click-again-hint");
+      let hintShown = false;
+      table.on("cellEditing", () => {
+        // Deferred rather than mutated synchronously here: a DOM change
+        // made from directly inside Tabulator's own cellEditing dispatch
+        // was, empirically, enough to disrupt its own in-progress event
+        // handling for that same click (mirrors the fragility already
+        // seen elsewhere around this table's edit lifecycle).
+        setTimeout(() => {
+          clickAgainHint.hidden = true;
+        }, 0);
+      });
+      table.on("cellClick", (e, cell) => {
+        activeCell = { rowIndex: cell.getRow().getPosition(true) - 1, field: cell.getField() };
+        if (!hintShown && cell.getField()) {
+          setTimeout(() => {
+            // cell.getElement() can transiently return undefined while
+            // Tabulator is mid-teardown from cancelling its own failed
+            // edit — that transient state is itself part of what this
+            // hint is reacting to, so treat it the same as "not editing".
+            const el = cell.getElement();
+            if (!el || !el.classList.contains("tabulator-editing")) {
+              hintShown = true;
+              clickAgainHint.hidden = false;
+            }
+          }, 150);
         }
-        if (index + 1 >= MAX_ROWS) addButton.disabled = true;
+      });
+
+      gridEl.addEventListener("paste", (event) => {
+        if (!activeCell) return;
+        const text = (event.clipboardData || window.clipboardData).getData("text/plain");
+        if (!text) return;
+        event.preventDefault();
+
+        const lines = text.replace(/\r/g, "").split("\n");
+        if (lines.length && lines[lines.length - 1] === "") lines.pop();
+        if (!lines.length) return;
+
+        const startFieldIndex = FIELD_ORDER.indexOf(activeCell.field);
+        if (startFieldIndex === -1) return;
+
+        const data = table.getData().map((row) => ({ ...row }));
+        while (data.length < activeCell.rowIndex + lines.length) data.push(blankRow());
+
+        lines.forEach((line, rowOffset) => {
+          const cells = line.split("\t");
+          cells.forEach((value, colOffset) => {
+            const field = FIELD_ORDER[startFieldIndex + colOffset];
+            if (field) data[activeCell.rowIndex + rowOffset][field] = value.trim();
+          });
+        });
+
+        table.setData(data.slice(0, MAX_ROWS));
+      });
+
+      // ---- Per-row validation errors from a failed submit (see
+      // apps.inventory.views._receive_bulk_grid_context) — a plain summary
+      // list rather than inline cell decoration, so this stays simple and
+      // still points the operator at exactly which row/field to fix. ----
+      const errorsContainer = document.getElementById("receive-bulk-row-errors");
+      const rowErrors = [];
+      initialRows.forEach((row, index) => {
+        const errors = row._errors || {};
+        Object.keys(errors).forEach((field) => {
+          errors[field].forEach((message) => {
+            rowErrors.push(`Row ${index + 1} — ${field.replace(/_/g, " ")}: ${message}`);
+          });
+        });
+      });
+      if (rowErrors.length) {
+        const box = document.createElement("div");
+        box.className = "messages__item messages__item--error";
+        box.innerHTML = "<p>Fix the following and submit again:</p><ul>" +
+          rowErrors.map((m) => `<li>${m}</li>`).join("") + "</ul>";
+        errorsContainer.appendChild(box);
+      }
+
+      // ---- Sync the grid's current data into the classic Django formset
+      // hidden inputs right before the browser submits — this stays a
+      // completely normal form POST to apps.inventory.views.ReceiveBulkView,
+      // whose validation/service layer is entirely unchanged; only how the
+      // operator enters the data is new. ----
+      const totalFormsInput = document.getElementById("id_form-TOTAL_FORMS");
+      const hiddenContainer = document.getElementById("receive-bulk-hidden-inputs");
+      document.getElementById("receive-bulk-form").addEventListener("submit", () => {
+        const rows = table.getData();
+        hiddenContainer.innerHTML = "";
+        rows.forEach((row, index) => {
+          FIELD_ORDER.forEach((field) => {
+            const input = document.createElement("input");
+            input.type = "hidden";
+            input.name = `form-${index}-${field}`;
+            input.value = row[field] == null ? "" : row[field];
+            hiddenContainer.appendChild(input);
+          });
+        });
+        totalFormsInput.value = String(rows.length);
       });
     });
   </script>
