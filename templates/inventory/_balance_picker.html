@@ -91,6 +91,7 @@
           rowSelectable: true,
           extraFilters: () => ({
             product: new URLSearchParams(window.location.search).get("product") || "",
+            reservation: new URLSearchParams(window.location.search).get("reservation") || "",
           }),
           columns: [
             { formatter: "rowSelection", titleFormatter: "rowSelection", hozAlign: "center", headerSort: false, width: 40, frozen: true },
@@ -101,6 +102,23 @@
             { title: "Quantity to take", field: "quantity", width: 140, formatter: quantityInputFormatter, headerSort: false },
           ],
           onSelectionChange: (rows) => rebuildHiddenInput(rows),
+        });
+
+        // "Convert this reservation" (reservation_detail.html's shortcut,
+        // carried here via ?reservation= on this page's own URL) — the
+        // matching row is tagged `preselected`/`suggested_quantity` by
+        // BalancePickerDataView. Same deferred-tick reasoning as
+        // _asset_picker.html's identical dataLoaded handler: Tabulator
+        // hasn't handed the new rows to its row manager yet when this event
+        // fires, so selectRow()/updateData() would silently no-op on them.
+        table.on("dataLoaded", (data) => {
+          const match = data.find((row) => row.preselected);
+          if (!match) return;
+          window.setTimeout(() => {
+            table.updateData([{ id: match.id, quantity: match.suggested_quantity }]);
+            table.selectRow([match.id]);
+            rebuildHiddenInput();
+          }, 0);
         });
       });
     </script>

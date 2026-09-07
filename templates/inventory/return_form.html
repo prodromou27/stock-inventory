@@ -51,39 +51,7 @@
       </div>
     {% endif %}
 
-    <div class="card">
-      <h2>Outstanding lines</h2>
-      {% if lines %}
-        <div class="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th></th>
-                <th>Product</th>
-                <th>Serial</th>
-                <th>Quantity issued</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for line in lines %}
-                <tr>
-                  <td>
-                    {% if line.unit_asset %}
-                      <input type="checkbox" name="unit_asset_ids" value="{{ line.unit_asset.pk }}">
-                    {% endif %}
-                  </td>
-                  <td>{{ line.brand_snapshot }} {{ line.model_snapshot }}</td>
-                  <td>{{ line.serial_snapshot|default:"—" }}</td>
-                  <td>{% if not line.unit_asset %}{{ line.quantity_delta|cut:"-" }}{% endif %}</td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      {% else %}
-        <p class="empty-state">No outstanding lines.</p>
-      {% endif %}
-    </div>
+    {% include "inventory/_asset_picker.html" with picker_heading="Select unit assets to return" picker_empty_message="No outstanding unit-asset lines to return." %}
 
     {% include "inventory/_movement_steps.html" with step=3 step_title="Review and confirm" %}
     <div class="form-actions">

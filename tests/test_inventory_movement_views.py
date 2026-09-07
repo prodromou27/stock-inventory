@@ -857,6 +857,100 @@ class TestAssignAndDeliverViews:
         balance.refresh_from_db()
         assert balance.on_hand_quantity == 6
 
+    def test_deliver_converts_fully_reserved_balance_via_reservation_shortcut(
+        self, client, stock_manager_with_room_access, quantity_product, location_tree
+    ):
+        """Regression test: a reservation covering 100% of on-hand stock
+        makes that balance's available_quantity 0 — both the balance
+        picker's own eligibility filter and _quantity_lines_from_balance_
+        picker()'s re-check used to reject it outright, even though the
+        ledger's _consume_matching_reservations() frees the reserved amount
+        immediately before its own on-hand check runs, so the underlying
+        service call would have succeeded. reservation_detail.html's
+        "Convert to delivery" link (?reservation=<id>) must let this
+        through end to end.
+        """
+        import json
+
+        receive_stock(
+            user=stock_manager_with_room_access,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=4,
+        )
+        reservation_txn = reserve_stock(
+            user=stock_manager_with_room_access,
+            occurred_at=date.today(),
+            project_reference="PROJ-CONVERT",
+            final_customer="Acme Convert Corp",
+            quantity_lines=[
+                {"product": quantity_product, "location": location_tree["room"], "quantity": 4}
+            ],
+        )
+        reservation = StockReservation.objects.get(reservation_transaction=reservation_txn)
+        balance = StockBalance.objects.get(product=quantity_product, location=location_tree["room"])
+        assert balance.available_quantity == 0
+
+        client.force_login(stock_manager_with_room_access)
+        response = client.post(
+            f"{reverse('inventory:deliver')}?reservation={reservation.pk}",
+            {
+                "final_customer": "Acme Convert Corp",
+                "project_reference": "PROJ-CONVERT",
+                "occurred_at": date.today().isoformat(),
+                "quantity_lines_json": json.dumps([{"balance_id": str(balance.pk), "quantity": 4}]),
+            },
+        )
+        assert response.status_code == 302
+        reservation.refresh_from_db()
+        assert reservation.status == ReservationStatus.CONSUMED
+        assert reservation.consumed_quantity == 4
+        balance.refresh_from_db()
+        assert balance.on_hand_quantity == 0
+        assert balance.reserved_quantity == 0
+
+    def test_reservation_query_param_ignored_when_out_of_scope(
+        self,
+        client,
+        stock_manager_with_room_access,
+        administrator,
+        quantity_product,
+        location_tree,
+        other_location_tree,
+    ):
+        """Regression test: a manipulated/stale ?reservation=<id> naming a
+        reservation outside the operator's location access must degrade to
+        the plain unfiltered form — no project_reference/final_customer
+        leak, no widened balance eligibility.
+        """
+        receive_stock(
+            user=administrator,
+            product=quantity_product,
+            location=other_location_tree["room"],
+            occurred_at=date.today(),
+            quantity=4,
+        )
+        reservation_txn = reserve_stock(
+            user=administrator,
+            occurred_at=date.today(),
+            project_reference="SECRET-PROJECT",
+            quantity_lines=[
+                {
+                    "product": quantity_product,
+                    "location": other_location_tree["room"],
+                    "quantity": 4,
+                }
+            ],
+        )
+        reservation = StockReservation.objects.get(reservation_transaction=reservation_txn)
+
+        client.force_login(stock_manager_with_room_access)
+        response = client.get(f"{reverse('inventory:deliver')}?reservation={reservation.pk}")
+        assert response.status_code == 200
+        assert "SECRET-PROJECT" not in response.content.decode()
+        assert response.context["form"].initial.get("project_reference") is None
+
     def test_deliver_quantity_capped_at_available(
         self, client, stock_manager_with_room_access, quantity_product, location_tree
     ):

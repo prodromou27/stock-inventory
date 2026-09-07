@@ -8,6 +8,8 @@
     <h1>{{ reservation.product }} @ {{ reservation.location }}</h1>
     {% if reservation.status == "active" %}
       <div class="page-header__actions">
+        <a class="btn btn--ghost" href="{% url 'inventory:assign' %}?reservation={{ reservation.pk }}">Convert to assignment</a>
+        <a class="btn btn--ghost" href="{% url 'inventory:deliver' %}?reservation={{ reservation.pk }}">Convert to delivery</a>
         <form method="post" action="{% url 'inventory:release_reservation' reservation.pk %}"
               data-confirm="Release this reservation? The reserved quantity becomes available to any other movement immediately.">
           {% csrf_token %}

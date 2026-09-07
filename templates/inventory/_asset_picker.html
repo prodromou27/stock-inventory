@@ -1,6 +1,6 @@
 {% load static ui_extras %}
 <div class="card">
-  <h2>Select assets</h2>
+  <h2>{{ picker_heading|default:"Select assets" }}</h2>
   {% if assets %}
     <div class="inventory-grid is-hidden">
       <div class="grid-toolbar">
@@ -51,14 +51,16 @@
         const table = G.init({
           containerSelector: "#asset-picker-grid",
           fallbackSelector: "#asset-picker-fallback",
-          dataUrl: "{% url 'inventory:asset_picker_data' %}",
+          dataUrl: "{% if picker_transaction_id %}{% url 'inventory:return_picker_data' picker_transaction_id %}{% else %}{% url 'inventory:asset_picker_data' %}{% endif %}",
           searchInputSelector: "#asset-picker-search",
           storageKey: "asset-picker",
           pageSize: 100,
           rowSelectable: true,
           extraFilters: () => ({
+            {% if not picker_transaction_id %}
             statuses: "{{ eligible_statuses }}",
             product: new URLSearchParams(window.location.search).get("product") || "",
+            {% endif %}
             preselected: new URLSearchParams(window.location.search).getAll("unit_asset_ids").join(","),
           }),
           columns: [
@@ -103,6 +105,6 @@
       });
     </script>
   {% else %}
-    <p class="empty-state">No eligible assets found in your authorized scope.</p>
+    <p class="empty-state">{{ picker_empty_message|default:"No eligible assets found in your authorized scope." }}</p>
   {% endif %}
 </div>

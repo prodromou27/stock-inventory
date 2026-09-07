@@ -126,6 +126,28 @@
         </tbody>
       </table>
     </div>
+    <p><button type="button" id="receive-bulk-add-row" class="btn btn--ghost">+ Add row</button></p>
+
+    <template id="receive-bulk-empty-row">
+      <tr>
+        <td>
+          {{ formset.empty_form.id }}
+          {{ formset.empty_form.brand_name }}
+        </td>
+        <td>{{ formset.empty_form.model }}</td>
+        <td>{{ formset.empty_form.sku }}</td>
+        <td>{{ formset.empty_form.product_type_name }}</td>
+        <td>{{ formset.empty_form.category }}</td>
+        <td>{{ formset.empty_form.vendor_serials }}</td>
+        <td>{{ formset.empty_form.quantity }}</td>
+        <td>{{ formset.empty_form.location }}</td>
+        <td>{{ formset.empty_form.stock_purpose }}</td>
+        <td>{{ formset.empty_form.arrival_date_override }}</td>
+        <td>{{ formset.empty_form.condition }}</td>
+        <td>{{ formset.empty_form.accessories }}</td>
+        <td>{{ formset.empty_form.notes }}</td>
+      </tr>
+    </template>
 
     {% if show_duplicate_product_warning %}
       <p>
@@ -156,4 +178,41 @@
   <datalist id="product-type-options">
     {% for name in product_type_choices %}<option value="{{ name }}">{% endfor %}
   </datalist>
+
+  <script>
+    // "Add row" for the Lines formset above — the initial 5 blank rows
+    // (apps.inventory.forms.ReceiveBulkFormSet's extra=5) are just a
+    // rendering default, not a real cap: the formset itself has no max_num,
+    // so the server already accepts however many rows TOTAL_FORMS names.
+    // Standard Django formset JS pattern: clone the server-rendered
+    // empty_form template, swap its __prefix__ placeholder for the next
+    // index, and bump TOTAL_FORMS to match.
+    document.addEventListener("DOMContentLoaded", () => {
+      const addButton = document.getElementById("receive-bulk-add-row");
+      const template = document.getElementById("receive-bulk-empty-row");
+      const totalFormsInput = document.getElementById("id_form-TOTAL_FORMS");
+      const tbody = document.querySelector(".table-scroll table tbody");
+      if (!addButton || !template || !totalFormsInput || !tbody) return;
+
+      const MAX_ROWS = 100;
+
+      addButton.addEventListener("click", () => {
+        const index = parseInt(totalFormsInput.value, 10);
+        if (index >= MAX_ROWS) return;
+        const rowHtml = template.innerHTML.replace(/__prefix__/g, String(index));
+        const wrapper = document.createElement("tbody");
+        wrapper.innerHTML = rowHtml;
+        const row = wrapper.firstElementChild;
+        tbody.appendChild(row);
+        totalFormsInput.value = String(index + 1);
+        if (window.TomSelect) {
+          row.querySelectorAll("select[data-filterable]").forEach((select) => {
+            if (select.options.length < 8) return;
+            new TomSelect(select, { create: false, maxOptions: 300, maxItems: 1 });
+          });
+        }
+        if (index + 1 >= MAX_ROWS) addButton.disabled = true;
+      });
+    });
+  </script>
 {% endblock %}

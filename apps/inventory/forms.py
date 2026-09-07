@@ -438,7 +438,11 @@ class AssignForm(_BaseMovementForm):
     re-declared at every movement.
     """
 
-    employee_name = forms.CharField(max_length=120, label="Employee name")
+    employee_name = forms.CharField(
+        max_length=120,
+        label="Employee name",
+        widget=forms.TextInput(attrs={"list": "employee-options", "autocomplete": "off"}),
+    )
     recipient_reference = forms.CharField(
         max_length=120, required=False, label="Employee reference (optional)"
     )

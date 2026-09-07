@@ -76,6 +76,11 @@ urlpatterns = [
         name="transaction_reverse",
     ),
     path("transactions/<uuid:pk>/return/", views.ReturnView.as_view(), name="return_stock"),
+    path(
+        "transactions/<uuid:pk>/return/picker-data/",
+        views.ReturnLinePickerDataView.as_view(),
+        name="return_picker_data",
+    ),
     path("transfer/", views.TransferView.as_view(), name="transfer"),
     path("reserve/", views.ReserveView.as_view(), name="reserve"),
     path("reservations/", views.ReservationListView.as_view(), name="reservation_list"),

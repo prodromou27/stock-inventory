@@ -31,4 +31,10 @@
       <button type="submit" class="btn btn--primary">Assign</button>
     </div>
   </form>
+
+  <datalist id="employee-options">
+    {% for name in employee_choices %}
+      <option value="{{ name }}">
+    {% endfor %}
+  </datalist>
 {% endblock %}

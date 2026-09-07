@@ -1942,11 +1942,104 @@ class AssetPickerDataView(LoginRequiredMixin, View):
         }
 
 
+class ReturnLinePickerDataView(LoginRequiredMixin, View):
+    """JSON data source for the asset-picker grid embedded in the Return
+    form (templates/inventory/_asset_picker.html, given a `data_url`) —
+    unlike AssetPickerDataView, this is scoped to exactly one original
+    transaction's still-outstanding unit lines
+    (apps.inventory.services.returns.outstanding_unit_lines()), never to the
+    requesting user's whole accessible-asset scope. No RoleRequiredMixin,
+    matching AssetPickerDataView: require_transaction_access() is the real
+    authorization check here (the same one ReturnView itself applies), so a
+    read-only user sees the same rows they could already see on the
+    transaction's own detail page, just paginated/searchable for a
+    delivery/assignment with many serialized units.
+    """
+
+    MAX_PAGE_SIZE = 200
+
+    def get(self, request, *args, **kwargs):
+        original_transaction = get_object_or_404(
+            InventoryTransaction.objects.filter(
+                movement_type__in=(MovementType.ASSIGNMENT, MovementType.DELIVERY)
+            ),
+            pk=kwargs["pk"],
+        )
+        require_transaction_access(request.user, original_transaction)
+
+        unit_asset_ids = outstanding_unit_lines(original_transaction).values_list(
+            "unit_asset_id", flat=True
+        )
+        queryset = UnitAsset.objects.filter(pk__in=unit_asset_ids).select_related(
+            "product", "product__brand", "product__product_type", "current_location"
+        )
+        queryset = filter_unit_assets(queryset, request.GET)
+        queryset = apply_multi_sort(
+            queryset,
+            ASSET_PICKER_SORT_FIELDS,
+            parse_multi_sort(request.GET),
+            default_ordering=("product__brand__name", "product__model"),
+        )
+
+        page_number = _positive_int(request.GET.get("page"), default=1)
+        page_size = min(_positive_int(request.GET.get("size"), default=100), self.MAX_PAGE_SIZE)
+        paginator = Paginator(queryset, page_size)
+        page = paginator.get_page(page_number)
+
+        breadcrumbs = location_breadcrumb_map()
+        rows = [
+            AssetPickerDataView._serialize(asset, breadcrumbs, set()) for asset in page.object_list
+        ]
+        return JsonResponse(
+            {"data": rows, "last_page": paginator.num_pages, "total_count": paginator.count}
+        )
+
+
+def _reservation_for_query_param(request):
+    """The StockReservation named by ?reservation=<id> — the "Convert this
+    reservation" shortcut from reservation_detail.html carries this through
+    to Assign/Deliver's GET (prefilling project_reference/final_customer)
+    and to the balance-picker data endpoint (widening + preselecting the
+    reservation's own row — see _eligible_balances()'s docstring for why
+    that widening is necessary). Silently ignored — no prefill, nothing
+    widened — if missing, not found, not ACTIVE, or outside the user's
+    location access: a tampered/stale id degrades to the plain unfiltered
+    form, never a 403 or a data leak.
+    """
+    reservation_id = request.GET.get("reservation")
+    if not reservation_id:
+        return None
+    reservation = (
+        StockReservation.objects.filter(pk=reservation_id, status=ReservationStatus.ACTIVE)
+        .select_related("product", "location")
+        .first()
+    )
+    if reservation is None:
+        return None
+    try:
+        require_location_access(request.user, reservation.location)
+    except PermissionDenied:
+        return None
+    return reservation
+
+
 def _eligible_balances(request):
     """StockBalance rows with stock actually available to issue — the
     quantity-tracked counterpart to _eligible_assets(). Zero-available rows
     are excluded outright rather than shown-but-uncheckable: nothing useful
     comes from letting an operator pick a row it's impossible to draw from.
+
+    Exception: when ?reservation=<id> names an ACTIVE reservation this user
+    can reach (_reservation_for_query_param()), that reservation's own
+    (product, location, stock_purpose) row is included even at zero
+    available — by design, a reservation holds down exactly the on-hand
+    quantity it reserved, so the balance it's converting always shows zero
+    available right up until the reservation is actually consumed
+    (services.assignments._consume_matching_reservations() frees the
+    reserved amount immediately before the issuing on-hand check, so the
+    conversion itself still succeeds). Without this, a reservation that
+    covers 100% of on-hand stock would be impossible to ever fulfill
+    through this picker.
     """
     queryset = scope_queryset(
         request.user,
@@ -1955,7 +2048,19 @@ def _eligible_balances(request):
     )
     queryset = queryset.annotate(
         available_quantity_annotated=StockBalance.AVAILABLE_QUANTITY_EXPRESSION
-    ).filter(available_quantity_annotated__gt=0)
+    )
+    reservation = _reservation_for_query_param(request)
+    if reservation is not None:
+        queryset = queryset.filter(
+            Q(available_quantity_annotated__gt=0)
+            | Q(
+                product=reservation.product,
+                location=reservation.location,
+                stock_purpose=reservation.stock_purpose,
+            )
+        )
+    else:
+        queryset = queryset.filter(available_quantity_annotated__gt=0)
     product_id = request.GET.get("product")
     if product_id:
         queryset = queryset.filter(product_id=product_id)
@@ -1995,6 +2100,7 @@ class BalancePickerDataView(LoginRequiredMixin, View):
     MAX_PAGE_SIZE = 200
 
     def get(self, request, *args, **kwargs):
+        reservation = _reservation_for_query_param(request)
         queryset = filter_stock_balances(_eligible_balances(request), request.GET)
         queryset = apply_multi_sort(
             queryset,
@@ -2009,14 +2115,27 @@ class BalancePickerDataView(LoginRequiredMixin, View):
         page = paginator.get_page(page_number)
 
         breadcrumbs = location_breadcrumb_map()
-        rows = [self._serialize(balance, breadcrumbs) for balance in page.object_list]
+        rows = [self._serialize(balance, breadcrumbs, reservation) for balance in page.object_list]
         return JsonResponse(
             {"data": rows, "last_page": paginator.num_pages, "total_count": paginator.count}
         )
 
     @staticmethod
-    def _serialize(balance, breadcrumbs):
+    def _serialize(balance, breadcrumbs, reservation=None):
         breadcrumb = breadcrumbs.get(balance.location_id, {})
+        is_reservation_match = (
+            reservation is not None
+            and balance.product_id == reservation.product_id
+            and balance.location_id == reservation.location_id
+            and balance.stock_purpose == reservation.stock_purpose
+        )
+        # The reservation's own remaining quantity is issuable right now
+        # (see _eligible_balances()'s docstring) even though it's excluded
+        # from the plain available_quantity figure — reported here only for
+        # this one matched row, never for the balance's ordinary display.
+        remaining_reserved = (
+            reservation.quantity - reservation.consumed_quantity if is_reservation_match else 0
+        )
         return {
             "id": str(balance.pk),
             "brand": balance.product.brand.name,
@@ -2027,7 +2146,9 @@ class BalancePickerDataView(LoginRequiredMixin, View):
             "storage_room": breadcrumb.get("storage_room", ""),
             "stock_purpose": balance.stock_purpose,
             "stock_purpose_display": balance.get_stock_purpose_display(),
-            "available": balance.available_quantity_annotated,
+            "available": balance.available_quantity_annotated + remaining_reserved,
+            "preselected": is_reservation_match,
+            "suggested_quantity": remaining_reserved or None,
         }
 
 
@@ -2052,6 +2173,7 @@ def _quantity_lines_from_balance_picker(request, user, *, location_key="location
     if not isinstance(entries, list):
         raise ValidationError("Invalid quantity selection.")
 
+    reservation = _reservation_for_query_param(request)
     balance_ids = [entry.get("balance_id") for entry in entries if entry.get("balance_id")]
     balances = {
         str(balance.pk): balance
@@ -2082,9 +2204,22 @@ def _quantity_lines_from_balance_picker(request, user, *, location_key="location
         if quantity <= 0:
             raise ValidationError("Quantity must be positive.")
         require_location_access(user, balance.location)
-        if quantity > balance.available_quantity:
+        effective_available = balance.available_quantity
+        if (
+            reservation is not None
+            and balance.product_id == reservation.product_id
+            and balance.location_id == reservation.location_id
+            and balance.stock_purpose == reservation.stock_purpose
+        ):
+            # See _eligible_balances()'s docstring: this reservation's own
+            # remaining quantity is issuable right now even though it's
+            # excluded from the plain available_quantity figure —
+            # _consume_matching_reservations() frees it immediately before
+            # the ledger's own on-hand check runs.
+            effective_available += reservation.quantity - reservation.consumed_quantity
+        if quantity > effective_available:
             raise ValidationError(
-                f"Only {balance.available_quantity} available for {balance.product} at "
+                f"Only {effective_available} available for {balance.product} at "
                 f"{balance.location} ({balance.get_stock_purpose_display()}) — "
                 f"{quantity} requested."
             )
@@ -2286,7 +2421,11 @@ class AssignView(LoginRequiredMixin, RoleRequiredMixin, View):
     template_name = "inventory/assign_form.html"
 
     def get(self, request):
-        form = AssignForm(user=request.user, initial={"submission_token": new_submission_token()})
+        initial = {"submission_token": new_submission_token()}
+        reservation = _reservation_for_query_param(request)
+        if reservation is not None:
+            initial["project_reference"] = reservation.project_reference
+        form = AssignForm(user=request.user, initial=initial)
         eligible_statuses = [UnitStatus.IN_STOCK, UnitStatus.RESERVED]
         assets = _eligible_assets(request, eligible_statuses)
         return render(
@@ -2298,6 +2437,7 @@ class AssignView(LoginRequiredMixin, RoleRequiredMixin, View):
                 "balances": _eligible_balances_for_fallback(request),
                 "preselected_ids": _preselected_ids(request),
                 "eligible_statuses": _status_param(eligible_statuses),
+                "employee_choices": _employee_name_choices(request.user),
             },
         )
 
@@ -2308,7 +2448,14 @@ class AssignView(LoginRequiredMixin, RoleRequiredMixin, View):
         balances = _eligible_balances_for_fallback(request)
         if not form.is_valid():
             return render(
-                request, self.template_name, {"form": form, "assets": assets, "balances": balances}
+                request,
+                self.template_name,
+                {
+                    "form": form,
+                    "assets": assets,
+                    "balances": balances,
+                    "employee_choices": _employee_name_choices(request.user),
+                },
             )
 
         if not claim_submission_token(request.POST.get("submission_token")):
@@ -2403,6 +2550,42 @@ def _customer_search_results(user, query=""):
     return results
 
 
+EMPLOYEE_NAME_CHOICES_LIMIT = 20
+
+
+def _employee_name_choices(user):
+    """Past employee_name values from this user's scoped Employee assignment
+    transactions, offered as a plain <datalist> the same way DeliverForm's
+    final_customer field offers customer_choices — the same historical-text
+    fallback tier _customer_search_results() has, minus the "real Customer
+    row" tier, since no Employee master-data model exists (spec parity:
+    employee_name is always free text, never a hard lookup). No separate
+    live-search endpoint either — assign_form.html renders this once at page
+    load, exactly like customer_choices does today (CustomerSearchDataView's
+    own live-search endpoint is likewise unused by any current template).
+    """
+    historical = scope_transaction_queryset(
+        user,
+        InventoryTransaction.objects.filter(movement_type=MovementType.ASSIGNMENT).exclude(
+            employee_name=""
+        ),
+    ).order_by()
+    names = historical.values_list("employee_name", flat=True).distinct()[
+        : EMPLOYEE_NAME_CHOICES_LIMIT * 2
+    ]
+    results = []
+    seen = set()
+    for name in names:
+        key = name.strip().lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        results.append(name)
+        if len(results) >= EMPLOYEE_NAME_CHOICES_LIMIT:
+            break
+    return results
+
+
 class CustomerSearchDataView(LoginRequiredMixin, View):
     """JSON search backing DeliverForm's final_customer autocomplete (and,
     per the plan, the future multi-item delivery grid). See
@@ -2419,7 +2602,13 @@ class DeliverView(LoginRequiredMixin, RoleRequiredMixin, View):
     template_name = "inventory/deliver_form.html"
 
     def get(self, request):
-        form = DeliverForm(user=request.user, initial={"submission_token": new_submission_token()})
+        initial = {"submission_token": new_submission_token()}
+        reservation = _reservation_for_query_param(request)
+        if reservation is not None:
+            initial["project_reference"] = reservation.project_reference
+            if reservation.final_customer:
+                initial["final_customer"] = reservation.final_customer
+        form = DeliverForm(user=request.user, initial=initial)
         eligible_statuses = [UnitStatus.IN_STOCK, UnitStatus.RESERVED]
         assets = _eligible_assets(request, eligible_statuses)
         return render(
@@ -2548,10 +2737,14 @@ class ReturnView(LoginRequiredMixin, RoleRequiredMixin, View):
         return options
 
     def _context(self, request, original_transaction, form):
+        lines = self._outstanding_lines(original_transaction)
         return {
             "form": form,
             "original_transaction": original_transaction,
-            "lines": self._outstanding_lines(original_transaction),
+            "lines": lines,
+            "assets": [line.unit_asset for line in lines],
+            "preselected_ids": _preselected_ids(request),
+            "picker_transaction_id": original_transaction.pk,
             "quantity_options": self._quantity_return_options(
                 original_transaction, request.POST if request.method == "POST" else None
             ),
