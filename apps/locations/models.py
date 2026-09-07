@@ -125,19 +125,22 @@ def order_by_hierarchy(queryset):
     return queryset.annotate(_level_rank=ordering).order_by("_level_rank", "name")
 
 
-# The single, canonical split of LEVEL_ORDER into "authorization boundary,
-# never a valid final stock location" (LEVELS_ABOVE_ROOM) vs "a real place
-# stock can be held, and the only levels a Stock Manager may create"
-# (ROOM_OR_BELOW_LEVELS) — these two sets happen to be exactly the same
-# levels everywhere they're used (a Stock Manager creates precisely the
-# levels stock can be held at), and used to be re-typed as an identical
+# The canonical set of "a real place stock can be held, and the only
+# levels a Stock Manager may create" — used to be re-typed as an identical
 # tuple in apps/inventory/forms.py, apps/imports/forms.py, apps/imports/
 # location_resolution.py, apps/dataquality/checks.py, and
 # apps/locations/services.py/forms.py/views.py — the same class of
 # duplication-drift bug as the scattered `.order_by("level", "name")` calls
 # order_by_hierarchy() above replaced. Import from here instead of
 # re-declaring.
+#
+# Every "is this too high to hold stock" check must test `not in
+# ROOM_OR_BELOW_LEVELS` (deny-by-default), never a positive enumeration of
+# "the levels above room" — a Location can carry a level value outside the
+# *current* LEVEL_ORDER entirely (0003_alter_location_level.py leaves a
+# pre-collapse Site/Floor row in place, un-deleted, exactly when a
+# historical ledger record still references it — ledger tables are
+# append-only and can never be re-pointed to make room for the delete), and
+# an allow-by-default positive list silently treats that orphaned row as a
+# valid stock location instead of flagging it.
 ROOM_OR_BELOW_LEVELS = (LocationLevel.STORAGE_ROOM, LocationLevel.RACK_SHELF)
-LEVELS_ABOVE_ROOM = tuple(
-    level for level in Location.LEVEL_ORDER if level not in ROOM_OR_BELOW_LEVELS
-)

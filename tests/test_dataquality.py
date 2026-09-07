@@ -472,6 +472,69 @@ class TestCheckCountryOnlyLocation:
         run_detection(user=None)
         assert not DataQualityFinding.objects.filter(issue_type="country_only_location").exists()
 
+    def test_flags_a_unit_asset_at_a_level_outside_the_current_hierarchy(
+        self, administrator, unit_product, location_tree
+    ):
+        """Regression test: apps.locations.migrations.0003_alter_location_level
+        can leave a pre-collapse Site/Floor row in place (never deleted) when
+        a historical ledger record still references it — a level value
+        outside the *current* LocationLevel entirely. The original
+        `level__in=LEVELS_ABOVE_ROOM` filter only enumerated the levels
+        above room *in the current scheme*, so it silently missed exactly
+        this row; `exclude(level__in=ROOM_OR_BELOW_LEVELS)` (deny-by-
+        default) catches it regardless of what the stray value actually is.
+        """
+        from apps.locations.models import Location
+
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-LEGACY-ORPHAN-LEVEL",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-LEGACY-ORPHAN-LEVEL")
+        # A location with a level outside Location.LEVEL_ORDER — simulates a
+        # leftover pre-collapse Site/Floor row, without needing the
+        # trigger-disabling dance the real migration needed to construct one.
+        Location.objects.filter(pk=location_tree["room"].pk).update(level="floor")
+        run_detection(user=None)
+        assert DataQualityFinding.objects.filter(
+            issue_type="country_only_location", object_type="UnitAsset", object_id=str(asset.pk)
+        ).exists()
+
+
+@pytest.mark.django_db
+class TestCheckInvalidLocationHierarchy:
+    """apps.dataquality.checks.check_invalid_location_hierarchy — expected to
+    be near-empty going forward since apps.locations.services.create_location()
+    already refuses a mismatched level/parent pair at write time.
+    """
+
+    def test_a_correctly_placed_room_is_not_flagged(self, location_tree):
+        from apps.dataquality.checks import check_invalid_location_hierarchy
+        from apps.locations.scoping import location_breadcrumb_map
+
+        findings = list(check_invalid_location_hierarchy(location_breadcrumb_map()))
+        assert not any(f["object_id"] == str(location_tree["room"].pk) for f in findings)
+
+    def test_flags_a_level_outside_the_current_hierarchy_without_crashing(self, location_tree):
+        """Regression test: _expected_parent_level() used to call
+        Location.LEVEL_ORDER.index(location.level) unconditionally for every
+        row in the table, which raised ValueError (crashing the whole
+        detection run, not just this one check) the moment it reached a
+        level outside the current three — exactly what
+        0003_alter_location_level.py can leave behind when a historical
+        ledger record still references a pre-collapse Site/Floor row.
+        """
+        from apps.dataquality.checks import check_invalid_location_hierarchy
+        from apps.locations.models import Location
+        from apps.locations.scoping import location_breadcrumb_map
+
+        Location.objects.filter(pk=location_tree["room"].pk).update(level="floor")
+        findings = list(check_invalid_location_hierarchy(location_breadcrumb_map()))
+        assert any(f["object_id"] == str(location_tree["room"].pk) for f in findings)
+
 
 @pytest.mark.django_db
 class TestRunDetectionLifecycle:

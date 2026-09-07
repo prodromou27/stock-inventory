@@ -93,8 +93,59 @@ USING locations_location AS site_or_floor
 WHERE access_grant.location_id = site_or_floor.id AND site_or_floor.level IN ('site', 'floor');
 """
 
-DELETE_EMPTY_FLOORS_SQL = "DELETE FROM locations_location WHERE level = 'floor';"
-DELETE_EMPTY_SITES_SQL = "DELETE FROM locations_location WHERE level = 'site';"
+# A Site/Floor can still be directly referenced by a historical ledger row
+# (e.g. an old InventoryTransaction.destination_location recorded before
+# this app enforced require_room_or_below() on every write) even after
+# every Location.parent reference to it is gone. Ledger tables are
+# append-only — CLAUDE.md's working agreement, and services/ledger.py's own
+# invariant — so that row can never be edited or re-pointed to make room
+# for this delete; the only safe move is to leave that one Location exactly
+# as it is, orphaned outside the new three-level tree but still resolvable
+# for whatever historical record needs it. A plain bulk DELETE has no
+# "skip the ones that fail" mode, and enumerating every FK that might
+# reference a Location by hand is exactly how the first version of this
+# migration missed one (destination_location) — this loops row by row and
+# catches the constraint violation per row instead, so it's correct
+# regardless of which table (or a future one) holds the reference.
+#
+# SET CONSTRAINTS ALL IMMEDIATE is not optional: this app's ledger FKs are
+# DEFERRABLE INITIALLY DEFERRED, so a violation is normally only raised at
+# transaction COMMIT — by which point the DO block below has long since
+# returned and its EXCEPTION handler can no longer catch anything.
+# Confirmed live against a reconstructed copy of exactly this scenario
+# (a Location manually inserted at 'floor' level with an
+# InventoryTransaction.destination_location pointing at it, trigger
+# temporarily disabled to allow the otherwise-now-invalid insert): without
+# this line the DO block "succeeds" but the enclosing migration transaction
+# still fails at commit with the same FK violation; with it, the violation
+# surfaces synchronously inside the DELETE and is caught per-row as
+# intended, leaving that one row in place and the ledger row it's
+# referenced from completely untouched.
+DELETE_UNREFERENCED_FLOORS_AND_SITES_SQL = """
+SET CONSTRAINTS ALL IMMEDIATE;
+
+DO $$
+DECLARE
+    loc RECORD;
+BEGIN
+    FOR loc IN SELECT id FROM locations_location WHERE level = 'floor' LOOP
+        BEGIN
+            DELETE FROM locations_location WHERE id = loc.id;
+        EXCEPTION WHEN foreign_key_violation THEN
+            RAISE NOTICE 'Leaving floor location % in place — still referenced '
+                'elsewhere (likely historical ledger data)', loc.id;
+        END;
+    END LOOP;
+    FOR loc IN SELECT id FROM locations_location WHERE level = 'site' LOOP
+        BEGIN
+            DELETE FROM locations_location WHERE id = loc.id;
+        EXCEPTION WHEN foreign_key_violation THEN
+            RAISE NOTICE 'Leaving site location % in place — still referenced '
+                'elsewhere (likely historical ledger data)', loc.id;
+        END;
+    END LOOP;
+END $$;
+"""
 
 NEW_SET_PATH_FUNCTION_SQL = """
 CREATE OR REPLACE FUNCTION locations_location_set_path() RETURNS trigger AS $$
@@ -203,7 +254,8 @@ class Migration(migrations.Migration):
         migrations.RunSQL(
             sql=DROP_REDUNDANT_LOCATION_GRANTS_SQL, reverse_sql=migrations.RunSQL.noop
         ),
-        migrations.RunSQL(sql=DELETE_EMPTY_FLOORS_SQL, reverse_sql=migrations.RunSQL.noop),
-        migrations.RunSQL(sql=DELETE_EMPTY_SITES_SQL, reverse_sql=migrations.RunSQL.noop),
+        migrations.RunSQL(
+            sql=DELETE_UNREFERENCED_FLOORS_AND_SITES_SQL, reverse_sql=migrations.RunSQL.noop
+        ),
         migrations.RunSQL(sql=NEW_SET_PATH_FUNCTION_SQL, reverse_sql=OLD_SET_PATH_FUNCTION_SQL),
     ]

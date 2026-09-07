@@ -26,7 +26,7 @@ from apps.inventory.models import (
     UnitAsset,
     UnitStatus,
 )
-from apps.locations.models import LEVELS_ABOVE_ROOM, Location
+from apps.locations.models import ROOM_OR_BELOW_LEVELS, Location
 
 from .models import DataQualityIssueType, DataQualitySeverity
 
@@ -244,8 +244,27 @@ def check_invalid_location_hierarchy(breadcrumbs):
     create_location() already refuses to create a mismatched level/parent
     pair — this exists to surface legacy or imported locations from before
     that validation existed, not a rule this app itself can violate.
+
+    Also flags a level outside the *current* Location.LEVEL_ORDER entirely
+    (e.g. a leftover 'site'/'floor' row from before the hierarchy was
+    collapsed to Country/Storage Room/Rack-Shelf) — apps.locations.
+    migrations.0003_alter_location_level leaves exactly such a row in place,
+    never deleted, when a historical ledger record still references it
+    (ledger tables are append-only and can never be re-pointed to make room
+    for the delete). _expected_parent_level() can't compute a real answer
+    for a level it doesn't recognize, so this is reported directly instead
+    of calling it.
     """
     for location in Location.objects.select_related("parent"):
+        if location.level not in Location.LEVEL_ORDER:
+            yield _hierarchy_finding(
+                location,
+                f"'{location.level}' is not a level in the current location hierarchy "
+                "(Country/Storage Room/Rack-Shelf) — most likely a pre-collapse Site/Floor "
+                "row kept only because a historical record still references it. No action "
+                "needed unless you're specifically auditing that old reference.",
+            )
+            continue
         expected_parent_level = _expected_parent_level(location.level)
         if expected_parent_level is None:
             if location.parent is not None:
@@ -370,11 +389,10 @@ def check_orphaned_transaction_reference(breadcrumbs):
             }
 
 
-_LEVELS_ABOVE_ROOM = LEVELS_ABOVE_ROOM
-
-
 def check_country_only_location(breadcrumbs):
-    """Flags stock recorded at a Country/Site/Floor — a Country is an
+    """Flags stock recorded above Storage Room level — a Country (or a
+    pre-collapse Site/Floor row 0003_alter_location_level.py had to leave in
+    place because a historical ledger record still references it) is an
     authorization boundary, never a valid final stock location (spec: "do
     not guess locations"). Only ever finds pre-existing/legacy or imported
     data now: every write path (Add Stock, Transfer, Return, Repair, Admin
@@ -383,10 +401,17 @@ def check_country_only_location(breadcrumbs):
     surface what's already wrong, never to guess or auto-move it — the
     correction is an ordinary Transfer (StockBalance) or Admin Correction/
     Transfer (UnitAsset) into a real Storage Room, both already audited.
+
+    Excludes ROOM_OR_BELOW_LEVELS rather than listing "the levels above
+    room" — deny-by-default, so a level outside the current scheme entirely
+    (that orphaned Site/Floor row) is still caught, not silently treated as
+    fine because it isn't literally 'country'.
     """
-    assets = UnitAsset.objects.select_related(
-        "product", "product__brand", "current_location"
-    ).filter(current_location__level__in=_LEVELS_ABOVE_ROOM)
+    assets = (
+        UnitAsset.objects.select_related("product", "product__brand", "current_location")
+        .filter(current_location__isnull=False)
+        .exclude(current_location__level__in=ROOM_OR_BELOW_LEVELS)
+    )
     for asset in assets:
         country, location_label = _location_context(breadcrumbs, asset.current_location)
         yield {
@@ -402,8 +427,10 @@ def check_country_only_location(breadcrumbs):
             "correct it via an Administrator correction).",
         }
 
-    balances = StockBalance.objects.select_related("product", "product__brand", "location").filter(
-        location__level__in=_LEVELS_ABOVE_ROOM, on_hand_quantity__gt=0
+    balances = (
+        StockBalance.objects.select_related("product", "product__brand", "location")
+        .filter(on_hand_quantity__gt=0)
+        .exclude(location__level__in=ROOM_OR_BELOW_LEVELS)
     )
     for balance in balances:
         country, location_label = _location_context(breadcrumbs, balance.location)

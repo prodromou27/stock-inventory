@@ -6,11 +6,11 @@ values are left unresolved for the preview screen's per-row override.
 
 from django.db.models import Q
 
-from apps.locations.models import LEVELS_ABOVE_ROOM, Location
+from apps.locations.models import ROOM_OR_BELOW_LEVELS, Location
 
 
 def _too_high(location):
-    return location.level in LEVELS_ABOVE_ROOM
+    return location.level not in ROOM_OR_BELOW_LEVELS
 
 
 def resolve_location(location_text, sub_location_text):

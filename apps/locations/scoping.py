@@ -94,11 +94,11 @@ def require_room_or_below(location):
     location unset, is a different concern from "the level chosen is too
     high"); callers that require a location at all enforce that separately.
     """
-    from .models import LEVELS_ABOVE_ROOM
+    from .models import ROOM_OR_BELOW_LEVELS
 
     if location is None:
         return
-    if location.level in LEVELS_ABOVE_ROOM:
+    if location.level not in ROOM_OR_BELOW_LEVELS:
         raise ValidationError(
             f"'{location}' is a {location.get_level_display()}, not a storage location. "
             "Select a Storage Room (or a Rack/Shelf within one)."
