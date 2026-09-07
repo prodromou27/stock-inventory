@@ -40,30 +40,50 @@
 
   <script defer>
     document.addEventListener("DOMContentLoaded", () => {
-      const projectRefInput = document.getElementById("id_project_reference");
-      if (!projectRefInput) return;
+      // Both fields are already attributes UnitAsset carries (set at
+      // reservation/receipt time, not invented at delivery), so if
+      // everything currently selected agrees, fill it in rather than
+      // making the operator retype something the assets already know.
+      function wireAutoFill(fieldId, rowKey) {
+        const input = document.getElementById(fieldId);
+        if (!input) return;
 
-      // Once the operator has typed their own value, stop overwriting it —
-      // this is a convenience for the common case (everything selected
-      // already shares one project), not a rule that should fight a
-      // deliberate manual entry.
-      let userEdited = Boolean(projectRefInput.value);
-      projectRefInput.addEventListener("input", () => {
-        userEdited = true;
-      });
+        // Once the operator has typed their own value, stop overwriting it
+        // — this is a convenience for the common case (everything selected
+        // already agrees), not a rule that should fight deliberate manual
+        // entry (e.g. delivering existing stock to a brand-new customer).
+        // autoFilling distinguishes our own dispatched "input" event (below)
+        // from a real keystroke, so firing that event never mislabels
+        // itself as the operator having edited the field.
+        let userEdited = Boolean(input.value);
+        let autoFilling = false;
+        input.addEventListener("input", () => {
+          if (!autoFilling) userEdited = true;
+        });
 
-      document.addEventListener("asset-picker:selection-changed", (event) => {
-        if (userEdited) return;
-        const values = new Set(
-          event.detail.rows.map((row) => row.project_reference).filter((value) => value)
-        );
-        // userEdited is still false here, so the field currently holds
-        // either "" or a value we auto-filled ourselves — always safe to
-        // overwrite. Anything other than exactly one shared value across
-        // the current selection clears it, rather than leaving a stale
-        // reference from a since-changed selection.
-        projectRefInput.value = values.size === 1 ? values.values().next().value : "";
-      });
+        document.addEventListener("asset-picker:selection-changed", (event) => {
+          if (userEdited) return;
+          const values = new Set(
+            event.detail.rows.map((row) => row[rowKey]).filter((value) => value)
+          );
+          // userEdited is still false here, so the field currently holds
+          // either "" or a value we auto-filled ourselves — always safe to
+          // overwrite. Anything other than exactly one shared value across
+          // the current selection clears it, rather than leaving a stale
+          // value from a since-changed selection.
+          autoFilling = true;
+          input.value = values.size === 1 ? values.values().next().value : "";
+          // A real "input" event, not just the .value assignment — this
+          // field may also be wired to a hidden Customer-id lookup
+          // (static/js/movement_forms.js's data-customer-field handling),
+          // which only listens for the event, never polls the value.
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+          autoFilling = false;
+        });
+      }
+
+      wireAutoFill("id_project_reference", "project_reference");
+      wireAutoFill("id_final_customer", "final_customer");
     });
   </script>
 {% endblock %}
