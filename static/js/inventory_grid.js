@@ -170,7 +170,6 @@
       initialSort: options.initialSort || [],
       initialHeaderFilter,
       selectableRows: options.rowSelectable !== false,
-      selectableRowsRangeMode: "click",
       index: "id",
       // Live per-keystroke filtering, debounced (Tabulator's own built-in
       // 300ms headerFilterLiveFilterDelay) rather than needing Enter/blur
@@ -217,27 +216,44 @@
       }
     });
 
-    // Cross-page selection: Tabulator's own selection is tied to whatever
-    // rows are currently rendered, so with remote pagination a plain
-    // rowSelectionChanged handler only ever reports the *current page's*
-    // selected rows — paging forward and selecting more silently drops
-    // whatever was selected on earlier pages. selectedById is this table's
-    // full accumulated selection across every page visited so far;
-    // onSelectionChange is always called with that complete set, and
-    // dataLoaded re-applies selectRow() for any newly-rendered row whose id
-    // is already known, so the checkbox state stays correct when paging
-    // back too.
+    // Cross-page/cross-search selection: Tabulator's own selection is tied
+    // to whatever rows are currently loaded, so with remote filtering a
+    // fresh search silently drops whatever was selected under a *previous*
+    // search term — confirmed live with an event trace: Tabulator clears
+    // the outgoing rows' selection as part of its own data-replace
+    // teardown, firing rowSelectionChanged with everything now deselected
+    // within ~2ms of dataLoaded, indistinguishable at face value from the
+    // operator actually unchecking them. Reconciling on every such event
+    // durably lost the earlier pick the moment a second search ran —
+    // exactly the "can't add multiple different assets" complaint this was
+    // built to prevent. (Reconciling only from real click events instead,
+    // tried first, doesn't work either: the row-selection checkbox column
+    // toggles the row directly and fires neither cellClick nor rowClick at
+    // all — confirmed live.) Suppressing *removals* (never additions) for
+    // a short window after each reload is the fix: comfortably longer than
+    // the ~2ms the spurious clear needs, far shorter than any real human
+    // click could land after a reload, so a genuine uncheck moments later
+    // still works normally. selectedById is this table's full accumulated
+    // selection across every page/search visited so far; onSelectionChange
+    // is always called with that complete set, and dataLoaded re-applies
+    // selectRow() for any newly-rendered row whose id is already known, so
+    // the checkbox state stays correct when paging/searching back too.
     if (options.rowSelectable !== false) {
       const selectedById = new Map();
+      let suppressRemovals = false;
       table.on("rowSelectionChanged", () => {
         table.getRows(true).forEach((row) => {
           const data = row.getData();
           if (row.isSelected()) selectedById.set(data.id, data);
-          else selectedById.delete(data.id);
+          else if (!suppressRemovals) selectedById.delete(data.id);
         });
         if (options.onSelectionChange) options.onSelectionChange(Array.from(selectedById.values()));
       });
       table.on("dataLoaded", (data) => {
+        suppressRemovals = true;
+        window.setTimeout(() => {
+          suppressRemovals = false;
+        }, 150);
         const idsOnPage = data.map((row) => row.id).filter((id) => selectedById.has(id));
         if (idsOnPage.length) window.setTimeout(() => table.selectRow(idsOnPage), 0);
       });
