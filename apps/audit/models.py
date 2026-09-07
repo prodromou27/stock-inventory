@@ -31,6 +31,7 @@ class AuditEvent(UUIDPrimaryKeyModel, AppendOnlyModel):
         DOCUMENT_GENERATED = "document_generated", "Document generated"
         ATTACHMENT_UPLOADED = "attachment_uploaded", "Attachment uploaded"
         ATTACHMENT_DELETED = "attachment_deleted", "Attachment deleted"
+        LOCATION_DELETED = "location_deleted", "Location deleted"
         IMPORT_EXECUTED = "import_executed", "Import executed"
         EXPORT_EXECUTED = "export_executed", "Export executed"
         PERMISSION_CHANGED = "permission_changed", "Permission changed"

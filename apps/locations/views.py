@@ -21,6 +21,7 @@ from .services import (
     can_manage_location,
     create_location,
     deactivate_location,
+    delete_location,
     reactivate_location,
     update_location,
 )
@@ -235,6 +236,33 @@ class LocationToggleActiveView(LoginRequiredMixin, RoleRequiredMixin, View):
             reactivate_location(location=location, user=request.user)
             messages.success(request, f"Reactivated '{location.name}'.")
         return redirect(location.get_absolute_url())
+
+
+class LocationDeleteView(LoginRequiredMixin, RoleRequiredMixin, View):
+    allowed_roles = (ADMINISTRATOR, STOCK_MANAGER)
+
+    def _get_location(self, request, pk):
+        location = get_object_or_404(Location, pk=pk)
+        if not can_manage_location(request.user, location):
+            raise PermissionDenied("You cannot delete this location.")
+        return location
+
+    def get(self, request, pk):
+        location = self._get_location(request, pk)
+        return render(request, "locations/location_confirm_delete.html", {"location": location})
+
+    def post(self, request, pk):
+        location = self._get_location(request, pk)
+        name = location.name
+        parent = location.parent
+        try:
+            delete_location(location=location, user=request.user)
+        except ValidationError as exc:
+            messages.error(request, "; ".join(exc.messages))
+            return redirect(location.get_absolute_url())
+
+        messages.success(request, f"Deleted '{name}'.")
+        return redirect(parent.get_absolute_url() if parent else "locations:list")
 
 
 class RoomOptionsForCountryView(LoginRequiredMixin, View):

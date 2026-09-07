@@ -1,9 +1,14 @@
 import pytest
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 
 from apps.audit.models import AuditEvent
 from apps.locations.models import Location
-from apps.locations.services import create_location, deactivate_location, reactivate_location
+from apps.locations.services import (
+    create_location,
+    deactivate_location,
+    delete_location,
+    reactivate_location,
+)
 
 
 @pytest.mark.django_db
@@ -196,3 +201,86 @@ class TestLocationDeactivation:
             user=administrator,
         )
         assert new_room.is_active is True
+
+
+@pytest.mark.django_db
+class TestDeleteLocation:
+    def test_deletes_a_location_nothing_references(self, administrator, location_tree):
+        room = location_tree["room"]
+
+        delete_location(location=room, user=administrator)
+
+        assert not Location.objects.filter(pk=room.pk).exists()
+
+    def test_deletion_is_audited(self, administrator, location_tree):
+        room = location_tree["room"]
+        room_pk = room.pk
+
+        delete_location(location=room, user=administrator)
+
+        assert AuditEvent.objects.filter(
+            object_id=str(room_pk),
+            event_type=AuditEvent.EventType.LOCATION_DELETED,
+        ).exists()
+
+    def test_blocked_by_a_child_location(self, administrator, location_tree):
+        country = location_tree["country"]
+
+        with pytest.raises(ValidationError):
+            delete_location(location=country, user=administrator)
+        assert Location.objects.filter(pk=country.pk).exists()
+
+    def test_blocked_by_current_stock(self, administrator, location_tree, unit_product):
+        from apps.inventory.services.receipts import receive_stock
+
+        room = location_tree["room"]
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=room,
+            occurred_at="2026-01-01",
+            vendor_serial="SN-DELETE-BLOCK",
+        )
+
+        with pytest.raises(ValidationError):
+            delete_location(location=room, user=administrator)
+        assert Location.objects.filter(pk=room.pk).exists()
+
+    def test_blocked_by_a_user_access_grant(self, administrator, stock_manager, location_tree):
+        from apps.accounts.services import grant_location_access
+
+        room = location_tree["room"]
+        grant_location_access(user=stock_manager, location=room, granted_by=administrator)
+
+        with pytest.raises(ValidationError):
+            delete_location(location=room, user=administrator)
+        assert Location.objects.filter(pk=room.pk).exists()
+
+    def test_read_only_user_cannot_delete(self, read_only_user, location_tree):
+        with pytest.raises(PermissionDenied):
+            delete_location(location=location_tree["room"], user=read_only_user)
+        assert Location.objects.filter(pk=location_tree["room"].pk).exists()
+
+    def test_stock_manager_without_access_cannot_delete(self, stock_manager, location_tree):
+        with pytest.raises(PermissionDenied):
+            delete_location(location=location_tree["room"], user=stock_manager)
+        assert Location.objects.filter(pk=location_tree["room"].pk).exists()
+
+    def test_stock_manager_with_ancestor_access_can_delete(
+        self, administrator, stock_manager, location_tree
+    ):
+        # Access granted on the *country*, not the room itself — a grant
+        # directly on the room being deleted would create its own
+        # UserLocationAccess row pointing at it, which PROTECT would then
+        # (correctly) block the delete on, same as test_blocked_by_a_
+        # user_access_grant above.
+        from apps.accounts.services import grant_location_access
+
+        room = location_tree["room"]
+        grant_location_access(
+            user=stock_manager, location=location_tree["country"], granted_by=administrator
+        )
+
+        delete_location(location=room, user=stock_manager)
+
+        assert not Location.objects.filter(pk=room.pk).exists()

@@ -1,5 +1,6 @@
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
+from django.db.models import ProtectedError
 
 from apps.audit.models import AuditEvent
 from apps.audit.services import record_event
@@ -184,3 +185,39 @@ def reactivate_location(*, location, user):
         new_values={"is_active": True},
     )
     return location
+
+
+@transaction.atomic
+def delete_location(*, location, user):
+    """Permanently removes a location that was never actually used — unlike
+    deactivate_location (the right tool for a room that once held real
+    stock/history and must stay resolvable in reports/audit trails), this
+    is for the "created by mistake, nothing was ever placed here" case.
+    Every real reference to a Location — current/historical stock,
+    transaction lines, custody history, user access grants, child
+    locations — uses on_delete=PROTECT, so Django itself refuses the
+    delete whenever any of those exist; that's surfaced here as a clear
+    ValidationError instead of a raw ProtectedError, pointing at
+    deactivation as the alternative.
+    """
+    require_role(user, ADMINISTRATOR, STOCK_MANAGER)
+    if not can_manage_location(user, location):
+        raise PermissionDenied("You cannot delete this location.")
+
+    label = f"{location.get_level_display()} '{location.name}'"
+    # Recorded before delete() clears location.pk, but only kept if the
+    # delete itself succeeds — @transaction.atomic rolls this insert back
+    # along with everything else the moment ProtectedError is raised.
+    record_event(
+        actor=user,
+        event_type=AuditEvent.EventType.LOCATION_DELETED,
+        obj=location,
+        summary=f"Deleted {label}",
+    )
+    try:
+        location.delete()
+    except ProtectedError as exc:
+        raise ValidationError(
+            f"{label} can't be deleted — it still has stock, history, access grants, "
+            "or child locations referencing it. Deactivate it instead."
+        ) from exc

@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{% block title %}Delete {{ location.name }} — Stock Inventory{% endblock %}
+
+{% block content %}
+  <h1>Delete '{{ location.name }}'?</h1>
+  <p>
+    This permanently removes the location. It only works if nothing ever references it — no
+    stock, history, access grants, or child locations. If any of those exist, deleting will be
+    blocked and you'll need to deactivate it instead.
+  </p>
+  <form method="post" class="card" data-confirm="Permanently delete this location? This cannot be undone.">
+    {% csrf_token %}
+    <div class="form-actions">
+      <button type="submit" class="btn btn--danger">Delete</button>
+      <a class="btn btn--ghost" href="{{ location.get_absolute_url }}">Cancel</a>
+    </div>
+  </form>
+{% endblock %}

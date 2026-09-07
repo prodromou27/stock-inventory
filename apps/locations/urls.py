@@ -14,4 +14,5 @@ urlpatterns = [
     path(
         "<uuid:pk>/toggle-active/", views.LocationToggleActiveView.as_view(), name="toggle_active"
     ),
+    path("<uuid:pk>/delete/", views.LocationDeleteView.as_view(), name="delete"),
 ]

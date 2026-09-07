@@ -21,6 +21,7 @@
         {% if can_manage_location %}<a class="btn {% if location.is_active %}btn--danger{% endif %}" href="{% url 'locations:toggle_active' location.pk %}">
           {% if location.is_active %}Deactivate{% else %}Reactivate{% endif %}
         </a>{% endif %}
+        {% if can_manage_location %}<a class="btn btn--danger" href="{% url 'locations:delete' location.pk %}">Delete</a>{% endif %}
       </div>
     {% endif %}
   </div>
