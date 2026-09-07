@@ -15,7 +15,7 @@ class TestLocationListView:
         self, client, administrator, read_only_user, location_tree, other_location_tree
     ):
         grant_location_access(
-            user=read_only_user, location=location_tree["floor"], granted_by=administrator
+            user=read_only_user, location=location_tree["room"], granted_by=administrator
         )
 
         client.force_login(read_only_user)
@@ -44,11 +44,11 @@ class TestLocationListView:
         client.force_login(administrator)
         response = client.get(
             reverse("locations:list"),
-            {"level": "site", "show_inactive": "1", "sort": "name", "dir": "desc"},
+            {"level": "country", "show_inactive": "1", "sort": "name", "dir": "desc"},
         )
         names = [loc.name for loc in response.context["locations"]]
-        # "Other HQ" sorts after "HQ" ascending, so descending puts it first.
-        assert names.index("Other HQ") < names.index("HQ")
+        # "Wonderland" sorts after "Elsewhere" ascending, so descending puts it first.
+        assert names.index("Wonderland") < names.index("Elsewhere")
 
     def test_unknown_sort_key_falls_back_to_default(self, client, administrator, location_tree):
         client.force_login(administrator)
@@ -84,14 +84,14 @@ class TestLocationListTreeMode:
         assert "Elsewhere" in root_names and "Wonderland" in root_names
 
         wonderland_node = next(n for n in tree if n["location"].name == "Wonderland")
-        assert [c["location"].name for c in wonderland_node["children"]] == ["HQ"]
+        assert [c["location"].name for c in wonderland_node["children"]] == ["Room A"]
 
     def test_scoped_stock_manager_tree_roots_at_their_granted_node(
         self, client, stock_manager_with_room_access, location_tree
     ):
-        # A Stock Manager granted only "Room A" never sees the Country/Site/
-        # Floor above it (apps.locations.scoping) — their tree roots at the
-        # granted node itself, not at a Country-level node.
+        # A Stock Manager granted only "Room A" never sees the Country above
+        # it (apps.locations.scoping) — their tree roots at the granted node
+        # itself, not at a Country-level node.
         client.force_login(stock_manager_with_room_access)
         response = client.get(reverse("locations:list"))
         tree = response.context["location_tree"]
@@ -104,7 +104,7 @@ class TestLocationDetailView:
         self, client, administrator, read_only_user, location_tree, other_location_tree
     ):
         grant_location_access(
-            user=read_only_user, location=location_tree["floor"], granted_by=administrator
+            user=read_only_user, location=location_tree["room"], granted_by=administrator
         )
 
         client.force_login(read_only_user)
@@ -117,7 +117,7 @@ class TestLocationDetailView:
         self, client, administrator, read_only_user, location_tree
     ):
         grant_location_access(
-            user=read_only_user, location=location_tree["floor"], granted_by=administrator
+            user=read_only_user, location=location_tree["room"], granted_by=administrator
         )
 
         client.force_login(read_only_user)
@@ -128,7 +128,7 @@ class TestLocationDetailView:
         self, client, administrator, read_only_user, location_tree
     ):
         grant_location_access(
-            user=read_only_user, location=location_tree["floor"], granted_by=administrator
+            user=read_only_user, location=location_tree["room"], granted_by=administrator
         )
 
         client.force_login(read_only_user)
@@ -146,10 +146,10 @@ class TestLocationDetailView:
         LocationCreateView is Administrator/Stock-Manager only.
         """
         grant_location_access(
-            user=read_only_user, location=location_tree["floor"], granted_by=administrator
+            user=read_only_user, location=location_tree["room"], granted_by=administrator
         )
         client.force_login(read_only_user)
-        response = client.get(reverse("locations:detail", kwargs={"pk": location_tree["floor"].pk}))
+        response = client.get(reverse("locations:detail", kwargs={"pk": location_tree["room"].pk}))
         assert response.context["can_add_child"] is False
         assert "Add child location" not in response.content.decode()
 
@@ -157,7 +157,9 @@ class TestLocationDetailView:
         self, client, administrator, location_tree
     ):
         client.force_login(administrator)
-        response = client.get(reverse("locations:detail", kwargs={"pk": location_tree["floor"].pk}))
+        response = client.get(
+            reverse("locations:detail", kwargs={"pk": location_tree["country"].pk})
+        )
         assert response.context["can_add_child"] is True
         assert "Add child location" in response.content.decode()
 
@@ -189,7 +191,7 @@ class TestLocationMutationPermissions:
         client.force_login(administrator)
         response = client.post(
             reverse("locations:create"),
-            {"level": "site", "name": "Bad", "parent": location_tree["room"].pk},
+            {"level": "rack_shelf", "name": "Bad", "parent": location_tree["country"].pk},
         )
         assert response.status_code == 200
         assert response.context["form"].errors
@@ -212,33 +214,36 @@ class TestLocationMutationPermissions:
         location_tree["room"].refresh_from_db()
         assert location_tree["room"].is_active is False
 
-    def test_room_scoped_stock_manager_can_bootstrap_a_rack_and_a_shelf(
+    def test_room_scoped_stock_manager_can_bootstrap_racks_and_shelves(
         self, client, stock_manager_with_room_access, location_tree
     ):
         """Regression test: a Stock Manager granted at exactly Storage Room
         level — this app's own standard scenario (see conftest.
         stock_manager_with_room_access, used throughout the inventory test
         suite) — previously had no way to create *anything* through this
-        form: Storage Room creation needs a Floor parent (never in scope for
-        someone granted below Floor level), and Rack/Cabinet wasn't even an
-        offered level, so Shelf/Bin creation (needs a Rack parent) was also
-        a dead end on a freshly-granted room with no existing rack. The
+        form: Storage Room creation needed a Floor parent (never in scope
+        for someone granted below Floor level), and Rack/Cabinet wasn't even
+        an offered level, so Shelf/Bin creation (needed a Rack parent) was
+        also a dead end on a freshly-granted room with no existing rack. The
         parent dropdown for such a user was literally just the empty "---"
         placeholder. Confirmed live: "creating new location is not working"
-        was the exact reported symptom for this exact real scenario.
+        was the exact reported symptom for this exact real scenario. Rack/
+        Shelf is now one flat level directly under the room (no more
+        Rack-then-Shelf nesting), so bootstrapping two of them proves the
+        same "not a dead end" property.
         """
         client.force_login(stock_manager_with_room_access)
 
         get_response = client.get(reverse("locations:create"))
         level_values = [value for value, _ in get_response.context["form"].fields["level"].choices]
-        assert Location.Level.RACK_CABINET in level_values
+        assert Location.Level.RACK_SHELF in level_values
         parent_ids = {str(loc.pk) for loc in get_response.context["form"].fields["parent"].queryset}
         assert str(location_tree["room"].pk) in parent_ids
 
         rack_response = client.post(
             reverse("locations:create"),
             {
-                "level": Location.Level.RACK_CABINET,
+                "level": Location.Level.RACK_SHELF,
                 "name": "Bootstrapped Rack",
                 "parent": location_tree["room"].pk,
             },
@@ -250,13 +255,15 @@ class TestLocationMutationPermissions:
         shelf_response = client.post(
             reverse("locations:create"),
             {
-                "level": Location.Level.SHELF_BIN,
+                "level": Location.Level.RACK_SHELF,
                 "name": "Bootstrapped Shelf",
-                "parent": rack.pk,
+                "parent": location_tree["room"].pk,
             },
         )
         assert shelf_response.status_code == 302
-        assert Location.objects.filter(name="Bootstrapped Shelf", parent=rack).exists()
+        assert Location.objects.filter(
+            name="Bootstrapped Shelf", parent=location_tree["room"]
+        ).exists()
 
     def test_stock_manager_can_create_room_in_assigned_country(
         self, client, administrator, stock_manager, location_tree
@@ -270,11 +277,13 @@ class TestLocationMutationPermissions:
             {
                 "level": Location.Level.STORAGE_ROOM,
                 "name": "Manager Room",
-                "parent": location_tree["floor"].pk,
+                "parent": location_tree["country"].pk,
             },
         )
         assert response.status_code == 302
-        assert Location.objects.filter(name="Manager Room", parent=location_tree["floor"]).exists()
+        assert Location.objects.filter(
+            name="Manager Room", parent=location_tree["country"]
+        ).exists()
 
     def test_stock_manager_cannot_create_room_outside_assigned_country(
         self, client, administrator, stock_manager, location_tree, other_location_tree
@@ -288,7 +297,7 @@ class TestLocationMutationPermissions:
             {
                 "level": Location.Level.STORAGE_ROOM,
                 "name": "Out of scope",
-                "parent": other_location_tree["site"].pk,
+                "parent": other_location_tree["country"].pk,
             },
         )
         assert response.status_code == 200

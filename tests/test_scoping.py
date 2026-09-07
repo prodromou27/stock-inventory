@@ -25,13 +25,18 @@ class TestAccessibleLocations:
     def test_grant_cascades_to_descendants_only(
         self, administrator, read_only_user, location_tree, other_location_tree
     ):
+        shelf = create_location(
+            level=Location.Level.RACK_SHELF,
+            name="Shelf",
+            parent=location_tree["room"],
+            user=administrator,
+        )
         grant_location_access(
-            user=read_only_user, location=location_tree["floor"], granted_by=administrator
+            user=read_only_user, location=location_tree["room"], granted_by=administrator
         )
 
         names = set(accessible_locations(read_only_user).values_list("name", flat=True))
-        assert names == {location_tree["floor"].name, location_tree["room"].name}
-        assert location_tree["site"].name not in names  # ancestor, not granted
+        assert names == {location_tree["room"].name, shelf.name}
         assert location_tree["country"].name not in names  # ancestor, not granted
         assert other_location_tree["country"].name not in names  # unrelated tree
 
@@ -42,14 +47,13 @@ class TestAccessibleLocations:
             user=read_only_user, location=location_tree["room"], granted_by=administrator
         )
         grant_location_access(
-            user=read_only_user, location=other_location_tree["site"], granted_by=administrator
+            user=read_only_user, location=other_location_tree["country"], granted_by=administrator
         )
 
         names = set(accessible_locations(read_only_user).values_list("name", flat=True))
         assert names == {
             location_tree["room"].name,
-            other_location_tree["site"].name,
-            other_location_tree["floor"].name,
+            other_location_tree["country"].name,
             other_location_tree["room"].name,
         }
 
@@ -66,15 +70,13 @@ class TestAccessibleLocations:
         new_room = create_location(
             level=Location.Level.STORAGE_ROOM,
             name="Freshly Created Room",
-            parent=location_tree["floor"],
+            parent=location_tree["country"],
             user=administrator,
         )
 
         names = set(accessible_locations(stock_manager).values_list("name", flat=True))
         assert new_room.name in names
-        # Sanity: every existing level is covered too, not just the new one.
-        assert location_tree["site"].name in names
-        assert location_tree["floor"].name in names
+        # Sanity: the existing level is covered too, not just the new one.
         assert location_tree["room"].name in names
 
     def test_revoking_country_access_immediately_blocks_all_descendants(
@@ -183,17 +185,23 @@ class TestRequireLocationAccess:
         require_location_access(read_only_user, None)  # must not raise
 
     def test_granted_location_allowed(self, administrator, read_only_user, location_tree):
-        grant_location_access(
-            user=read_only_user, location=location_tree["floor"], granted_by=administrator
+        shelf = create_location(
+            level=Location.Level.RACK_SHELF,
+            name="Shelf",
+            parent=location_tree["room"],
+            user=administrator,
         )
-        require_location_access(read_only_user, location_tree["floor"])  # must not raise
-        require_location_access(read_only_user, location_tree["room"])  # descendant, must not raise
+        grant_location_access(
+            user=read_only_user, location=location_tree["room"], granted_by=administrator
+        )
+        require_location_access(read_only_user, location_tree["room"])  # must not raise
+        require_location_access(read_only_user, shelf)  # descendant, must not raise
 
     def test_out_of_scope_location_denied(
         self, administrator, read_only_user, location_tree, other_location_tree
     ):
         grant_location_access(
-            user=read_only_user, location=location_tree["floor"], granted_by=administrator
+            user=read_only_user, location=location_tree["room"], granted_by=administrator
         )
         with pytest.raises(PermissionDenied):
             require_location_access(read_only_user, other_location_tree["country"])
@@ -202,7 +210,7 @@ class TestRequireLocationAccess:
         self, administrator, read_only_user, location_tree
     ):
         grant_location_access(
-            user=read_only_user, location=location_tree["floor"], granted_by=administrator
+            user=read_only_user, location=location_tree["room"], granted_by=administrator
         )
         with pytest.raises(PermissionDenied):
             require_location_access(read_only_user, location_tree["country"])

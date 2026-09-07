@@ -3,7 +3,7 @@ from django.forms import formset_factory
 from django.utils import timezone
 
 from apps.catalog.models import CATEGORY_TRACKING_METHOD, ItemCategory, Product, TrackingMethod
-from apps.locations.models import Location, LocationLevel, order_by_hierarchy
+from apps.locations.models import ROOM_OR_BELOW_LEVELS, Location, order_by_hierarchy
 from apps.locations.scoping import accessible_locations, require_room_or_below, scope_queryset
 
 from .models import Condition, Customer, StockPurpose, UnitAsset, UnitStatus, WipeMethod
@@ -39,28 +39,18 @@ def _apply_scoped_location(field, user):
     field.widget.attrs["data-filterable"] = "true"
 
 
-# A Country/Site/Floor is an authorization boundary and a tree parent, never
-# a place stock is actually held (apps.locations.scoping.require_room_or_below)
-# — every field below that names where stock ends up is restricted to these
-# levels, in addition to the ordinary user-access scoping.
-ROOM_OR_BELOW_LEVELS = (
-    LocationLevel.STORAGE_ROOM,
-    LocationLevel.RACK_CABINET,
-    LocationLevel.SHELF_BIN,
-)
-
-
 def _apply_scoped_room_location(field, user):
     """Like _apply_scoped_location, but additionally restricted to Storage
-    Room/Rack/Shelf levels — for the fields above that name where stock is
-    actually held (as opposed to e.g. a Transfer's destination search scope,
-    which may legitimately span a whole country).
+    Room/Rack/Shelf levels (apps.locations.models.ROOM_OR_BELOW_LEVELS) —
+    for the fields above that name where stock is actually held (as opposed
+    to e.g. a Transfer's destination search scope, which may legitimately
+    span a whole country).
 
     A brand-new install (or a user whose access grant hasn't reached a
-    Storage Room yet) legitimately has zero options here — Country/Site/
-    Floor no longer count, per the room-mandatory rule above, so the
-    dropdown can be empty even when locations exist. That's a confusing,
-    unexplained blank list otherwise; data_empty_hint flags it for
+    Storage Room yet) legitimately has zero options here — a bare Country
+    no longer counts, per the room-mandatory rule above, so the dropdown can
+    be empty even when locations exist. That's a confusing, unexplained
+    blank list otherwise; data_empty_hint flags it for
     templates/_form_field.html to render as an actionable message + a link
     to create a room, instead of a silently empty <select>. Underscored,
     not hyphenated, so it's never mistaken for one of this app's real
@@ -72,7 +62,7 @@ def _apply_scoped_room_location(field, user):
     if not field.queryset.exists():
         field.widget.attrs["data_empty_hint"] = (
             "No Storage Room is available yet. An Administrator or Stock Manager needs to "
-            "create a Country > Site > Floor > Storage Room hierarchy (or be granted access to "
+            "create a Country > Storage Room hierarchy (or be granted access to "
             "an existing one) before stock can be received or moved."
         )
 

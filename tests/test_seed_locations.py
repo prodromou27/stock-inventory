@@ -19,7 +19,7 @@ def test_seed_locations_creates_sample_tree(administrator):
     call_command("seed_locations")
 
     assert Location.objects.filter(level=Location.Level.COUNTRY, name="Greece").exists()
-    assert Location.objects.filter(level=Location.Level.SHELF_BIN, name="Shelf 1").exists()
+    assert Location.objects.filter(level=Location.Level.RACK_SHELF, name="Shelf 1").exists()
 
 
 @pytest.mark.django_db

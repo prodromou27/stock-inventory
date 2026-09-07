@@ -28,7 +28,7 @@ class TestResolveLocation:
 
     def test_sub_location_narrows_to_child_by_name(self, administrator, location_tree):
         rack = create_location(
-            level=Location.Level.RACK_CABINET,
+            level=Location.Level.RACK_SHELF,
             name="8",
             parent=location_tree["room"],
             user=administrator,
@@ -39,7 +39,7 @@ class TestResolveLocation:
 
     def test_sub_location_narrows_to_child_by_code(self, administrator, location_tree):
         rack = create_location(
-            level=Location.Level.RACK_CABINET,
+            level=Location.Level.RACK_SHELF,
             name="Rack Seven",
             parent=location_tree["room"],
             user=administrator,
@@ -55,28 +55,17 @@ class TestResolveLocation:
         assert "not found" in detail
 
     def test_exact_match_above_storage_room_is_unresolved(self, location_tree):
-        """A Country/Site/Floor is never a valid final stock location — even
-        an unambiguous exact-name match must be reported as needing a more
+        """A Country is never a valid final stock location — even an
+        unambiguous exact-name match must be reported as needing a more
         specific override, not silently accepted (spec: "do not guess
         locations").
         """
-        location, detail = resolve_location("HQ", "")
+        location, detail = resolve_location("Wonderland", "")
         assert location is None
         assert "not a storage location" in detail
 
     def test_sub_location_not_found_does_not_fall_back_above_storage_room(self, location_tree):
-        location, detail = resolve_location("HQ", "99")
-        assert location is None
-        assert "not a storage location" in detail
-
-    def test_narrowed_child_above_storage_room_is_unresolved(self, administrator, location_tree):
-        extra_floor = create_location(
-            level=Location.Level.FLOOR,
-            name="2nd Floor",
-            parent=location_tree["site"],
-            user=administrator,
-        )
-        location, detail = resolve_location("HQ", extra_floor.name)
+        location, detail = resolve_location("Wonderland", "99")
         assert location is None
         assert "not a storage location" in detail
 
@@ -85,16 +74,10 @@ class TestResolveLocation:
     ):
         from apps.locations.models import Location as LocationModel
 
-        other_floor = create_location(
-            level=LocationModel.Level.FLOOR,
-            name="Other Floor",
-            parent=other_location_tree["site"],
-            user=administrator,
-        )
         create_location(
             level=LocationModel.Level.STORAGE_ROOM,
             name="Room A",
-            parent=other_floor,
+            parent=other_location_tree["country"],
             user=administrator,
         )
         location, detail = resolve_location("Room A", "")

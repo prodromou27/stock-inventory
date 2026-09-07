@@ -19,7 +19,7 @@ stock_inventory/
 ├── apps/
 │   ├── core/                          # shared base models, mixins, scope query layer, health check
 │   ├── accounts/                      # User extensions, roles (Groups), UserLocationAccess
-│   ├── locations/                     # Location hierarchy (Country → ... → Shelf/Bin)
+│   ├── locations/                     # Location hierarchy (Country → Storage Room → Rack/Shelf)
 │   ├── catalog/                       # Brand, ProductType, Product
 │   ├── inventory/                     # UnitAsset, StockBalance, StockReservation, ledger, movement services
 │   ├── documents/                     # GeneratedDocument, Attachment, PDF rendering

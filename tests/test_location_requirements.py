@@ -10,26 +10,21 @@ from apps.locations.services import create_location
 
 @pytest.mark.django_db
 class TestRequireRoomOrBelow:
-    def test_country_site_floor_are_rejected(self, location_tree):
-        for level_key in ("country", "site", "floor"):
-            with pytest.raises(ValidationError):
-                require_room_or_below(location_tree[level_key])
+    def test_country_is_rejected(self, location_tree):
+        with pytest.raises(ValidationError):
+            require_room_or_below(location_tree["country"])
 
     def test_storage_room_is_accepted(self, location_tree):
         require_room_or_below(location_tree["room"])  # must not raise
 
-    def test_rack_and_shelf_are_accepted(self, administrator, location_tree):
-        rack = create_location(
-            level=Location.Level.RACK_CABINET,
-            name="Rack 1",
+    def test_rack_shelf_is_accepted(self, administrator, location_tree):
+        shelf = create_location(
+            level=Location.Level.RACK_SHELF,
+            name="Shelf A",
             parent=location_tree["room"],
             user=administrator,
         )
-        shelf = create_location(
-            level=Location.Level.SHELF_BIN, name="Shelf A", parent=rack, user=administrator
-        )
-        require_room_or_below(rack)
-        require_room_or_below(shelf)
+        require_room_or_below(shelf)  # must not raise
 
     def test_none_is_accepted(self):
         require_room_or_below(None)  # a separate "is it required at all" concern
@@ -92,14 +87,21 @@ class TestRoomOptionsForCountryView:
 @pytest.mark.django_db
 class TestShelfOptionsForRoomView:
     def test_returns_racks_and_shelves_under_the_room(self, client, administrator, location_tree):
-        rack = create_location(
-            level=Location.Level.RACK_CABINET,
+        """Rack/Shelf is a single, flat leaf level directly under the room
+        now (no more nesting a Shelf under a Rack), so every label here is
+        just the node's own name.
+        """
+        create_location(
+            level=Location.Level.RACK_SHELF,
             name="Rack 1",
             parent=location_tree["room"],
             user=administrator,
         )
         create_location(
-            level=Location.Level.SHELF_BIN, name="Shelf A", parent=rack, user=administrator
+            level=Location.Level.RACK_SHELF,
+            name="Shelf A",
+            parent=location_tree["room"],
+            user=administrator,
         )
         client.force_login(administrator)
         response = client.get(
@@ -108,21 +110,15 @@ class TestShelfOptionsForRoomView:
         shelves = response.json()["shelves"]
         labels = {s["name"] for s in shelves}
         assert "Rack 1" in labels
-        assert "Rack 1 > Shelf A" in labels
+        assert "Shelf A" in labels
 
     def test_scoped_to_accessible_rooms(
         self, client, stock_manager_with_room_access, other_location_tree, administrator
     ):
-        other_floor = create_location(
-            level=Location.Level.FLOOR,
-            name="Other Floor",
-            parent=other_location_tree["site"],
-            user=administrator,
-        )
         other_room = create_location(
             level=Location.Level.STORAGE_ROOM,
-            name="Other Room",
-            parent=other_floor,
+            name="Shelf Test Other Room",
+            parent=other_location_tree["country"],
             user=administrator,
         )
         client.force_login(stock_manager_with_room_access)

@@ -1,24 +1,19 @@
 from django import forms
 
-from .models import Location, order_by_hierarchy
+from .models import ROOM_OR_BELOW_LEVELS, Location, order_by_hierarchy
 from .scoping import accessible_locations
 
-MANAGER_LEVELS = (
-    (Location.Level.STORAGE_ROOM, Location.Level.STORAGE_ROOM.label),
-    (Location.Level.RACK_CABINET, Location.Level.RACK_CABINET.label),
-    (Location.Level.SHELF_BIN, Location.Level.SHELF_BIN.label),
-)
+MANAGER_LEVELS = tuple((level, level.label) for level in ROOM_OR_BELOW_LEVELS)
 
 
 class LocationChoiceField(forms.ModelChoiceField):
     """Labels each option with its level and full breadcrumb (e.g. "Wonderland
-    > HQ > 1st Floor > Room A (Storage Room)") — a flat dropdown over
-    locations at more than one level is otherwise ambiguous between two
-    same-named rooms/floors under different parents. A per-row .ancestors()
-    walk is fine here (unlike a grid — see _build_location_tree()'s
-    docstring for why that distinction matters): every field that uses this
-    is a low-traffic admin/setup screen, not a hot path iterated at grid
-    scale.
+    > Room A (Storage Room)") — a flat dropdown over locations at more than
+    one level is otherwise ambiguous between two same-named rooms under
+    different countries. A per-row .ancestors() walk is fine here (unlike a
+    grid — see _build_location_tree()'s docstring for why that distinction
+    matters): every field that uses this is a low-traffic admin/setup
+    screen, not a hot path iterated at grid scale.
     """
 
     def label_from_instance(self, obj):
@@ -52,20 +47,15 @@ class LocationForm(forms.Form):
             self.fields["parent"].queryset = order_by_hierarchy(
                 accessible_locations(user).filter(
                     is_active=True,
-                    # FLOOR: parent for a new Storage Room (only reachable
-                    # if granted at Floor level or above). STORAGE_ROOM:
-                    # parent for a new Rack/Cabinet — accessible_locations()
+                    # COUNTRY: parent for a new Storage Room (only reachable
+                    # if granted at Country level or above). STORAGE_ROOM:
+                    # parent for a new Rack/Shelf — accessible_locations()
                     # includes the granted node itself, so a Stock Manager
                     # granted at exactly Storage Room level (this app's own
                     # standard scenario — see tests.conftest.
                     # stock_manager_with_room_access) can still bootstrap
-                    # fixtures inside their own room. RACK_CABINET: parent
-                    # for a new Shelf/Bin.
-                    level__in=(
-                        Location.Level.FLOOR,
-                        Location.Level.STORAGE_ROOM,
-                        Location.Level.RACK_CABINET,
-                    ),
+                    # fixtures inside their own room.
+                    level__in=(Location.Level.COUNTRY, Location.Level.STORAGE_ROOM),
                 )
             )
 

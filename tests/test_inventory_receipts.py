@@ -179,16 +179,10 @@ class TestReceiveUnitStock:
         from apps.locations.models import Location
         from apps.locations.services import create_location
 
-        other_floor = create_location(
-            level=Location.Level.FLOOR,
-            name="Other Floor",
-            parent=other_location_tree["site"],
-            user=administrator,
-        )
         other_room = create_location(
             level=Location.Level.STORAGE_ROOM,
-            name="Other Room",
-            parent=other_floor,
+            name="Receipt Dest Room",
+            parent=other_location_tree["country"],
             user=administrator,
         )
         # Administrator receives the same serial in a location the scoped
@@ -492,7 +486,7 @@ class TestReceiveStockBatch:
             receive_stock_batch(
                 user=stock_manager_with_room_access,
                 product=unit_product,
-                location=other_location_tree["site"],
+                location=other_location_tree["country"],
                 occurred_at=date.today(),
                 vendor_serials=["SN-1", "SN-2", "SN-3"],
             )
@@ -558,16 +552,10 @@ class TestReceiveStockBulk:
         from apps.locations.models import Location
         from apps.locations.services import create_location
 
-        other_floor = create_location(
-            level=Location.Level.FLOOR,
-            name="Other Floor For Bulk",
-            parent=other_location_tree["site"],
-            user=administrator,
-        )
         other_room = create_location(
             level=Location.Level.STORAGE_ROOM,
             name="Other Room For Bulk",
-            parent=other_floor,
+            parent=other_location_tree["country"],
             user=administrator,
         )
         txn = receive_stock_bulk(
@@ -744,16 +732,10 @@ class TestReceiveBulkView:
         from apps.locations.models import Location
         from apps.locations.services import create_location
 
-        other_floor = create_location(
-            level=Location.Level.FLOOR,
-            name="Other Bulk Floor",
-            parent=other_location_tree["site"],
-            user=administrator,
-        )
         other_room = create_location(
             level=Location.Level.STORAGE_ROOM,
             name="Other Bulk Room",
-            parent=other_floor,
+            parent=other_location_tree["country"],
             user=administrator,
         )
 

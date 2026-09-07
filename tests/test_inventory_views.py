@@ -126,7 +126,7 @@ class TestReceiveStockView:
         other_room = create_location(
             level=Location.Level.STORAGE_ROOM,
             name="Second Room",
-            parent=location_tree["floor"],
+            parent=location_tree["country"],
             user=administrator,
         )
         product = self._unit_product(administrator)
@@ -503,14 +503,11 @@ class TestUnitAssetListAndDetail:
         from apps.locations.models import Location
         from apps.locations.services import create_location
 
-        other_floor = create_location(
-            level=Location.Level.FLOOR,
-            name="X Floor",
-            parent=other_location_tree["site"],
-            user=administrator,
-        )
         other_room = create_location(
-            level=Location.Level.STORAGE_ROOM, name="X Room", parent=other_floor, user=administrator
+            level=Location.Level.STORAGE_ROOM,
+            name="X Room",
+            parent=other_location_tree["country"],
+            user=administrator,
         )
 
         receive_stock(
@@ -545,14 +542,11 @@ class TestUnitAssetListAndDetail:
         from apps.locations.models import Location
         from apps.locations.services import create_location
 
-        other_floor = create_location(
-            level=Location.Level.FLOOR,
-            name="Y Floor",
-            parent=other_location_tree["site"],
-            user=administrator,
-        )
         other_room = create_location(
-            level=Location.Level.STORAGE_ROOM, name="Y Room", parent=other_floor, user=administrator
+            level=Location.Level.STORAGE_ROOM,
+            name="Y Room",
+            parent=other_location_tree["country"],
+            user=administrator,
         )
         receive_stock(
             user=administrator,
@@ -748,14 +742,11 @@ class TestTransactionDetailView:
         from apps.locations.models import Location
         from apps.locations.services import create_location
 
-        other_floor = create_location(
-            level=Location.Level.FLOOR,
-            name="Z Floor",
-            parent=other_location_tree["site"],
-            user=administrator,
-        )
         other_room = create_location(
-            level=Location.Level.STORAGE_ROOM, name="Z Room", parent=other_floor, user=administrator
+            level=Location.Level.STORAGE_ROOM,
+            name="Z Room",
+            parent=other_location_tree["country"],
+            user=administrator,
         )
         txn = receive_stock(
             user=administrator,

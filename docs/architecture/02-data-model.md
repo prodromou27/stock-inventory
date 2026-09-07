@@ -41,24 +41,29 @@ erDiagram
     USER ||--o{ INVENTORY_TRANSACTION : performs
 ```
 
-## Location hierarchy: one self-referential table, not six
+## Location hierarchy: one self-referential table, not three
 
-Spec §18 lists `Country, Site, Floor, StorageRoom, RackCabinet, ShelfBin` as separate entities. This plan instead
-uses a **single `Location` table** with a `level` enum and a self-referential `parent`, for three reasons that all
-trace back to explicit spec rules:
+Spec §18 lists `Country, Site, Floor, StorageRoom, RackCabinet, ShelfBin` as separate entities. **By direct
+instruction, the implemented hierarchy has been collapsed to three levels — Country, Storage Room, and a single
+merged Rack/Shelf** — Site and Floor added authorization-boundary depth nobody used, and Rack/Cabinet vs Shelf/Bin
+was a distinction without a difference for how stock is actually tracked. This is a deliberate, explicit deviation
+from spec §18, not an oversight (CLAUDE.md §"stop and ask rather than inventing a new rule" — this one was asked and
+answered). This plan still uses a **single `Location` table** with a `level` enum and a self-referential `parent`,
+for three reasons that all trace back to explicit spec rules:
 
 - "Lower location levels are optional. An item may be recorded only at country, site, or room level" (§7) is trivial
-  with one table (a `UnitAsset.current_location` FK just points at whichever node exists) but awkward with six
-  tables (would need six nullable FKs on every location-bearing row).
+  with one table (a `UnitAsset.current_location` FK just points at whichever node exists) but awkward with separate
+  tables (would need a nullable FK per level on every location-bearing row).
 - "The schema... must support multiple countries" (§7) and permission grants at "one or more country/storage scopes"
   (§4) are both naturally expressed as "grant access to a `Location` node; access cascades to its descendants" —
-  one join instead of a six-way union.
+  one join instead of a per-level union.
 - Bulk transfer and scoped search need fast "is this location under that node" checks. PostgreSQL's `ltree`
   extension (built in, no extra service) stores a materialized path per node and answers ancestor/descendant
   queries with an index instead of a recursive CTE.
 
-The fixed ordering (Country → Site → Floor → Storage Room → Rack/Cabinet → Shelf/Bin) is still enforced — see
-constraints below — so this is a storage-layout change only, not a relaxation of the business rule.
+The fixed ordering (Country → Storage Room → Rack/Shelf) is still enforced — see constraints below — so this is a
+storage-layout change only, not a relaxation of the business rule that a real, final stock location must be a
+Storage Room or a Rack/Shelf within one, never a bare Country.
 
 ## Entities
 
@@ -68,7 +73,7 @@ constraints below — so this is a storage-layout change only, not a relaxation 
 |---|---|---|
 | `id` | UUID PK | |
 | `parent_id` | FK → `Location`, null | null only for `level='country'` |
-| `level` | enum: `country, site, floor, storage_room, rack_cabinet, shelf_bin` | |
+| `level` | enum: `country, storage_room, rack_shelf` | |
 | `name` | varchar(120) | |
 | `code` | varchar(30), optional | short label for printable forms |
 | `path` | `ltree` | materialized ancestor path, maintained by a `BEFORE INSERT/UPDATE` trigger from `parent_id` |

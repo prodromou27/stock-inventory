@@ -89,7 +89,12 @@ def stock_by_location(user):
         }
         for location in locations
     ]
-    rows.sort(key=lambda row: (row["location"].level, row["location"].name))
+    # Location.LEVEL_ORDER.index(...), not the raw level string — see
+    # apps.locations.models.order_by_hierarchy()'s docstring for why sorting
+    # by the stored string scrambles the actual hierarchy order.
+    rows.sort(
+        key=lambda row: (Location.LEVEL_ORDER.index(row["location"].level), row["location"].name)
+    )
     return rows
 
 

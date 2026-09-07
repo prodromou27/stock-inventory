@@ -6,19 +6,17 @@ values are left unresolved for the preview screen's per-row override.
 
 from django.db.models import Q
 
-from apps.locations.models import Location, LocationLevel
-
-_LEVELS_ABOVE_ROOM = (LocationLevel.COUNTRY, LocationLevel.SITE, LocationLevel.FLOOR)
+from apps.locations.models import LEVELS_ABOVE_ROOM, Location
 
 
 def _too_high(location):
-    return location.level in _LEVELS_ABOVE_ROOM
+    return location.level in LEVELS_ABOVE_ROOM
 
 
 def resolve_location(location_text, sub_location_text):
     """Returns (Location_or_None, detail_message_or_empty).
 
-    A Country/Site/Floor is never a valid final stock location (spec: "the
+    A Country is never a valid final stock location (spec: "the
     Storage Room is required") — a resolution that would land there,
     including a would-be parent fallback, is reported as unresolved instead
     of silently accepted, matching the same rule enforced everywhere else
@@ -68,7 +66,7 @@ def resolve_location(location_text, sub_location_text):
     # No child matched the sub-location value. Falling back to the parent
     # match itself is only ever offered when that parent is unambiguous AND
     # itself a valid stock location (Storage Room or below) — never a
-    # Country/Site/Floor, which "do not guess locations" rules out outright.
+    # Country, which "do not guess locations" rules out outright.
     if len(candidates) == 1:
         parent = candidates[0]
         if _too_high(parent):

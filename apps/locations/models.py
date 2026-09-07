@@ -10,17 +10,18 @@ from .fields import LtreeField
 
 class LocationLevel(models.TextChoices):
     COUNTRY = "country", "Country"
-    SITE = "site", "Site/Building"
-    FLOOR = "floor", "Floor"
     STORAGE_ROOM = "storage_room", "Storage Room"
-    RACK_CABINET = "rack_cabinet", "Rack/Cabinet"
-    SHELF_BIN = "shelf_bin", "Shelf/Bin"
+    RACK_SHELF = "rack_shelf", "Rack/Shelf"
 
 
 class Location(UUIDPrimaryKeyModel, TimestampedModel):
-    """Country -> Site -> Floor -> Storage Room -> Rack/Cabinet -> Shelf/Bin,
-    as one self-referential table rather than six — see
-    docs/architecture/02-data-model.md for the rationale.
+    """Country -> Storage Room -> Rack/Shelf, as one self-referential table
+    rather than three — see docs/architecture/02-data-model.md for the
+    rationale (originally six levels — Country/Site/Floor/Storage Room/
+    Rack-Cabinet/Shelf-Bin — collapsed to these three by direct instruction:
+    Site and Floor added authorization-boundary depth nobody used, and
+    Rack/Cabinet vs Shelf/Bin was a distinction without a difference for how
+    stock is actually tracked).
 
     `path` is maintained by a database trigger (0002_location_path_trigger),
     which also enforces the fixed level ordering; `full_clean()`/the service
@@ -32,11 +33,8 @@ class Location(UUIDPrimaryKeyModel, TimestampedModel):
 
     LEVEL_ORDER = [
         LocationLevel.COUNTRY,
-        LocationLevel.SITE,
-        LocationLevel.FLOOR,
         LocationLevel.STORAGE_ROOM,
-        LocationLevel.RACK_CABINET,
-        LocationLevel.SHELF_BIN,
+        LocationLevel.RACK_SHELF,
     ]
 
     parent = models.ForeignKey(
@@ -92,7 +90,7 @@ class Location(UUIDPrimaryKeyModel, TimestampedModel):
 
     def ancestors(self):
         """Oldest-first list of ancestor Locations, for breadcrumbs. The
-        hierarchy is at most 6 levels deep, so a parent-chain walk is simpler
+        hierarchy is at most 3 levels deep, so a parent-chain walk is simpler
         and cheap enough that it doesn't need a path-based query.
         """
         result = []
@@ -105,18 +103,17 @@ class Location(UUIDPrimaryKeyModel, TimestampedModel):
 
 
 def order_by_hierarchy(queryset):
-    """Orders a Location queryset by actual hierarchy depth (Country, Site,
-    Floor, Storage Room, Rack/Cabinet, Shelf/Bin), then name.
+    """Orders a Location queryset by actual hierarchy depth (Country,
+    Storage Room, Rack/Shelf), then name.
 
     Plain `.order_by("level", "name")` — used to scatter across a dozen
     call sites in this codebase — sorts alphabetically by `level`'s
-    *stored string* ("country" < "floor" < "rack_cabinet" < "shelf_bin" <
-    "site" < "storage_room"), which is not the hierarchy order at all: a
-    location picker built that way lists every Country, then every Floor,
-    then every Rack/Cabinet, then every Shelf/Bin, then every Site, then
-    every Storage Room — scrambled relative to how an operator actually
-    thinks about the tree. This annotates each row with its real position
-    in Location.LEVEL_ORDER instead.
+    *stored string* ("country" < "rack_shelf" < "storage_room"), which is
+    not the hierarchy order at all: a location picker built that way lists
+    every Country, then every Rack/Shelf, then every Storage Room —
+    scrambled relative to how an operator actually thinks about the tree.
+    This annotates each row with its real position in Location.LEVEL_ORDER
+    instead.
     """
     ordering = models.Case(
         *(
@@ -126,3 +123,21 @@ def order_by_hierarchy(queryset):
         output_field=models.IntegerField(),
     )
     return queryset.annotate(_level_rank=ordering).order_by("_level_rank", "name")
+
+
+# The single, canonical split of LEVEL_ORDER into "authorization boundary,
+# never a valid final stock location" (LEVELS_ABOVE_ROOM) vs "a real place
+# stock can be held, and the only levels a Stock Manager may create"
+# (ROOM_OR_BELOW_LEVELS) — these two sets happen to be exactly the same
+# levels everywhere they're used (a Stock Manager creates precisely the
+# levels stock can be held at), and used to be re-typed as an identical
+# tuple in apps/inventory/forms.py, apps/imports/forms.py, apps/imports/
+# location_resolution.py, apps/dataquality/checks.py, and
+# apps/locations/services.py/forms.py/views.py — the same class of
+# duplication-drift bug as the scattered `.order_by("level", "name")` calls
+# order_by_hierarchy() above replaced. Import from here instead of
+# re-declaring.
+ROOM_OR_BELOW_LEVELS = (LocationLevel.STORAGE_ROOM, LocationLevel.RACK_SHELF)
+LEVELS_ABOVE_ROOM = tuple(
+    level for level in Location.LEVEL_ORDER if level not in ROOM_OR_BELOW_LEVELS
+)

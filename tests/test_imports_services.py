@@ -147,18 +147,9 @@ class TestStageRow:
     def test_per_row_location_wins_over_batch_default(
         self, administrator, location_tree, other_location_tree
     ):
-        from apps.locations.models import Location
-        from apps.locations.services import create_location
-
-        other_floor = create_location(
-            level=Location.Level.FLOOR,
-            name="Other Floor",
-            parent=other_location_tree["site"],
-            user=administrator,
-        )
         raw = _base_row(LOCATION="Room A")
         normalized, outcome, detail = services._stage_row(
-            raw, default_location=other_floor, default_stock_purpose="internal"
+            raw, default_location=other_location_tree["room"], default_stock_purpose="internal"
         )
         assert normalized["resolved_location_id"] == str(location_tree["room"].pk)
         assert normalized["used_batch_default_location"] is False

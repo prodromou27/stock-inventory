@@ -21,12 +21,12 @@ login (**Password** link on their own account, or the login screen's password-ch
 
 A new Stock Manager or Read-Only user can't see anything until you grant them access to specific storage locations
 (**Settings → Manage access** in the nav). Access to a location automatically includes everything under it in the hierarchy
-(Country → Site → Floor → Storage Room → Rack/Cabinet → Shelf/Bin) — granting "Room A" also grants every rack and
-shelf inside Room A. Revoking access is immediate. Every grant and revoke is itself an audited event.
+(Country → Storage Room → Rack/Shelf) — granting "Room A" also grants every rack/shelf inside Room A. Revoking
+access is immediate. Every grant and revoke is itself an audited event.
 
 ## Managing locations
 
-**Locations** — create the Country/Site/Floor/Storage Room/Rack/Shelf tree your business actually uses (or run
+**Locations** — create the Country/Storage Room/Rack-Shelf tree your business actually uses (or run
 `manage.py seed_locations` for a sample tree in a fresh dev environment — not for production). A location can be
 deactivated (hidden from new receipts/transfers) without losing its history — nothing is ever hard-deleted.
 

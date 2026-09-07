@@ -86,29 +86,19 @@ def read_only_user(db):
 @pytest.fixture
 def location_tree(administrator):
     country = create_location(level=Location.Level.COUNTRY, name="Wonderland", user=administrator)
-    site = create_location(level=Location.Level.SITE, name="HQ", parent=country, user=administrator)
-    floor = create_location(
-        level=Location.Level.FLOOR, name="1st Floor", parent=site, user=administrator
-    )
     room = create_location(
-        level=Location.Level.STORAGE_ROOM, name="Room A", parent=floor, user=administrator
+        level=Location.Level.STORAGE_ROOM, name="Room A", parent=country, user=administrator
     )
-    return {"country": country, "site": site, "floor": floor, "room": room}
+    return {"country": country, "room": room}
 
 
 @pytest.fixture
 def other_location_tree(administrator):
     country = create_location(level=Location.Level.COUNTRY, name="Elsewhere", user=administrator)
-    site = create_location(
-        level=Location.Level.SITE, name="Other HQ", parent=country, user=administrator
-    )
-    floor = create_location(
-        level=Location.Level.FLOOR, name="Ground Floor", parent=site, user=administrator
-    )
     room = create_location(
-        level=Location.Level.STORAGE_ROOM, name="Other Room", parent=floor, user=administrator
+        level=Location.Level.STORAGE_ROOM, name="Other Room", parent=country, user=administrator
     )
-    return {"country": country, "site": site, "floor": floor, "room": room}
+    return {"country": country, "room": room}
 
 
 @pytest.fixture

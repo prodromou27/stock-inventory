@@ -425,7 +425,7 @@ class TestCheckCountryOnlyLocation:
     .update() that bypasses the service layer's own validation entirely.
     """
 
-    def test_flags_a_unit_asset_at_site_level(self, administrator, unit_product, location_tree):
+    def test_flags_a_unit_asset_at_country_level(self, administrator, unit_product, location_tree):
         receive_stock(
             user=administrator,
             product=unit_product,
@@ -434,7 +434,7 @@ class TestCheckCountryOnlyLocation:
             vendor_serial="SN-LEGACY-SITE",
         )
         asset = UnitAsset.objects.get(vendor_serial="SN-LEGACY-SITE")
-        UnitAsset.objects.filter(pk=asset.pk).update(current_location=location_tree["site"])
+        UnitAsset.objects.filter(pk=asset.pk).update(current_location=location_tree["country"])
         run_detection(user=None)
         assert DataQualityFinding.objects.filter(
             issue_type="country_only_location", object_type="UnitAsset", object_id=str(asset.pk)

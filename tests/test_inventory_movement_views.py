@@ -25,7 +25,7 @@ def rack(administrator, location_tree):
     from apps.locations.services import create_location
 
     return create_location(
-        level=Location.Level.RACK_CABINET,
+        level=Location.Level.RACK_SHELF,
         name="Rack A",
         parent=location_tree["room"],
         user=administrator,
@@ -106,16 +106,10 @@ class TestMovementsHubContext:
         from apps.locations.models import Location
         from apps.locations.services import create_location
 
-        other_floor = create_location(
-            level=Location.Level.FLOOR,
-            name="Hub Floor",
-            parent=other_location_tree["site"],
-            user=administrator,
-        )
         other_room = create_location(
             level=Location.Level.STORAGE_ROOM,
             name="Hub Room",
-            parent=other_floor,
+            parent=other_location_tree["country"],
             user=administrator,
         )
         receive_stock(
@@ -283,16 +277,10 @@ class TestTransferView:
         from apps.locations.models import Location
         from apps.locations.services import create_location
 
-        other_floor = create_location(
-            level=Location.Level.FLOOR,
-            name="Other Floor",
-            parent=other_location_tree["site"],
-            user=administrator,
-        )
         other_room = create_location(
             level=Location.Level.STORAGE_ROOM,
-            name="Other Room",
-            parent=other_floor,
+            name="Transfer Dest Room",
+            parent=other_location_tree["country"],
             user=administrator,
         )
         receive_stock(
@@ -434,16 +422,10 @@ class TestTransferView:
         from apps.locations.models import Location
         from apps.locations.services import create_location
 
-        other_floor = create_location(
-            level=Location.Level.FLOOR,
-            name="Other Transfer Floor",
-            parent=other_location_tree["site"],
-            user=administrator,
-        )
         other_room = create_location(
             level=Location.Level.STORAGE_ROOM,
             name="Other Transfer Room",
-            parent=other_floor,
+            parent=other_location_tree["country"],
             user=administrator,
         )
         receive_stock(
@@ -664,16 +646,10 @@ class TestReserveAndReleaseViews:
         from apps.locations.models import Location
         from apps.locations.services import create_location
 
-        other_floor = create_location(
-            level=Location.Level.FLOOR,
-            name="Other Reserve Floor",
-            parent=other_location_tree["site"],
-            user=administrator,
-        )
         other_room = create_location(
             level=Location.Level.STORAGE_ROOM,
             name="Other Reserve Room",
-            parent=other_floor,
+            parent=other_location_tree["country"],
             user=administrator,
         )
         receive_stock(
@@ -1036,16 +1012,10 @@ class TestAssignAndDeliverViews:
         from apps.locations.models import Location
         from apps.locations.services import create_location
 
-        other_floor = create_location(
-            level=Location.Level.FLOOR,
-            name="Other Deliver Floor",
-            parent=other_location_tree["site"],
-            user=administrator,
-        )
         other_room = create_location(
             level=Location.Level.STORAGE_ROOM,
             name="Other Deliver Room",
-            parent=other_floor,
+            parent=other_location_tree["country"],
             user=administrator,
         )
         receive_stock(
@@ -1387,16 +1357,10 @@ class TestDispositionViews:
         from apps.locations.models import Location
         from apps.locations.services import create_location
 
-        other_floor = create_location(
-            level=Location.Level.FLOOR,
-            name="Other Damaged Floor",
-            parent=other_location_tree["site"],
-            user=administrator,
-        )
         other_room = create_location(
             level=Location.Level.STORAGE_ROOM,
             name="Other Damaged Room",
-            parent=other_floor,
+            parent=other_location_tree["country"],
             user=administrator,
         )
         receive_stock(

@@ -17,9 +17,9 @@ class TestLocationHierarchyValidation:
     def test_child_must_match_expected_parent_level(self, administrator, location_tree):
         with pytest.raises(ValidationError):
             create_location(
-                level=Location.Level.SITE,
+                level=Location.Level.RACK_SHELF,
                 name="Bad",
-                parent=location_tree["room"],
+                parent=location_tree["country"],
                 user=administrator,
             )
 
@@ -28,46 +28,38 @@ class TestLocationHierarchyValidation:
             create_location(
                 level=Location.Level.COUNTRY,
                 name="Bad Country",
-                parent=location_tree["site"],
+                parent=location_tree["room"],
                 user=administrator,
             )
 
     def test_path_is_dot_joined_ancestor_chain(self, location_tree):
-        room, floor, site, country = (
-            location_tree["room"],
-            location_tree["floor"],
-            location_tree["site"],
-            location_tree["country"],
-        )
+        room, country = location_tree["room"], location_tree["country"]
 
-        assert room.path.startswith(floor.path + ".")
-        assert floor.path.startswith(site.path + ".")
-        assert site.path.startswith(country.path + ".")
+        assert room.path.startswith(country.path + ".")
 
     def test_duplicate_sibling_name_rejected_case_insensitively(self, administrator, location_tree):
         with pytest.raises(ValidationError):
             create_location(
-                level=Location.Level.FLOOR,
-                name=location_tree["floor"].name.upper(),
-                parent=location_tree["site"],
+                level=Location.Level.STORAGE_ROOM,
+                name=location_tree["room"].name.upper(),
+                parent=location_tree["country"],
                 user=administrator,
             )
 
     def test_same_name_allowed_under_a_different_parent(self, administrator, location_tree):
-        # "1st Floor" already exists under HQ; a different Site may reuse the name.
-        other_site = create_location(
-            level=Location.Level.SITE,
-            name="Other Building",
-            parent=location_tree["country"],
+        # "Room A" already exists under Wonderland; a different Country may reuse the name.
+        other_country = create_location(
+            level=Location.Level.COUNTRY,
+            name="Other Country",
             user=administrator,
         )
-        floor = create_location(
-            level=Location.Level.FLOOR,
-            name=location_tree["floor"].name,
-            parent=other_site,
+        room = create_location(
+            level=Location.Level.STORAGE_ROOM,
+            name=location_tree["room"].name,
+            parent=other_country,
             user=administrator,
         )
-        assert floor.pk is not None
+        assert room.pk is not None
 
     def test_duplicate_country_name_rejected(self, administrator, location_tree):
         with pytest.raises(ValidationError):
@@ -137,15 +129,10 @@ class TestLocationDeactivation:
     def test_deactivating_a_country_cascades_to_every_descendant(
         self, administrator, location_tree
     ):
-        country, site, floor, room = (
-            location_tree["country"],
-            location_tree["site"],
-            location_tree["floor"],
-            location_tree["room"],
-        )
+        country, room = location_tree["country"], location_tree["room"]
         deactivate_location(location=country, user=administrator)
 
-        for loc in (country, site, floor, room):
+        for loc in (country, room):
             loc.refresh_from_db()
             assert loc.is_active is False
 
@@ -158,7 +145,7 @@ class TestLocationDeactivation:
             event_type=AuditEvent.EventType.RECORD_UPDATED,
             new_values={"is_active": False},
         )
-        assert event.metadata["deactivated_descendant_count"] == 3  # site, floor, room
+        assert event.metadata["deactivated_descendant_count"] == 1  # room
 
     def test_deactivating_an_already_inactive_country_is_a_noop(self, administrator, location_tree):
         country, room = location_tree["country"], location_tree["room"]
@@ -205,7 +192,7 @@ class TestLocationDeactivation:
         new_room = create_location(
             level=Location.Level.STORAGE_ROOM,
             name="Room B",
-            parent=location_tree["floor"],
+            parent=location_tree["country"],
             user=administrator,
         )
         assert new_room.is_active is True

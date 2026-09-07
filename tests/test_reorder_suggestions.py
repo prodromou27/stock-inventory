@@ -219,16 +219,10 @@ class TestReorderSuggestionsQuery:
         _configure_reorder(
             quantity_product, administrator, low_stock_threshold=10, target_stock_level=20
         )
-        other_floor = create_location(
-            level=Location.Level.FLOOR,
-            name="Reorder Floor",
-            parent=other_location_tree["site"],
-            user=administrator,
-        )
         other_room = create_location(
             level=Location.Level.STORAGE_ROOM,
             name="Reorder Room",
-            parent=other_floor,
+            parent=other_location_tree["country"],
             user=administrator,
         )
         receive_stock(
@@ -374,16 +368,10 @@ class TestReorderSuggestionsView:
         _configure_reorder(
             quantity_product, administrator, low_stock_threshold=10, target_stock_level=20
         )
-        other_floor = create_location(
-            level=Location.Level.FLOOR,
-            name="Out of Scope Floor",
-            parent=other_location_tree["site"],
-            user=administrator,
-        )
         other_room = create_location(
             level=Location.Level.STORAGE_ROOM,
             name="Out of Scope Room",
-            parent=other_floor,
+            parent=other_location_tree["country"],
             user=administrator,
         )
         receive_stock(

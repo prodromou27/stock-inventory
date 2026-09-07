@@ -1,27 +1,21 @@
 from django import forms
 
 from apps.inventory.models import StockPurpose
-from apps.locations.models import Location, LocationLevel, order_by_hierarchy
+from apps.locations.models import ROOM_OR_BELOW_LEVELS, Location, order_by_hierarchy
 
 from .parsing import MAX_IMPORT_SIZE_BYTES
 
 # Imports are Administrator-only (apps.imports.views' RoleRequiredMixin), so
 # these querysets need no per-user accessible_locations() scoping — only the
-# level restriction every stock-holding location field enforces: a
-# Country/Site/Floor is an authorization boundary, never a valid final
-# stock location.
-_ROOM_OR_BELOW_LEVELS = (
-    LocationLevel.STORAGE_ROOM,
-    LocationLevel.RACK_CABINET,
-    LocationLevel.SHELF_BIN,
-)
+# level restriction every stock-holding location field enforces: a Country
+# is an authorization boundary, never a valid final stock location.
 
 
 class ImportUploadForm(forms.Form):
     file = forms.FileField(label="Excel (.xlsx) or CSV (.csv) file")
     default_location = forms.ModelChoiceField(
-        queryset=Location.objects.filter(is_active=True, level__in=_ROOM_OR_BELOW_LEVELS).order_by(
-            "level", "name"
+        queryset=order_by_hierarchy(
+            Location.objects.filter(is_active=True, level__in=ROOM_OR_BELOW_LEVELS)
         ),
         required=False,
         label="Default location (optional)",
@@ -59,5 +53,5 @@ class RowLocationOverrideForm(forms.Form):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["location"].queryset = order_by_hierarchy(
-            Location.objects.filter(is_active=True, level__in=_ROOM_OR_BELOW_LEVELS)
+            Location.objects.filter(is_active=True, level__in=ROOM_OR_BELOW_LEVELS)
         )

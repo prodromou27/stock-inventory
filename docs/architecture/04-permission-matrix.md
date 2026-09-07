@@ -35,7 +35,8 @@ request is within the user's granted scope (self or a descendant, via the `ltree
 | Run Excel import | ✅ | ✅ (within scope) | ❌ |
 | Administrator correction / reversal | ✅ | ❌ | ❌ |
 | Manage users, roles, `UserLocationAccess` | ✅ | ❌ | ❌ |
-| Manage Country/Site/Floor/StorageRoom/Rack/Shelf (create/deactivate) | ✅ | ❌ | ❌ |
+| Manage Country (create/deactivate) | ✅ | ❌ | ❌ |
+| Manage Storage Room/Rack-Shelf (create/deactivate) | ✅ | ✅ (within scope) | ❌ |
 | View audit log | ✅ | ❌ | ❌ |
 | Configure low-stock thresholds | ✅ | ❌ | ❌ |
 

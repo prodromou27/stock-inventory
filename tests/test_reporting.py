@@ -16,14 +16,11 @@ def other_room(administrator, other_location_tree):
     from apps.locations.models import Location
     from apps.locations.services import create_location
 
-    other_floor = create_location(
-        level=Location.Level.FLOOR,
-        name="Rep Floor",
-        parent=other_location_tree["site"],
-        user=administrator,
-    )
     return create_location(
-        level=Location.Level.STORAGE_ROOM, name="Rep Room", parent=other_floor, user=administrator
+        level=Location.Level.STORAGE_ROOM,
+        name="Rep Room",
+        parent=other_location_tree["country"],
+        user=administrator,
     )
 
 

@@ -12,8 +12,8 @@ SAMPLE_COUNTRY_NAME = "Greece"
 
 class Command(BaseCommand):
     help = (
-        "Creates a sample Country > Site > Floor > Storage Room > Rack > Shelf "
-        "tree for local development. Refuses to run unless DEBUG is enabled."
+        "Creates a sample Country > Storage Room > Rack/Shelf tree for local "
+        "development. Refuses to run unless DEBUG is enabled."
     )
 
     def handle(self, *args, **options):
@@ -35,26 +35,19 @@ class Command(BaseCommand):
         country = create_location(
             level=Location.Level.COUNTRY, name=SAMPLE_COUNTRY_NAME, user=actor
         )
-        site = create_location(
-            level=Location.Level.SITE, name="Athens HQ", parent=country, user=actor
-        )
-        floor = create_location(
-            level=Location.Level.FLOOR, name="2nd Floor", parent=site, user=actor
-        )
         room = create_location(
             level=Location.Level.STORAGE_ROOM,
             name="2nd Floor Storage Room",
-            parent=floor,
+            parent=country,
             user=actor,
         )
         rack = create_location(
-            level=Location.Level.RACK_CABINET, name="Rack A", parent=room, user=actor
+            level=Location.Level.RACK_SHELF, name="Rack A", parent=room, user=actor
         )
-        create_location(level=Location.Level.SHELF_BIN, name="Shelf 1", parent=rack, user=actor)
+        create_location(level=Location.Level.RACK_SHELF, name="Shelf 1", parent=room, user=actor)
 
         self.stdout.write(
             self.style.SUCCESS(
-                f"Created sample tree: {country.name} > {site.name} > {floor.name} > {room.name} > "
-                f"{rack.name} > Shelf 1"
+                f"Created sample tree: {country.name} > {room.name} > {rack.name} (and Shelf 1)"
             )
         )

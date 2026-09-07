@@ -14,7 +14,7 @@ def rack(administrator, location_tree):
     from apps.locations.services import create_location
 
     return create_location(
-        level=Location.Level.RACK_CABINET,
+        level=Location.Level.RACK_SHELF,
         name="Rack A",
         parent=location_tree["room"],
         user=administrator,

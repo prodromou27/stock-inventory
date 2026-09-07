@@ -205,16 +205,10 @@ class TestInstallComponentService:
         from apps.locations.models import Location
         from apps.locations.services import create_location
 
-        other_floor = create_location(
-            level=Location.Level.FLOOR,
-            name="Out of scope floor",
-            parent=other_location_tree["site"],
-            user=administrator,
-        )
         other_room = create_location(
             level=Location.Level.STORAGE_ROOM,
             name="Out of scope room",
-            parent=other_floor,
+            parent=other_location_tree["country"],
             user=administrator,
         )
         parent_asset.current_location = other_room

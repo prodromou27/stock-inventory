@@ -87,19 +87,18 @@ def require_location_access(user, location):
 
 
 def require_room_or_below(location):
-    """Raises ValidationError unless `location` is a Storage Room, Rack/
-    Cabinet, or Shelf/Bin — a Country/Site/Floor is an authorization
-    boundary and a tree parent, never a valid place to actually hold stock.
-    `location=None` passes (a field that's optional at this layer, e.g. an
-    admin-correction leaving a location unset, is a different concern from
-    "the level chosen is too high"); callers that require a location at all
-    enforce that separately.
+    """Raises ValidationError unless `location` is a Storage Room or a
+    Rack/Shelf — a Country is an authorization boundary and a tree parent,
+    never a valid place to actually hold stock. `location=None` passes (a
+    field that's optional at this layer, e.g. an admin-correction leaving a
+    location unset, is a different concern from "the level chosen is too
+    high"); callers that require a location at all enforce that separately.
     """
-    from .models import LocationLevel
+    from .models import LEVELS_ABOVE_ROOM
 
     if location is None:
         return
-    if location.level in (LocationLevel.COUNTRY, LocationLevel.SITE, LocationLevel.FLOOR):
+    if location.level in LEVELS_ABOVE_ROOM:
         raise ValidationError(
             f"'{location}' is a {location.get_level_display()}, not a storage location. "
             "Select a Storage Room (or a Rack/Shelf within one)."
@@ -164,7 +163,7 @@ def location_breadcrumb_map():
                 breadcrumb["country"] = current.name
             elif current.level == LocationLevel.STORAGE_ROOM:
                 breadcrumb["storage_room"] = current.name
-            elif current.level == LocationLevel.SHELF_BIN:
+            elif current.level == LocationLevel.RACK_SHELF:
                 breadcrumb["shelf"] = current.name
             current = node_by_id.get(current.parent_id)
         breadcrumbs[node.id] = breadcrumb

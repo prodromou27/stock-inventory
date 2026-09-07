@@ -26,7 +26,7 @@ from apps.inventory.models import (
     UnitAsset,
     UnitStatus,
 )
-from apps.locations.models import Location, LocationLevel
+from apps.locations.models import LEVELS_ABOVE_ROOM, Location
 
 from .models import DataQualityIssueType, DataQualitySeverity
 
@@ -370,7 +370,7 @@ def check_orphaned_transaction_reference(breadcrumbs):
             }
 
 
-_LEVELS_ABOVE_ROOM = (LocationLevel.COUNTRY, LocationLevel.SITE, LocationLevel.FLOOR)
+_LEVELS_ABOVE_ROOM = LEVELS_ABOVE_ROOM
 
 
 def check_country_only_location(breadcrumbs):

@@ -132,17 +132,14 @@ class TestGrantAndRevokeViews:
         create_location(
             level=Location.Level.STORAGE_ROOM,
             name="Room A",
-            parent=other_location_tree["floor"],
+            parent=other_location_tree["country"],
             user=administrator,
         )
         client.force_login(administrator)
         response = client.get(reverse("accounts:grant_access"))
         content = response.content.decode()
-        assert f"{location_tree['country'].name} &gt; {location_tree['site'].name} &gt; " in content
-        assert (
-            f"{other_location_tree['country'].name} &gt; {other_location_tree['site'].name} &gt; "
-            in content
-        )
+        assert f"{location_tree['country'].name} &gt; " in content
+        assert f"{other_location_tree['country'].name} &gt; " in content
 
     def test_stock_manager_cannot_revoke_access(
         self, client, administrator, stock_manager, location_tree

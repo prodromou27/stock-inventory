@@ -12,7 +12,7 @@ def rack(administrator, location_tree):
     from apps.locations.services import create_location
 
     return create_location(
-        level=Location.Level.RACK_CABINET,
+        level=Location.Level.RACK_SHELF,
         name="Filter Rack",
         parent=location_tree["room"],
         user=administrator,
@@ -199,14 +199,11 @@ class TestAssetListFilters:
         from apps.locations.models import Location
         from apps.locations.services import create_location
 
-        other_floor = create_location(
-            level=Location.Level.FLOOR,
-            name="F",
-            parent=other_location_tree["site"],
-            user=administrator,
-        )
         other_room = create_location(
-            level=Location.Level.STORAGE_ROOM, name="R", parent=other_floor, user=administrator
+            level=Location.Level.STORAGE_ROOM,
+            name="R",
+            parent=other_location_tree["country"],
+            user=administrator,
         )
         receive_stock(
             user=administrator,
@@ -308,16 +305,10 @@ class TestAssetListBulkExport:
         from apps.locations.models import Location
         from apps.locations.services import create_location
 
-        other_floor = create_location(
-            level=Location.Level.FLOOR,
-            name="Bulk Export Floor",
-            parent=other_location_tree["site"],
-            user=administrator,
-        )
         other_room = create_location(
             level=Location.Level.STORAGE_ROOM,
             name="Bulk Export Room",
-            parent=other_floor,
+            parent=other_location_tree["country"],
             user=administrator,
         )
         receive_stock(

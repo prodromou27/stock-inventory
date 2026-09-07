@@ -15,7 +15,7 @@ from apps.core.authorization import (
 from apps.core.sorting import SortableListMixin
 
 from .forms import LocationEditForm, LocationForm
-from .models import Location, LocationLevel
+from .models import ROOM_OR_BELOW_LEVELS, Location, LocationLevel
 from .scoping import require_location_access, scope_queryset
 from .services import (
     can_manage_location,
@@ -132,13 +132,13 @@ class LocationDetailView(LoginRequiredMixin, DetailView):
             and not self.request.user.is_superuser
         ):
             context["can_add_child"] = self.object.level in (
-                Location.Level.FLOOR,
-                Location.Level.RACK_CABINET,
+                Location.Level.COUNTRY,
+                Location.Level.STORAGE_ROOM,
             )
         else:
             context["can_add_child"] = (
                 is_administrator(self.request.user)
-                and self.object.level != Location.Level.SHELF_BIN
+                and self.object.level != Location.Level.RACK_SHELF
             )
         return context
 
@@ -158,15 +158,10 @@ class LocationCreateView(LoginRequiredMixin, RoleRequiredMixin, View):
         if (
             not request.user.is_superuser
             and request.user.groups.filter(name=STOCK_MANAGER).exists()
-            and request.POST.get("level")
-            not in (
-                Location.Level.STORAGE_ROOM,
-                Location.Level.RACK_CABINET,
-                Location.Level.SHELF_BIN,
-            )
+            and request.POST.get("level") not in ROOM_OR_BELOW_LEVELS
         ):
             raise PermissionDenied(
-                "Stock Managers may create storage rooms, racks/cabinets, and shelves only."
+                "Stock Managers may create storage rooms and racks/shelves only."
             )
         form = LocationForm(request.POST, user=request.user)
         if not form.is_valid():
@@ -246,12 +241,12 @@ class RoomOptionsForCountryView(LoginRequiredMixin, View):
     """JSON data source for the "Select Country -> load its Storage Rooms"
     dependent control every stock-receiving/movement form now uses (spec:
     "Country is a location parent, not a valid final stock location — the
-    Storage Room is required"). Storage Rooms sit exactly three levels below
-    their Country (Country > Site > Floor > Storage Room, a fixed ordering
-    enforced by a DB trigger — see apps.locations.models.Location's
-    docstring), so this is an ltree descendant query, never `parent_id`.
-    Scoped the same way every other location-bearing endpoint in this app
-    is — a Stock Manager only ever sees rooms in a country they're granted.
+    Storage Room is required"). An ltree descendant query, not `parent_id`
+    directly, so this keeps working unchanged regardless of how many levels
+    separate Country from Storage Room (currently one — see
+    apps.locations.models.Location's docstring). Scoped the same way every
+    other location-bearing endpoint in this app is — a Stock Manager only
+    ever sees rooms in a country they're granted.
     """
 
     def get(self, request):

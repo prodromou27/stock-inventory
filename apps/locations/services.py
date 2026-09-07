@@ -11,7 +11,7 @@ from apps.core.authorization import (
     require_role,
 )
 
-from .models import Location
+from .models import ROOM_OR_BELOW_LEVELS, Location
 from .scoping import require_location_access
 
 
@@ -31,25 +31,21 @@ def create_location(*, level, name, user, parent=None, code=""):
     """Create a location allowed by the actor's role and country scope.
 
     Administrators manage the complete hierarchy. Stock Managers may add
-    storage rooms, racks/cabinets, and shelf/bins under existing, accessible
-    parents only — racks/shelves are reachable under a Stock Manager's own
-    granted Storage Room (accessible_locations() includes the granted node
-    itself), so someone granted at exactly Room level, this app's own
-    standard scenario, can still bootstrap fixtures inside it rather than
-    being stuck with no valid parent at all once level is restricted to
-    Storage Room alone. Validates level ordering before writing, so the
-    error the user sees is a clear ValidationError rather than the database
-    trigger's exception (docs/architecture/02-data-model.md).
+    storage rooms and racks/shelves under existing, accessible parents only
+    — racks/shelves are reachable under a Stock Manager's own granted
+    Storage Room (accessible_locations() includes the granted node itself),
+    so someone granted at exactly Room level, this app's own standard
+    scenario, can still bootstrap fixtures inside it rather than being stuck
+    with no valid parent at all once level is restricted to Storage Room
+    alone. Validates level ordering before writing, so the error the user
+    sees is a clear ValidationError rather than the database trigger's
+    exception (docs/architecture/02-data-model.md).
     """
     require_role(user, ADMINISTRATOR, STOCK_MANAGER)
     if not is_administrator(user):
-        if level not in (
-            Location.Level.STORAGE_ROOM,
-            Location.Level.RACK_CABINET,
-            Location.Level.SHELF_BIN,
-        ):
+        if level not in ROOM_OR_BELOW_LEVELS:
             raise PermissionDenied(
-                "Stock Managers may create storage rooms, racks/cabinets, and shelves only."
+                "Stock Managers may create storage rooms and racks/shelves only."
             )
         require_location_access(user, parent)
 
@@ -94,10 +90,7 @@ def create_location(*, level, name, user, parent=None, code=""):
 def can_manage_location(user, location):
     if is_administrator(user):
         return True
-    if not has_role(user, STOCK_MANAGER) or location.level not in (
-        Location.Level.STORAGE_ROOM,
-        Location.Level.SHELF_BIN,
-    ):
+    if not has_role(user, STOCK_MANAGER) or location.level not in ROOM_OR_BELOW_LEVELS:
         return False
     try:
         require_location_access(user, location)
@@ -132,8 +125,8 @@ def update_location(*, location, name, code, user):
 
 @transaction.atomic
 def deactivate_location(*, location, user):
-    """Deactivating cascades to every descendant (a deactivated Country/Site/
-    Floor must not leave its rooms/shelves looking selectable — scope_queryset/
+    """Deactivating cascades to every descendant (a deactivated Country must
+    not leave its rooms/shelves looking selectable — scope_queryset/
     accessible_locations/location pickers only ever filter on a leaf row's own
     is_active, never its ancestors', so without this cascade an inactive
     Country's children silently stay fully selectable). Reactivation
@@ -171,8 +164,8 @@ def deactivate_location(*, location, user):
 def reactivate_location(*, location, user):
     """Deliberately single-row only — does NOT cascade to descendants. A room
     deactivated independently (flooded, under renovation) for reasons unrelated
-    to its country/site being reactivated should not be silently resurrected;
-    each descendant that should come back must be reactivated on its own.
+    to its country being reactivated should not be silently resurrected; each
+    descendant that should come back must be reactivated on its own.
     """
     require_role(user, ADMINISTRATOR, STOCK_MANAGER)
     if not can_manage_location(user, location):

@@ -52,16 +52,10 @@ class TestUnitAssetGridDataView:
         from apps.locations.models import Location
         from apps.locations.services import create_location
 
-        other_floor = create_location(
-            level=Location.Level.FLOOR,
-            name="Grid Floor",
-            parent=other_location_tree["site"],
-            user=administrator,
-        )
         other_room = create_location(
             level=Location.Level.STORAGE_ROOM,
             name="Grid Room",
-            parent=other_floor,
+            parent=other_location_tree["country"],
             user=administrator,
         )
         receive_stock(
@@ -94,16 +88,10 @@ class TestUnitAssetGridDataView:
         from apps.locations.models import Location
         from apps.locations.services import create_location
 
-        other_floor = create_location(
-            level=Location.Level.FLOOR,
-            name="Param Floor",
-            parent=other_location_tree["site"],
-            user=administrator,
-        )
         other_room = create_location(
             level=Location.Level.STORAGE_ROOM,
             name="Param Room",
-            parent=other_floor,
+            parent=other_location_tree["country"],
             user=administrator,
         )
         receive_stock(
@@ -284,16 +272,10 @@ class TestAssetGridFieldUpdateView:
         from apps.locations.models import Location
         from apps.locations.services import create_location
 
-        other_floor = create_location(
-            level=Location.Level.FLOOR,
-            name="Edit Floor",
-            parent=other_location_tree["site"],
-            user=administrator,
-        )
         other_room = create_location(
             level=Location.Level.STORAGE_ROOM,
             name="Edit Room",
-            parent=other_floor,
+            parent=other_location_tree["country"],
             user=administrator,
         )
         asset = self._asset(administrator, unit_product, {"room": other_room}, "SN-EDIT-SCOPE")
@@ -682,16 +664,10 @@ class TestStockBalanceGridDataView:
         from apps.locations.models import Location
         from apps.locations.services import create_location
 
-        other_floor = create_location(
-            level=Location.Level.FLOOR,
-            name="Balance Floor",
-            parent=other_location_tree["site"],
-            user=administrator,
-        )
         other_room = create_location(
             level=Location.Level.STORAGE_ROOM,
             name="Balance Room",
-            parent=other_floor,
+            parent=other_location_tree["country"],
             user=administrator,
         )
         receive_stock(
@@ -832,16 +808,10 @@ class TestProductGridDataView:
         from apps.locations.models import Location
         from apps.locations.services import create_location
 
-        other_floor = create_location(
-            level=Location.Level.FLOOR,
-            name="Product Grid Floor",
-            parent=other_location_tree["site"],
-            user=administrator,
-        )
         other_room = create_location(
             level=Location.Level.STORAGE_ROOM,
             name="Product Grid Room",
-            parent=other_floor,
+            parent=other_location_tree["country"],
             user=administrator,
         )
         receive_stock(
@@ -909,16 +879,10 @@ class TestAssetPickerDataView:
         from apps.locations.models import Location
         from apps.locations.services import create_location
 
-        other_floor = create_location(
-            level=Location.Level.FLOOR,
-            name="Picker Floor",
-            parent=other_location_tree["site"],
-            user=administrator,
-        )
         other_room = create_location(
             level=Location.Level.STORAGE_ROOM,
             name="Picker Room",
-            parent=other_floor,
+            parent=other_location_tree["country"],
             user=administrator,
         )
         receive_stock(
