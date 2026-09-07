@@ -1988,6 +1988,7 @@ class AssetPickerDataView(LoginRequiredMixin, View):
             "country": breadcrumb.get("country", ""),
             "storage_room": breadcrumb.get("storage_room", ""),
             "preselected": str(asset.pk) in preselected,
+            "project_reference": asset.project_reference,
         }
 
 

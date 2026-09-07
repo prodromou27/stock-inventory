@@ -81,6 +81,14 @@
             });
             selectionCount.hidden = rows.length === 0;
             selectionCount.textContent = rows.length === 1 ? "1 selected" : `${rows.length} selected`;
+            // A plain DOM event rather than a direct callback — this partial
+            // is included by several different forms (Transfer/Reserve/
+            // Assign/Deliver/...), most of which have no use for per-row
+            // fields like project_reference, so the picker itself stays
+            // agnostic and a form that cares (deliver_form.html) just
+            // listens for this instead of the partial needing to know about
+            // every possible caller-specific behavior.
+            document.dispatchEvent(new CustomEvent("asset-picker:selection-changed", { detail: { rows } }));
           },
         });
 

@@ -37,4 +37,33 @@
       <option value="{{ choice.name }}" data-customer-id="{{ choice.id }}">
     {% endfor %}
   </datalist>
+
+  <script defer>
+    document.addEventListener("DOMContentLoaded", () => {
+      const projectRefInput = document.getElementById("id_project_reference");
+      if (!projectRefInput) return;
+
+      // Once the operator has typed their own value, stop overwriting it —
+      // this is a convenience for the common case (everything selected
+      // already shares one project), not a rule that should fight a
+      // deliberate manual entry.
+      let userEdited = Boolean(projectRefInput.value);
+      projectRefInput.addEventListener("input", () => {
+        userEdited = true;
+      });
+
+      document.addEventListener("asset-picker:selection-changed", (event) => {
+        if (userEdited) return;
+        const values = new Set(
+          event.detail.rows.map((row) => row.project_reference).filter((value) => value)
+        );
+        // userEdited is still false here, so the field currently holds
+        // either "" or a value we auto-filled ourselves — always safe to
+        // overwrite. Anything other than exactly one shared value across
+        // the current selection clears it, rather than leaving a stale
+        // reference from a since-changed selection.
+        projectRefInput.value = values.size === 1 ? values.values().next().value : "";
+      });
+    });
+  </script>
 {% endblock %}
