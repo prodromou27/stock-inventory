@@ -1394,6 +1394,16 @@
     gap: 0.5rem;
     font-size: 0.85rem;
   }
+  .hub-quick-list li > span {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    flex-shrink: 0;
+  }
+  .hub-quick-list__action {
+    font-size: 0.78rem;
+    font-weight: 600;
+  }
   .hub-panel__subheading {
     font-size: 0.78rem;
     text-transform: uppercase;

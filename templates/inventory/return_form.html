@@ -18,8 +18,9 @@
     <p class="messages__item messages__item--error">{{ form.non_field_errors|join:" " }}</p>
   {% endif %}
 
-  <form method="post">
+  <form method="post" data-confirm="Record this return? The selected item(s) go back into stock at the chosen location.">
     {% csrf_token %}
+    {% include "inventory/_movement_steps.html" with step=1 step_title="Enter details" %}
     <div class="card">
       {% for field in form %}
         {% if field.name != "quantity_product" and field.name != "quantity_amount" and field.name != "quantity_stock_purpose" %}
@@ -28,6 +29,7 @@
       {% endfor %}
     </div>
 
+    {% include "inventory/_movement_steps.html" with step=2 step_title="Select items to return" %}
     {% if quantity_options %}
       <div class="card">
         <h2>Quantity stock to return</h2>
@@ -83,6 +85,7 @@
       {% endif %}
     </div>
 
+    {% include "inventory/_movement_steps.html" with step=3 step_title="Review and confirm" %}
     <div class="form-actions">
       <button type="submit" class="btn btn--primary">Record return</button>
     </div>

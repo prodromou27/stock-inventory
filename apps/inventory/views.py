@@ -203,6 +203,17 @@ class MovementsHubView(LoginRequiredMixin, RoleRequiredMixin, View):
 
     def get(self, request):
         frequently_used = _frequently_used_for_hub(request.user)
+        active_reservations = scope_queryset(
+            request.user,
+            StockReservation.objects.filter(status=ReservationStatus.ACTIVE),
+            location_field="location",
+        ).count()
+        temporary_assignments = scope_transaction_queryset(
+            request.user,
+            InventoryTransaction.objects.filter(
+                movement_type=MovementType.ASSIGNMENT, is_temporary_assignment=True
+            ),
+        ).count()
         return render(
             request,
             "inventory/movements_hub.html",
@@ -210,18 +221,22 @@ class MovementsHubView(LoginRequiredMixin, RoleRequiredMixin, View):
                 "recent_transactions": _recent_transactions_for_hub(request.user),
                 "frequent_products": frequently_used["products"],
                 "frequent_locations": frequently_used["locations"],
+                "active_reservations": active_reservations,
+                "temporary_assignments": temporary_assignments,
             },
         )
 
 
-def _default_location_for(user):
+def _default_location_for(user, movement_type=MovementType.RECEIPT):
     """One fewer click on the common paths, never a hidden choice on the
     uncommon one: if `user` only has access to a single location, that's
-    obviously where they're receiving into — pre-select it. Otherwise fall
-    back to the location they most recently received stock into (still
-    re-checked against their *current* access, so a since-revoked location
-    is never offered back). Returns None — no default, pick as before — when
-    neither applies.
+    obviously where they're moving stock into — pre-select it. Otherwise fall
+    back to the location they most recently used as a destination for this
+    same movement_type (still re-checked against their *current* access, so a
+    since-revoked location is never offered back). Returns None — no
+    default, pick as before — when neither applies. Shared by every
+    destination-picking movement form (Receive/Quick receive/Receive bulk via
+    the default movement_type, Transfer via movement_type=TRANSFER).
     """
     accessible = accessible_locations(user).filter(is_active=True)
     if accessible.count() == 1:
@@ -230,7 +245,7 @@ def _default_location_for(user):
     last_location_id = (
         InventoryTransaction.objects.filter(
             performed_by=user,
-            movement_type=MovementType.RECEIPT,
+            movement_type=movement_type,
             destination_location__isnull=False,
         )
         .order_by("-created_at")
@@ -1109,8 +1124,8 @@ ASSET_QUICK_ACTIONS_BY_STATUS = {
         "dispose",
     ],
     UnitStatus.RESERVED: ["transfer", "assign", "deliver", "mark_damaged", "mark_lost", "dispose"],
-    UnitStatus.ASSIGNED: ["mark_damaged", "mark_lost", "dispose"],
-    UnitStatus.DELIVERED: ["mark_damaged"],
+    UnitStatus.ASSIGNED: ["return", "mark_damaged", "mark_lost", "dispose"],
+    UnitStatus.DELIVERED: ["return", "mark_damaged"],
     UnitStatus.DAMAGED: ["repair_damaged", "dispose"],
     UnitStatus.RETURNED: ["dispose"],
     UnitStatus.LOST: [],
@@ -1125,6 +1140,7 @@ ASSET_QUICK_ACTION_LABELS = {
     "mark_lost": "Mark lost",
     "dispose": "Dispose",
     "repair_damaged": "Return to stock",
+    "return": "Record return",
 }
 
 
@@ -1163,15 +1179,20 @@ def _quick_actions_for(asset):
     eligible for, each URL pre-filled with this one asset via the same
     ?unit_asset_ids= mechanism the grid's bulk actions use (_preselected_ids())
     — one asset is just a bulk action with a selection of one, not a
-    separate code path.
+    separate code path. "return" is the one exception: it targets the
+    asset's own custody transaction (a path argument), not a query param,
+    so it's skipped entirely if that pointer is somehow missing.
     """
-    return [
-        {
-            "url": f"{reverse(f'inventory:{name}')}?unit_asset_ids={asset.pk}",
-            "label": ASSET_QUICK_ACTION_LABELS[name],
-        }
-        for name in ASSET_QUICK_ACTIONS_BY_STATUS.get(asset.status, [])
-    ]
+    actions = []
+    for name in ASSET_QUICK_ACTIONS_BY_STATUS.get(asset.status, []):
+        if name == "return":
+            if asset.current_custody_transaction_id is None:
+                continue
+            url = reverse("inventory:return_stock", args=[asset.current_custody_transaction_id])
+        else:
+            url = f"{reverse(f'inventory:{name}')}?unit_asset_ids={asset.pk}"
+        actions.append({"url": url, "label": ASSET_QUICK_ACTION_LABELS[name]})
+    return actions
 
 
 # Hard allow-list, not a blocklist: only these plain descriptive text fields
@@ -1697,11 +1718,14 @@ class TransactionListView(LoginRequiredMixin, SortableListMixin, ListView):
             ),
         )
         if movement_type := self.request.GET.get("movement_type", "").strip():
-            queryset = queryset.filter(movement_type=movement_type)
+            movement_types = [value for value in movement_type.split(",") if value]
+            queryset = queryset.filter(movement_type__in=movement_types)
         if project_reference := self.request.GET.get("project_reference", "").strip():
             queryset = queryset.filter(project_reference__icontains=project_reference)
         if final_customer := self.request.GET.get("final_customer", "").strip():
             queryset = queryset.filter(final_customer__icontains=final_customer)
+        if self.request.GET.get("temporary_only") == "1":
+            queryset = queryset.filter(is_temporary_assignment=True)
         if occurred_after := parse_date_param(self.request.GET.get("occurred_after", "").strip()):
             queryset = queryset.filter(occurred_at__gte=occurred_after)
         if occurred_before := parse_date_param(self.request.GET.get("occurred_before", "").strip()):
@@ -2080,7 +2104,11 @@ class TransferView(LoginRequiredMixin, RoleRequiredMixin, View):
     template_name = "inventory/transfer_form.html"
 
     def get(self, request):
-        form = TransferForm(user=request.user, initial={"submission_token": new_submission_token()})
+        initial = {"submission_token": new_submission_token()}
+        default_location = _default_location_for(request.user, movement_type=MovementType.TRANSFER)
+        if default_location is not None:
+            initial["destination_location"] = default_location.pk
+        form = TransferForm(user=request.user, initial=initial)
         eligible_statuses = [UnitStatus.IN_STOCK, UnitStatus.RESERVED]
         assets = _eligible_assets(request, eligible_statuses)
         return render(
@@ -2534,6 +2562,7 @@ class ReturnView(LoginRequiredMixin, RoleRequiredMixin, View):
         form = ReturnForm(
             user=request.user,
             quantity_product_choices=self._quantity_product_choices(original_transaction),
+            initial={"submission_token": new_submission_token()},
         )
         return render(
             request, self.template_name, self._context(request, original_transaction, form)
@@ -2551,6 +2580,12 @@ class ReturnView(LoginRequiredMixin, RoleRequiredMixin, View):
             return render(
                 request, self.template_name, self._context(request, original_transaction, form)
             )
+
+        if not claim_submission_token(request.POST.get("submission_token")):
+            messages.info(
+                request, "This return was already submitted — nothing was done a second time."
+            )
+            return redirect("inventory:movements_hub")
 
         data = form.cleaned_data
         quantity_lines = []
@@ -2588,7 +2623,13 @@ class ReturnView(LoginRequiredMixin, RoleRequiredMixin, View):
                 accessories=data["accessories"] or None,
                 notes=data["notes"],
             )
+        except PermissionDenied:
+            # See AssignView.post's identical block — an unauthorized
+            # selection must not permanently burn the token.
+            release_submission_token(request.POST.get("submission_token"))
+            raise
         except ValidationError as exc:
+            release_submission_token(request.POST.get("submission_token"))
             form.add_error(None, exc)
             return render(
                 request, self.template_name, self._context(request, original_transaction, form)
@@ -2793,7 +2834,9 @@ class RepairDamagedView(LoginRequiredMixin, RoleRequiredMixin, View):
             request,
             self.template_name,
             {
-                "form": RepairDamagedForm(user=request.user),
+                "form": RepairDamagedForm(
+                    user=request.user, initial={"submission_token": new_submission_token()}
+                ),
                 "assets": _eligible_assets(request, [UnitStatus.DAMAGED]),
                 "page_title": "Return repaired assets to stock",
                 "confirm_message": "Return the selected asset(s) to stock as repaired?",
@@ -2806,6 +2849,11 @@ class RepairDamagedView(LoginRequiredMixin, RoleRequiredMixin, View):
         form = RepairDamagedForm(request.POST, user=request.user)
         assets = _eligible_assets(request, [UnitStatus.DAMAGED])
         if form.is_valid():
+            if not claim_submission_token(request.POST.get("submission_token")):
+                messages.info(
+                    request, "This action was already submitted — nothing was done a second time."
+                )
+                return redirect("inventory:movements_hub")
             try:
                 txn = return_repaired_to_stock(
                     user=request.user,
@@ -2814,7 +2862,11 @@ class RepairDamagedView(LoginRequiredMixin, RoleRequiredMixin, View):
                     unit_asset_ids=request.POST.getlist("unit_asset_ids"),
                     notes=form.cleaned_data["notes"],
                 )
+            except PermissionDenied:
+                release_submission_token(request.POST.get("submission_token"))
+                raise
             except ValidationError as exc:
+                release_submission_token(request.POST.get("submission_token"))
                 form.add_error(None, exc)
             else:
                 messages.success(

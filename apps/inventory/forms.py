@@ -376,7 +376,15 @@ class _BaseMovementForm(forms.Form):
     uniformly pass it through super().__init__(..., user=user).
     """
 
-    occurred_at = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
+    # initial=timezone.localdate (the callable, not a call) so Django
+    # evaluates it fresh on every GET rather than baking in the date this
+    # module was first imported — every one of these actions is something
+    # happening right now, so defaulting to today (still fully editable,
+    # e.g. for late-entered paperwork) saves the one interaction that
+    # would otherwise be needed on nearly every single submission.
+    occurred_at = forms.DateField(
+        widget=forms.DateInput(attrs={"type": "date"}), initial=timezone.localdate
+    )
     notes = forms.CharField(required=False, widget=forms.Textarea)
     # Round-trips through initial -> render -> (possibly invalid) re-render
     # like ReceiveStockForm's own submission_token — apps.core.idempotency.
@@ -475,7 +483,9 @@ class DeliverForm(_BaseMovementForm):
 
 class ReturnForm(forms.Form):
     location = forms.ModelChoiceField(queryset=Location.objects.none(), label="Receiving location")
-    occurred_at = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
+    occurred_at = forms.DateField(
+        widget=forms.DateInput(attrs={"type": "date"}), initial=timezone.localdate
+    )
     condition = forms.ChoiceField(choices=Condition.choices, required=False, initial=Condition.USED)
     accessories = forms.CharField(required=False, widget=forms.Textarea)
     quantity_product = forms.ModelChoiceField(
@@ -492,6 +502,11 @@ class ReturnForm(forms.Form):
         label="Stock purpose",
     )
     notes = forms.CharField(required=False, widget=forms.Textarea)
+    # Matches every other movement form's idempotency field — a double-click
+    # or back-button resubmit here previously wasn't guarded at all, unlike
+    # its 7 sibling movement forms (apps.core.idempotency.
+    # claim_submission_token() is what actually rejects a reused one).
+    submission_token = forms.CharField(required=False, widget=forms.HiddenInput)
 
     def __init__(self, *args, user=None, quantity_product_choices=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -520,7 +535,9 @@ class ReturnAssessmentForm(forms.Form):
     ]
 
     to_status = forms.ChoiceField(choices=ASSESSMENT_CHOICES, label="Resolve to")
-    occurred_at = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
+    occurred_at = forms.DateField(
+        widget=forms.DateInput(attrs={"type": "date"}), initial=timezone.localdate
+    )
     notes = forms.CharField(required=False, widget=forms.Textarea)
 
 
@@ -566,8 +583,12 @@ class DisposeForm(DispositionForm):
 
 class RepairDamagedForm(forms.Form):
     location = forms.ModelChoiceField(queryset=Location.objects.none())
-    occurred_at = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
+    occurred_at = forms.DateField(
+        widget=forms.DateInput(attrs={"type": "date"}), initial=timezone.localdate
+    )
     notes = forms.CharField(required=False, widget=forms.Textarea, label="Repair notes")
+    # See ReturnForm's identical field — same previously-unguarded gap.
+    submission_token = forms.CharField(required=False, widget=forms.HiddenInput)
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -593,7 +614,12 @@ class AdminCorrectUnitForm(forms.Form):
         label="Correct arrival date (optional)",
         widget=forms.DateInput(attrs={"type": "date"}),
     )
-    occurred_at = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
+    # This is when the *correction* happens (today, almost always) — distinct
+    # from arrival_date above, the historical value actually being corrected,
+    # which must never default to today.
+    occurred_at = forms.DateField(
+        widget=forms.DateInput(attrs={"type": "date"}), initial=timezone.localdate
+    )
     reason = forms.CharField(widget=forms.Textarea)
 
     def __init__(self, *args, **kwargs):
@@ -613,12 +639,16 @@ class AdminCorrectUnitForm(forms.Form):
 
 class AdminCorrectBalanceForm(forms.Form):
     new_on_hand_quantity = forms.IntegerField(min_value=0, label="New on-hand quantity")
-    occurred_at = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
+    occurred_at = forms.DateField(
+        widget=forms.DateInput(attrs={"type": "date"}), initial=timezone.localdate
+    )
     reason = forms.CharField(widget=forms.Textarea)
 
 
 class AdminReversalForm(forms.Form):
-    occurred_at = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
+    occurred_at = forms.DateField(
+        widget=forms.DateInput(attrs={"type": "date"}), initial=timezone.localdate
+    )
     reason = forms.CharField(widget=forms.Textarea)
 
 
@@ -630,7 +660,9 @@ class UnitPurposeReclassifyForm(forms.Form):
     """
 
     new_purpose = forms.ChoiceField(choices=StockPurpose.choices, label="New stock purpose")
-    occurred_at = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
+    occurred_at = forms.DateField(
+        widget=forms.DateInput(attrs={"type": "date"}), initial=timezone.localdate
+    )
     reason = forms.CharField(widget=forms.Textarea)
 
 
@@ -643,7 +675,9 @@ class QuantityPurposeReclassifyForm(forms.Form):
     from_purpose = forms.ChoiceField(choices=StockPurpose.choices, label="From")
     to_purpose = forms.ChoiceField(choices=StockPurpose.choices, label="To")
     quantity = forms.IntegerField(min_value=1)
-    occurred_at = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
+    occurred_at = forms.DateField(
+        widget=forms.DateInput(attrs={"type": "date"}), initial=timezone.localdate
+    )
     reason = forms.CharField(widget=forms.Textarea)
 
     def clean(self):
@@ -807,7 +841,9 @@ class InstallComponentForm(forms.Form):
         label="Install into",
         widget=forms.Select(attrs={"data-filterable": "true"}),
     )
-    occurred_at = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
+    occurred_at = forms.DateField(
+        widget=forms.DateInput(attrs={"type": "date"}), initial=timezone.localdate
+    )
     notes = forms.CharField(required=False, widget=forms.Textarea)
 
     def __init__(self, *args, user=None, component=None, **kwargs):
@@ -832,7 +868,9 @@ class RemoveComponentForm(forms.Form):
     movement asks for.
     """
 
-    occurred_at = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
+    occurred_at = forms.DateField(
+        widget=forms.DateInput(attrs={"type": "date"}), initial=timezone.localdate
+    )
     notes = forms.CharField(required=False, widget=forms.Textarea)
 
 

@@ -28,6 +28,7 @@
           <th>Quantity</th>
           <th>Project reference</th>
           <th>Status</th>
+          {% if user_is_administrator or user_is_stock_manager %}<th></th>{% endif %}
         </tr>
       </thead>
       <tbody>
@@ -38,6 +39,17 @@
             <td>{{ reservation.quantity }}</td>
             <td>{{ reservation.project_reference }}</td>
             <td><span class="badge {{ reservation.status|badge_class }}">{{ reservation.get_status_display }}</span></td>
+            {% if user_is_administrator or user_is_stock_manager %}
+              <td>
+                {% if reservation.status == "active" %}
+                  <form method="post" action="{% url 'inventory:release_reservation' reservation.pk %}"
+                        data-confirm="Release this reservation? The reserved quantity becomes available to any other movement immediately.">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn--sm">Release</button>
+                  </form>
+                {% endif %}
+              </td>
+            {% endif %}
           </tr>
         {% endfor %}
       </tbody>

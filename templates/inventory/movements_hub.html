@@ -53,7 +53,7 @@
       <span class="action-card__title">Return repaired assets to stock</span>
       <span class="action-card__desc">Bring damaged assets back into stock.</span>
     </a>
-    <a class="action-card" href="{% url 'inventory:transaction_list' %}">
+    <a class="action-card" href="{% url 'inventory:transaction_list' %}?movement_type=assignment,delivery">
       <span class="action-card__title">Return</span>
       <span class="action-card__desc">Open the original assignment or delivery transaction to record a return.</span>
     </a>
@@ -72,6 +72,18 @@
     <a class="action-card action-card--problem" href="{% url 'inventory:dispose' %}">
       <span class="action-card__title">Dispose</span>
       <span class="action-card__desc">Remove assets from stock permanently.</span>
+    </a>
+  </div>
+
+  <h2>At a glance</h2>
+  <div class="card-grid">
+    <a class="action-card" href="{% url 'inventory:reservation_list' %}">
+      <span class="action-card__title">{{ active_reservations }}</span>
+      <span class="action-card__desc">Active reservations</span>
+    </a>
+    <a class="action-card" href="{% url 'inventory:transaction_list' %}?movement_type=assignment&temporary_only=1">
+      <span class="action-card__title">{{ temporary_assignments }}</span>
+      <span class="action-card__desc">Temporary assignments outstanding</span>
     </a>
   </div>
 
@@ -110,7 +122,10 @@
           {% for product in frequent_products %}
             <li>
               <a href="{% url 'catalog:product_detail' product.id %}">{{ product.label }}</a>
-              <span class="text-muted">{{ product.count }}</span>
+              <span>
+                <a class="hub-quick-list__action" href="{% url 'inventory:receive_stock' %}?product={{ product.id }}">Receive</a>
+                <span class="text-muted">{{ product.count }}</span>
+              </span>
             </li>
           {% endfor %}
         </ul>
@@ -121,7 +136,10 @@
           {% for entry in frequent_locations %}
             <li>
               <a href="{% url 'locations:detail' entry.location.pk %}">{{ entry.location.name }}</a>
-              <span class="text-muted">{{ entry.count }}</span>
+              <span>
+                <a class="hub-quick-list__action" href="{% url 'inventory:quick_receive' %}?location={{ entry.location.pk }}">Receive</a>
+                <span class="text-muted">{{ entry.count }}</span>
+              </span>
             </li>
           {% endfor %}
         </ul>

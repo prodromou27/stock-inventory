@@ -85,7 +85,7 @@ class WipeMethod(models.TextChoices):
     SOFTWARE_WIPE = "software_wipe", "Software data wipe"
     DEGAUSSED = "degaussed", "Degaussed"
     PHYSICALLY_DESTROYED = "physically_destroyed", "Physically destroyed"
-    NOT_APPLICABLE = "not_applicable", "No storage media"
+    NOT_APPLICABLE = "not_applicable", "Not applicable — no storage media"
 
 
 class Customer(UUIDPrimaryKeyModel, UserStampedModel):
