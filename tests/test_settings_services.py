@@ -96,7 +96,7 @@ class TestUpdateSystemSettings:
         settings_obj = update_system_settings(
             user=administrator, site_name="  ", allowed_hosts_override=""
         )
-        assert settings_obj.site_name == "Stock Inventory"
+        assert settings_obj.site_name == "Invenio"
 
     def test_requires_administrator(self, stock_manager):
         with pytest.raises(PermissionDenied):

@@ -24,7 +24,7 @@ class SystemSettings(TimestampedModel):
     ledger/audit tables.
     """
 
-    site_name = models.CharField(max_length=100, blank=True, default="Stock Inventory")
+    site_name = models.CharField(max_length=100, blank=True, default="Invenio")
     logo = models.FileField(upload_to=_logo_upload_path, null=True, blank=True)
     accent_color = models.CharField(
         max_length=7,

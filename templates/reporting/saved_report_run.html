@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}{{ report.name }} — Stock Inventory{% endblock %}
+{% block title %}{{ report.name }} — {{ site_name }}{% endblock %}
 
 {% block content %}
   <p><a href="{% url 'reporting:saved_report_list' %}">&larr; My custom reports</a></p>

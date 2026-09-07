@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Remove Component — Stock Inventory{% endblock %}
+{% block title %}Remove Component — {{ site_name }}{% endblock %}
 
 {% block content %}
   <p><a href="{{ component.get_absolute_url }}">&larr; {{ component.product }} ({{ component.vendor_serial|default:"no serial" }})</a></p>

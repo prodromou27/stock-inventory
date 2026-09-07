@@ -15,7 +15,7 @@ class SystemSettingsForm(forms.Form):
         max_length=100,
         required=False,
         label="Site name",
-        help_text="Shown in the sidebar and browser tab. Leave blank to use “Stock Inventory”.",
+        help_text="Shown in the sidebar and browser tab. Leave blank to use “Invenio”.",
     )
     accent_color = forms.CharField(
         max_length=7,

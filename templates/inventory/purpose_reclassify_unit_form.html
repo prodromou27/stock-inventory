@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load ui_extras %}
 
-{% block title %}Reclassify Stock Purpose — Stock Inventory{% endblock %}
+{% block title %}Reclassify Stock Purpose — {{ site_name }}{% endblock %}
 
 {% block content %}
   <p><a href="{{ asset.get_absolute_url }}">&larr; {{ asset.product }} ({{ asset.vendor_serial|default:"no serial" }})</a></p>

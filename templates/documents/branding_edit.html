@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}{{ country.name }} Branding — Stock Inventory{% endblock %}
+{% block title %}{{ country.name }} Branding — {{ site_name }}{% endblock %}
 
 {% block content %}
   <p><a href="{% url 'documents:branding_list' %}">&larr; All country branding</a></p>

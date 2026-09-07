@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block title %}{{ document_type_label }} Template — Stock Inventory{% endblock %}
+{% block title %}{{ document_type_label }} Template — {{ site_name }}{% endblock %}
 
 {% block content %}
   <p><a href="{% url 'documents:template_hub' %}">&larr; All document templates</a></p>

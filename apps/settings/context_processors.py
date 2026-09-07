@@ -20,7 +20,7 @@ def branding_context(request):
     """
     settings_obj = getattr(request, "_system_settings", None) or SystemSettings.load()
     return {
-        "site_name": settings_obj.site_name or "Stock Inventory",
+        "site_name": settings_obj.site_name or "Invenio",
         "site_logo_url": settings_obj.logo.url if settings_obj.logo else "",
         "accent_color": settings_obj.accent_color,
         "accent_color_hover": (

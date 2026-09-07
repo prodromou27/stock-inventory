@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block title %}Build a Report — Stock Inventory{% endblock %}
+{% block title %}Build a Report — {{ site_name }}{% endblock %}
 
 {% block content %}
   <p><a href="{% url 'reporting:builder_start' %}">&larr; Change data source</a></p>

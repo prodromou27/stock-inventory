@@ -1,7 +1,7 @@
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.contrib.auth.views import PasswordChangeView
+from django.contrib.auth.views import LoginView, PasswordChangeView
 from django.core.exceptions import ValidationError
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
@@ -167,3 +167,24 @@ class ForcedPasswordChangeView(PasswordChangeView):
         MustChangePassword.objects.filter(user=self.request.user).delete()
         messages.success(self.request, "Password changed.")
         return response
+
+
+class BrandedLoginView(LoginView):
+    """Shadows django.contrib.auth.urls' own "login" URL (wired ahead of
+    that include() in config/urls.py, same pattern as
+    ForcedPasswordChangeView above) solely to undo a context key collision:
+    LoginView.get_context_data() always sets "site_name" itself, from
+    django.contrib.sites' current Site — which falls back to a RequestSite
+    built from request.get_host() whenever the sites framework isn't
+    configured with a real domain, silently overriding this app's own
+    "site_name" branding (apps.settings.context_processors.branding_context)
+    with the raw host on this one page. No other auth view (logout,
+    password reset, ...) sets this key, so nowhere else needs this fix.
+    """
+
+    def get_context_data(self, **kwargs):
+        from apps.settings.context_processors import branding_context
+
+        context = super().get_context_data(**kwargs)
+        context.update(branding_context(self.request))
+        return context

@@ -10,7 +10,7 @@ class TestSystemSettingsLoad:
         settings_obj = SystemSettings.load()
         assert settings_obj.pk == 1
         assert settings_obj._state.adding is True
-        assert settings_obj.site_name == "Stock Inventory"
+        assert settings_obj.site_name == "Invenio"
 
     def test_does_not_create_a_row_on_read(self):
         SystemSettings.load()

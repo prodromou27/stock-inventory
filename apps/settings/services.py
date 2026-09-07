@@ -60,7 +60,7 @@ def update_system_settings(
         "allowed_hosts_override": settings_obj.allowed_hosts_override,
         "accent_color": settings_obj.accent_color,
     }
-    settings_obj.site_name = site_name or "Stock Inventory"
+    settings_obj.site_name = site_name or "Invenio"
     settings_obj.allowed_hosts_override = allowed_hosts_override
     settings_obj.accent_color = accent_color
     settings_obj.updated_by = user
@@ -187,8 +187,8 @@ def send_test_email(*, recipient):
     """Send one test message without changing the saved SMTP configuration."""
     return send_configured_email(
         recipient=recipient,
-        subject="Stock Inventory — test email",
-        body="This is a test email from the Stock Inventory application's SMTP settings.",
+        subject="Invenio — test email",
+        body="This is a test email from Invenio's SMTP settings.",
     )
 
 

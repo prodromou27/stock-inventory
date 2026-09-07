@@ -182,14 +182,14 @@ def build_digest(subscription, *, today=None):
         return "", counts
 
     body = [
-        f"Stock Inventory daily digest for {subscription.country.name}",
+        f"Invenio daily digest for {subscription.country.name}",
         f"Date: {today.isoformat()}",
     ]
     for heading, lines, total in sections:
         body.extend(["", f"{heading} ({total})", *lines])
         if total > len(lines):
             body.append(f"- …and {total - len(lines)} more")
-    body.extend(["", "Sign in to Stock Inventory to review and resolve these items."])
+    body.extend(["", "Sign in to Invenio to review and resolve these items."])
     return "\n".join(body), counts
 
 
@@ -290,7 +290,7 @@ def send_daily_digests(*, today=None):
         try:
             send_configured_email(
                 recipient=subscription.recipient.email,
-                subject=f"Stock Inventory daily digest — {subscription.country.name}",
+                subject=f"Invenio daily digest — {subscription.country.name}",
                 body=body,
             )
         except Exception as exc:

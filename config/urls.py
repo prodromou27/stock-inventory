@@ -3,7 +3,7 @@ from django.contrib import admin
 from django.urls import include, path
 from django.views.generic import RedirectView
 
-from apps.accounts.views import ForcedPasswordChangeView
+from apps.accounts.views import BrandedLoginView, ForcedPasswordChangeView
 
 urlpatterns = [
     path(
@@ -20,6 +20,8 @@ urlpatterns = [
         ForcedPasswordChangeView.as_view(),
         name="password_change",
     ),
+    # Same shadow pattern, for "login" — see BrandedLoginView's docstring.
+    path("accounts/login/", BrandedLoginView.as_view(), name="login"),
     path("accounts/", include("django.contrib.auth.urls")),
     path("manage/", include("apps.accounts.urls")),
     path("locations/", include("apps.locations.urls")),

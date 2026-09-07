@@ -110,5 +110,5 @@ def current_section(context):
     request = context.get("request")
     match = getattr(request, "resolver_match", None)
     if match is None:
-        return "Stock Inventory"
-    return _SECTION_LABELS.get(match.app_name, (match.app_name or "Stock Inventory").title())
+        return "Invenio"
+    return _SECTION_LABELS.get(match.app_name, (match.app_name or "Invenio").title())

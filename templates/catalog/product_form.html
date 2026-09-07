@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}{% if product %}Edit product{% else %}New product{% endif %} — Stock Inventory{% endblock %}
+{% block title %}{% if product %}Edit product{% else %}New product{% endif %} — {{ site_name }}{% endblock %}
 
 {% block content %}
   <h1>{% if product %}Edit '{{ product }}'{% else %}New product{% endif %}</h1>
