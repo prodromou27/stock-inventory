@@ -104,6 +104,26 @@
     const container = document.querySelector(options.containerSelector);
     if (!container) return null;
 
+    // A dashboard/report "shortcut" link (e.g. Assets filtered to
+    // ?status=in_stock) lands on this page, but this grid otherwise only
+    // ever reads filter state from its own controls — never from the
+    // page's own query string — so those links silently opened an
+    // unfiltered grid. Seed both filter mechanisms from the URL once, up
+    // front: a plain "more filters" input (extraFilters() reads these
+    // live, so setting .value before the grid's first request is enough)
+    // and a Tabulator header-filter column (needs Tabulator's own
+    // initialHeaderFilter option, applied before that first request).
+    const urlParams = new URLSearchParams(window.location.search);
+    urlParams.forEach((value, key) => {
+      const input = document.querySelector(`[data-filter="${key}"]`);
+      if (!input) return;
+      if (input.type === "checkbox") input.checked = value === "1";
+      else input.value = value;
+    });
+    const initialHeaderFilter = (options.columns || [])
+      .filter((col) => col.field && col.headerFilter && urlParams.has(col.field))
+      .map((col) => ({ field: col.field, value: urlParams.get(col.field) }));
+
     let globalSearch = "";
 
     function buildParams(page, size) {
@@ -148,6 +168,7 @@
       placeholder: "No results — try widening your filters.",
       columns: options.columns,
       initialSort: options.initialSort || [],
+      initialHeaderFilter,
       selectableRows: options.rowSelectable !== false,
       selectableRowsRangeMode: "click",
       index: "id",
