@@ -107,7 +107,10 @@ def signoff_preset(document_type):
             "The equipment listed below is recorded as disposed under reference:",
         ),
     }
-    title, caption, text = wording[document_type]
+    # .get() with a fallback, not a bare lookup — a future DocumentType
+    # added without a matching entry here should fall back to generic
+    # wording, not take down the whole template editor with a KeyError.
+    title, caption, text = wording.get(document_type, wording["delivery"])
     preset["fields"]["document_title"] = title
     preset["layout_config"].update(
         reference_caption=caption,

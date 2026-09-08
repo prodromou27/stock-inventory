@@ -21,7 +21,12 @@
     <a class="btn btn--sm" href="?status=assigned">Assigned</a>
     <a class="btn btn--sm" href="?status=in_use">In Use</a>
     <a class="btn btn--sm" href="?status=delivered">Delivered</a>
-    <a class="btn btn--sm" href="{% url 'inventory:asset_list' %}?view=all">All items / clear filters</a>
+    {# A bare URL, no querystring — inventory_grid.js's applyDefaultOnLoad
+       only restores the operator's saved default view when
+       window.location.search is empty, so a "clear filters" link with
+       any querystring (a former "?view=all", inert server-side anyway)
+       would clear filters but skip re-applying that default. #}
+    <a class="btn btn--sm" href="{% url 'inventory:asset_list' %}">All items / clear filters</a>
   </div>
   {% include "inventory/_location_filters.html" %}
 

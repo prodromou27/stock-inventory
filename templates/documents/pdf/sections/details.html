@@ -1,7 +1,10 @@
 {% if layout_variant == "acceptance" %}
 <div class="acceptance-introduction">
   <span data-editor-field="notes_text">{% if notes_text %}{{ notes_text|linebreaksbr }}{% else %}I hereby confirm that the product listed below has been received/delivered to us in good condition according to the proposal with reference number:{% endif %}</span>
-  <strong>{{ project_reference }}</strong>
+  {# project_reference is blank for a normal disposal/assignment (never set
+     there) — falling back to document_number keeps this from printing a
+     "...under reference:" sentence with nothing after the colon. #}
+  <strong>{{ project_reference|default:document_number }}</strong>
 </div>
 {% else %}
 <div class="meta">

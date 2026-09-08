@@ -71,9 +71,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const doc = frame.contentDocument;
     if (!doc) return;
     const style = doc.createElement('style');
+    // Matches both values contentEditable can end up holding below —
+    // 'plaintext-only' in browsers that support it, 'true' as the
+    // fallback where it throws — so the dashed edit outline always shows
+    // regardless of which one a given browser landed on.
     style.textContent = `@media screen{body{margin:${paperDimensions().marginPx}px!important;}}` +
-      '[contenteditable=true]{outline:1px dashed #0f766e;cursor:text;min-height:1em}' +
-      '[contenteditable=true]:focus{outline:2px solid #0f766e;background:#f0fdfa}';
+      '[contenteditable=true],[contenteditable="plaintext-only"]{outline:1px dashed #0f766e;cursor:text;min-height:1em}' +
+      '[contenteditable=true]:focus,[contenteditable="plaintext-only"]:focus{outline:2px solid #0f766e;background:#f0fdfa}';
     doc.head.append(style);
     layoutPaper();
     doc.querySelectorAll('[data-editor-field], [data-editor-column]').forEach(element => {
@@ -82,7 +86,15 @@ document.addEventListener('DOMContentLoaded', () => {
         ? document.querySelector(`#column-layout li[data-key="${column}"] input[type="text"]`)
         : form.elements[element.dataset.editorField];
       if (!target) return;
-      element.contentEditable = 'plaintext-only';
+      // Firefox before ~136 throws a SyntaxError on the 'plaintext-only'
+      // value outright — uncaught, that would abort this whole forEach
+      // and leave every remaining field (not just this one) un-wired,
+      // silently breaking "click outlined text to edit it" entirely.
+      try {
+        element.contentEditable = 'plaintext-only';
+      } catch {
+        element.contentEditable = 'true';
+      }
       element.setAttribute('role', 'textbox');
       element.setAttribute('aria-label', target.getAttribute('aria-label') || target.name.replaceAll('_', ' '));
       element.title = 'Click to edit. Click outside to apply.';
@@ -184,6 +196,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!form.checkValidity()) {
       state.hidden = false;
       state.textContent = 'Complete or correct the highlighted settings, then refresh the preview.';
+      paper.hidden = true;
       return;
     }
     controller?.abort();
@@ -287,25 +300,30 @@ document.addEventListener('DOMContentLoaded', () => {
   const saveActions = form.querySelector('.template-save-actions');
   if (saveActions && navigation) navigation.append(saveActions);
   const mode = document.getElementById('template-designer-mode');
+  const customHtmlField = form.elements.custom_html_enabled;
   const updateMode = () => {
-    if (!mode) return;
-    mode.replaceChildren(document.createTextNode(form.elements.custom_html_enabled.checked
+    if (!mode || !customHtmlField) return;
+    mode.replaceChildren(document.createTextNode(customHtmlField.checked
       ? 'Developer source is active. Visual arrangement controls cannot change this custom source. '
       : 'Visual designer active. Click outlined text on the paper to edit it. '));
-    if (form.elements.custom_html_enabled.checked) {
+    if (customHtmlField.checked) {
       const switchButton = document.createElement('button');
       switchButton.type = 'button';
       switchButton.className = 'btn btn--sm';
       switchButton.textContent = 'Use visual designer';
       switchButton.addEventListener('click', () => {
         if (!window.confirm('Use the visual layout instead? Your current source is preserved until you save, and previous saved versions remain available.')) return;
-        form.elements.custom_html_enabled.checked = false;
-        form.elements.custom_html_enabled.dispatchEvent(new Event('change', {bubbles: true}));
+        customHtmlField.checked = false;
+        customHtmlField.dispatchEvent(new Event('change', {bubbles: true}));
       });
       mode.append(switchButton);
     }
   };
-  form.elements.custom_html_enabled.addEventListener('change', updateMode);
+  // Guarded, not a direct property access — a rendering of this editor
+  // without this field (e.g. a future read-only variant) should leave
+  // the mode banner inert instead of throwing and killing every other
+  // control this same DOMContentLoaded handler still needs to wire up.
+  customHtmlField?.addEventListener('change', updateMode);
   updateMode();
   document.getElementById('template-acceptance-preset')?.addEventListener('click', () => {
     if (!window.confirm('Apply the sign-off layout to this editor? Save afterward to keep it. Existing versions and generated documents remain unchanged.')) return;
@@ -318,7 +336,7 @@ document.addEventListener('DOMContentLoaded', () => {
       else if (field.type === 'checkbox') field.checked = value;
       else field.value = Array.isArray(value) ? value.join(',') : value;
     });
-    form.elements.custom_html_enabled.checked = false;
+    if (customHtmlField) customHtmlField.checked = false;
     form.querySelectorAll('[name="hidden_columns"]').forEach(input => {
       input.checked = preset.layout_config.hidden_columns.includes(input.value);
     });

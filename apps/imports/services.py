@@ -368,7 +368,11 @@ def _stage_row(raw, *, default_location=None, default_stock_purpose=StockPurpose
         validate_lifecycle(normalized)
     except ValidationError as exc:
         warnings.extend(exc.messages)
-    if not normalized["resolved_location_id"] and not warnings:
+    if not normalized["resolved_location_id"]:
+        # Appended even when other warnings already exist — this is a
+        # different, actionable problem (nothing else here tells the
+        # operator what to actually go do about a missing location), not
+        # a duplicate of e.g. a lifecycle-validation warning.
         warnings.append("Select a receipt/source room in the preview.")
 
     if issues:
@@ -430,10 +434,24 @@ def review_row_lifecycle(*, row, user, location, **values):
     batch = ImportBatch.objects.select_for_update().get(pk=row.batch_id)
     _require_editable_batch(batch)
     row = ImportRow.objects.select_for_update().get(pk=row.pk, batch=batch)
-    if row.outcome not in (ImportRowOutcome.PENDING, ImportRowOutcome.WARNING):
+    # A FAILED row is reachable here too, not just pending/warning — this
+    # is the Administrator's one explicit path back to PENDING for a row
+    # execute_batch() itself will never retry on its own (it deliberately
+    # skips already-failed rows so an automatic re-run stays idempotent —
+    # see execute_batch()'s docstring). A FAILED row never had a
+    # successful service call, so resetting and re-running it can't
+    # double-apply anything. Without this, a row that failed for a
+    # transient reason (a product briefly inactive, a serial that was a
+    # duplicate only until the conflicting asset was fixed) was
+    # permanently stuck — the batch could never be completed.
+    if row.outcome not in (
+        ImportRowOutcome.PENDING,
+        ImportRowOutcome.WARNING,
+        ImportRowOutcome.FAILED,
+    ):
         raise ValidationError(
-            "Only pending or warning rows can be reviewed. "
-            "Correct failed source rows and re-upload them separately."
+            "Only pending, warning, or failed rows can be reviewed. "
+            "Imported/skipped rows are already final."
         )
     require_location_access(user, location)
     require_room_or_below(location)
@@ -450,8 +468,13 @@ def review_row_lifecycle(*, row, user, location, **values):
         "project_reference",
         "installation_notes",
     ):
-        value = values.get(key)
-        data[key] = value.isoformat() if hasattr(value, "isoformat") else value
+        # Only ever touches a key the caller actually passed — RowLifecycleForm
+        # happens to declare all seven today, but a caller that omits one
+        # (a future partial-update action, a management command, a test)
+        # must leave that staged value alone, not silently null it out.
+        if key in values:
+            value = values[key]
+            data[key] = value.isoformat() if hasattr(value, "isoformat") else value
     data["location_override_id"] = str(location.pk)
     data["reviewed_location_label"] = str(location)
     data["used_default_arrival_date"] = False

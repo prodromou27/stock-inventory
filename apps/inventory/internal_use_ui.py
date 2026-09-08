@@ -33,14 +33,18 @@ class InternalUseForm(forms.Form):
             label="Assets",
             widget=forms.MultipleHiddenInput,
         )
-        self.order_fields(
-            ["unit_asset_ids", "occurred_at", "notes", "location", "submission_token"]
-        )
         if returning:
             self.fields["location"] = forms.ModelChoiceField(
                 queryset=None, label="Receiving room / floor"
             )
             _apply_scoped_room_location(self.fields["location"], user)
+        # After the field exists, not before — order_fields() only
+        # reorders fields already in self.fields, so calling it first left
+        # "location" appended after submission_token (a hidden field),
+        # rendering it last instead of between Date and Notes.
+        self.order_fields(
+            ["unit_asset_ids", "occurred_at", "notes", "location", "submission_token"]
+        )
 
 
 class InternalUseView(LoginRequiredMixin, RoleRequiredMixin, View):

@@ -1,4 +1,5 @@
 import json
+import logging
 from collections import Counter
 from datetime import timedelta
 
@@ -120,6 +121,8 @@ from .services.returns import (
     return_stock,
 )
 from .services.transfers import bulk_transfer
+
+logger = logging.getLogger(__name__)
 
 
 def _recent_transactions_for_hub(user, limit=8):
@@ -637,10 +640,13 @@ def _receive_bulk_grid_context(formset):
     on a validation-failure re-render. One code path for both, rather than
     a separate "seed 5 blank rows" JS fallback only used on first load.
     """
-    location_field = formset.forms[0].fields["location"] if formset.forms else None
-    location_choices = (
-        {str(loc.pk): loc.name for loc in location_field.queryset} if location_field else {}
-    )
+    # From the formset's form *class*, not forms[0] — a field definition
+    # (and its queryset) doesn't depend on any row actually existing, so
+    # this doesn't go silently empty (showing raw location UUIDs instead
+    # of names in the grid) on the one path where the formset could have
+    # zero forms.
+    location_field = formset.form.base_fields["location"]
+    location_choices = {str(loc.pk): loc.name for loc in location_field.queryset}
     rows = []
     for form in formset.forms:
         row = {}
@@ -2816,6 +2822,23 @@ class DeliverView(LoginRequiredMixin, RoleRequiredMixin, View):
                 # encourage resubmitting the movement or lose its audit trail.
                 messages.warning(
                     request, "Delivery completed. PDF generation failed: " + "; ".join(exc.messages)
+                )
+            except Exception:
+                # Same reasoning, widened: generate_document() can also
+                # raise PermissionDenied (its own access re-check can
+                # disagree with deliver_to_customer()'s per-asset check on
+                # a multi-line delivery spanning locations) or a bare
+                # exception from document numbering/render-log writes —
+                # none of those should turn an already-committed,
+                # already-ledgered delivery into a 500 with a burned
+                # idempotency token and no confirmation it worked.
+                logger.exception(
+                    "Document generation failed after delivery %s", txn.transaction_number
+                )
+                messages.warning(
+                    request,
+                    "Delivery completed. PDF generation failed — "
+                    "generate it again from the transaction page.",
                 )
             else:
                 return redirect(document.get_absolute_url())
