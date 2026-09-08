@@ -7,12 +7,10 @@
   <p><a href="{% url 'inventory:movements_hub' %}">&larr; Operations</a></p>
   <div class="page-header">
     <div>
-      <h1>Add Stock — multi-line</h1>
+      <p class="workspace-eyebrow">New arrivals</p><h1>Receive stock</h1>
       <div class="page-header__subtitle">
-        Receive several products (serialized and/or quantity) in one batch. Set a default location and stock
-        purpose below, or override either on an individual row. Click a cell to edit it, Tab/Enter/arrow keys to
-        move between cells, or copy a range of cells from Excel and paste it in starting at any cell. Nothing is
-        saved until you submit — this whole receipt is created as one transaction, or none of it is.
+        Choose the receiving room, then enter the item details below. Add one or several lines;
+        you can also paste rows from Excel. Review everything before completing the receipt.
       </div>
     </div>
   </div>
@@ -56,12 +54,14 @@
   <form method="post" class="card" id="receive-bulk-form">
     {% csrf_token %}
 
-    <h2>Batch defaults</h2>
+    <h2>Receiving details</h2>
+    <div class="receipt-defaults">
     {% for field in batch_form %}
       {% include "_form_field.html" with field=field %}
     {% endfor %}
+    </div>
 
-    <h2>Lines</h2>
+    <h2>Items arriving</h2>
     {{ formset.management_form }}
     <div id="receive-bulk-row-errors"></div>
     <datalist id="receive-bulk-brand-options">

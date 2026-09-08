@@ -5,17 +5,33 @@
 
 {% block content %}
   <div class="page-header">
-    <h1>Assets</h1>
+    <div><p class="workspace-eyebrow">Inventory</p><h1>{% if filters.in_storage %}Stock in your rooms{% else %}All individual items{% endif %}</h1>
+    <p class="page-header__subtitle">Filter by room or item details. Select rows to assign, deliver, or transfer stock.</p></div>
     <div class="page-header__actions">
       <a class="btn" id="asset-grid-export" href="?{{ request.GET.urlencode }}&format=csv" data-loading-link="Preparing export…">Export CSV</a>
       {% if user_is_administrator or "StockManager" in user_role_groups %}
-        <a class="btn" href="{% url 'catalog:quick_add' %}">+ Quick add (multiple)</a>
-        <a class="btn btn--primary" href="{% url 'inventory:quick_receive' %}">+ Quick receive</a>
+        <a class="btn btn--primary" href="{% url 'inventory:receive_bulk' %}">Receive stock</a>
       {% endif %}
     </div>
   </div>
 
   {% include "inventory/_inventory_tabs.html" %}
+  <div class="inventory-scope-bar">
+    <a class="btn btn--sm" href="?in_storage=1">In storage</a>
+    <a class="btn btn--sm" href="?status=assigned">Assigned</a>
+    <a class="btn btn--sm" href="?status=delivered">Delivered</a>
+    <a class="btn btn--sm" href="{% url 'inventory:asset_list' %}?view=all">All items / clear filters</a>
+    <form method="get" class="room-switcher">
+      {% if filters.in_storage %}<input type="hidden" name="in_storage" value="1">{% endif %}
+      {% if selected_status %}<input type="hidden" name="status" value="{{ selected_status }}">{% endif %}
+      <label class="sr-only" for="inventory-room">Room or shelf</label>
+      <select name="location" id="inventory-room">
+        <option value="">All accessible locations</option>
+        {% for location in locations %}<option value="{{ location.pk }}" {% if filters.location == location.pk|stringformat:"s" %}selected{% endif %}>{{ location.name }} ({{ location.get_level_display }})</option>{% endfor %}
+      </select>
+      <button class="btn btn--sm" type="submit">View location</button>
+    </form>
+  </div>
 
   {{ statuses|json_script:"asset-status-choices" }}
   {{ stock_purposes|json_script:"asset-stock-purpose-choices" }}
@@ -23,6 +39,7 @@
   <div class="inventory-grid is-hidden">
     <div class="grid-toolbar">
       <input type="search" class="grid-toolbar__search" id="asset-grid-search" placeholder="Search brand, model, SKU, type, serial, project, customer…" aria-label="Search assets">
+      <details class="grid-view-options"><summary class="btn">View &amp; export options</summary><div class="grid-view-options__body">
       <div class="grid-density-toggle" id="asset-grid-density" role="group" aria-label="Row density">
         <button type="button" data-density="comfortable" class="is-active">Comfortable</button>
         <button type="button" data-density="compact">Compact</button>
@@ -42,6 +59,7 @@
         <button type="button" class="btn btn--ghost" id="asset-grid-default-view" hidden aria-label="Set selected saved view as default">Set as default</button>
         <button type="button" class="btn btn--ghost" id="asset-grid-delete-view" hidden aria-label="Delete selected saved view">Delete</button>
       </span>
+      </div></details>
       <span id="asset-grid-selection-count" class="grid-selection-count" hidden></span>
     </div>
 
@@ -231,13 +249,13 @@
             headerFilterParams: { values: { "": "Any condition", new: "New", refurbished: "Refurbished", used: "Used", damaged: "Damaged" } },
             formatter: G.badgeFormatter },
           {
-            title: "Stock Purpose", field: "stock_purpose", width: 130, displayField: "stock_purpose_display",
+            title: "Stock Purpose", field: "stock_purpose", width: 130, visible: false, displayField: "stock_purpose_display",
             headerFilter: "list",
             headerFilterParams: { values: Object.fromEntries([["", "All stock"], ...stockPurposeChoices]) },
             formatter: G.badgeFormatter,
           },
           {
-            title: "Assigned To", field: "assigned_to", width: 180, headerSort: false,
+            title: "Assigned To", field: "assigned_to", width: 180, headerSort: false, visible: false,
             formatter: (cell) => {
               const value = cell.getValue();
               if (!value) return "";
@@ -245,16 +263,16 @@
               return `<a href="${value.transaction_url}">${name}</a> <span class="text-muted">(${value.type_display})</span>`;
             },
           },
-          { title: "Country", field: "country", headerFilter: "input", width: 130 },
-          { title: "Storage Room", field: "storage_room", headerFilter: "input", width: 150 },
-          { title: "Shelf", field: "shelf", headerFilter: "input", width: 110, visible: false },
+          { title: "Country", field: "country", headerFilter: "input", width: 130, visible: false, headerSort: false },
+          { title: "Storage Room", field: "storage_room", headerFilter: "input", width: 150, headerSort: false },
+          { title: "Shelf", field: "shelf", headerFilter: "input", width: 110, visible: false, headerSort: false },
           { title: "Project Reference", field: "project_reference", headerFilter: "input", width: 160, editor: canEditGrid ? "input" : false, cssClass: canEditGrid ? "grid-cell-editable" : "" },
           { title: "Final Customer", field: "final_customer", headerFilter: "input", width: 160, editor: canEditGrid ? "input" : false, cssClass: canEditGrid ? "grid-cell-editable" : "" },
           { title: "Supplier", field: "supplier", headerFilter: "input", width: 140, visible: false, editor: canEditGrid ? "input" : false, cssClass: canEditGrid ? "grid-cell-editable" : "" },
           { title: "Invoice #", field: "invoice_number", headerFilter: "input", width: 120, visible: false, editor: canEditGrid ? "input" : false, cssClass: canEditGrid ? "grid-cell-editable" : "" },
           { title: "Arrival Date", field: "arrival_date", formatter: G.dateFormatter, width: 130 },
           { title: "Removal Date", field: "removal_date", formatter: G.dateFormatter, width: 130, visible: false },
-          { title: "Last Movement", field: "last_movement", formatter: G.datetimeFormatter, width: 170, headerSort: true },
+          { title: "Last Movement", field: "last_movement", formatter: G.datetimeFormatter, width: 170, headerSort: true, visible: false },
           { title: "Notes", field: "notes", visible: false, minWidth: 180, editor: canEditGrid ? "textarea" : false, cssClass: canEditGrid ? "grid-cell-editable" : "" },
           { title: "", field: "_actions", formatter: G.actionsFormatter, headerSort: false, width: 50, hozAlign: "center", frozen: true },
         ],

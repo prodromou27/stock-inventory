@@ -6,10 +6,15 @@
 {% block content %}
   <div class="page-header">
     <div>
-      <h1>Dashboard</h1>
+      <p class="workspace-eyebrow">Stock operations</p>
+      <h1>Your stock, at a glance.</h1>
       <div class="page-header__subtitle">
-        Signed in as {{ user.get_username }}{% if user_role_groups %} — {{ user_role_groups|join:", " }}{% endif %}
+        Receive arrivals, find stock in a room, and prepare the next handover.
       </div>
+    </div>
+    <div class="page-header__actions">
+      <a class="btn" href="{% url 'core:dashboard_preferences' %}">Customize dashboard</a>
+      <a class="btn btn--primary" href="{% url 'inventory:asset_list' %}?in_storage=1">Open room stock</a>
     </div>
   </div>
 
@@ -18,7 +23,7 @@
   {% endif %}
 
   {% if user_is_administrator or "StockManager" in user_role_groups %}
-    <div class="card-grid">
+    <div class="dashboard-actions">
       <a class="action-card action-card--primary" href="{% url 'inventory:receive_bulk' %}">
         <span class="action-card__icon"><svg aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#box"></use></svg></span>
         <span class="action-card__body">
@@ -26,18 +31,11 @@
           <span class="action-card__desc">Record new stock arriving into a location.</span>
         </span>
       </a>
-      <a class="action-card action-card--primary" href="{% url 'imports:upload' %}">
+      <a class="action-card action-card--primary" href="{% url 'inventory:asset_list' %}?in_storage=1">
         <span class="action-card__icon"><svg aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#upload"></use></svg></span>
         <span class="action-card__body">
-          <span class="action-card__title">Import</span>
-          <span class="action-card__desc">Bulk-load stock from an Excel/CSV file.</span>
-        </span>
-      </a>
-      <a class="action-card action-card--primary" href="{% url 'inventory:transfer' %}">
-        <span class="action-card__icon"><svg aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#move"></use></svg></span>
-        <span class="action-card__body">
-          <span class="action-card__title">Transfer</span>
-          <span class="action-card__desc">Move stock between locations.</span>
+          <span class="action-card__title">Find stock</span>
+          <span class="action-card__desc">Choose a room and select items to hand over.</span>
         </span>
       </a>
       <a class="action-card action-card--primary" href="{% url 'inventory:assign' %}">
@@ -57,11 +55,23 @@
     </div>
   {% endif %}
 
+  <section class="room-browser" aria-label="Browse stock rooms">
+    <div><h2>Stock rooms</h2><p class="text-muted">Only locations you can access.</p></div>
+    <form method="get" action="{% url 'inventory:asset_list' %}">
+      <input type="hidden" name="in_storage" value="1">
+      <label for="dashboard-room">Choose a room or shelf</label>
+      <div class="room-browser__controls">
+        <select name="location" id="dashboard-room">
+          <option value="">All accessible rooms</option>
+          {% for room in stock_rooms %}<option value="{{ room.pk }}">{{ room.parent.name }} / {{ room.name }}</option>{% endfor %}
+        </select>
+        <button type="submit" class="btn">View stock</button>
+      </div>
+    </form>
+  </section>
+
   <div class="page-header">
     <h2>Overview</h2>
-    <div class="page-header__actions">
-      <a class="btn btn--ghost btn--sm" href="{% url 'core:dashboard_preferences' %}">Customize</a>
-    </div>
   </div>
   <div class="stat-grid">
     {% if "assets_in_stock" in visible_dashboard_cards %}
@@ -141,6 +151,7 @@
     <p class="empty-state">All stat cards are hidden. <a href="{% url 'core:dashboard_preferences' %}">Customize</a> to bring some back.</p>
   {% endif %}
 
+  {% if recently_viewed %}
   <div class="card">
     <h2>Recently viewed</h2>
     {% if recently_viewed %}
@@ -160,6 +171,7 @@
     {% endif %}
   </div>
 
+  {% endif %}
   <h2>Recent activity</h2>
   {% if recent_activity %}
     <div class="table-scroll">

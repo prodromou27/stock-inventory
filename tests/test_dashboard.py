@@ -370,12 +370,12 @@ class TestHomeViewStats:
         assert response.context["stats"]["assets_in_stock"] == 1
         assert "Units in stock" in response.content.decode()
 
-    def test_all_cards_visible_by_default(self, client, administrator):
-        from apps.core.models import DASHBOARD_CARDS
+    def test_daily_work_cards_visible_by_default(self, client, administrator):
+        from apps.core.services import DEFAULT_CARDS
 
         client.force_login(administrator)
         response = client.get(reverse("core:home"))
-        assert response.context["visible_dashboard_cards"] == [key for key, _ in DASHBOARD_CARDS]
+        assert set(response.context["visible_dashboard_cards"]) == DEFAULT_CARDS
 
 
 @pytest.mark.django_db
@@ -384,13 +384,16 @@ class TestDashboardPreferenceView:
         response = client.get(reverse("core:dashboard_preferences"))
         assert response.status_code == 302
 
-    def test_get_shows_every_card_checked_by_default(self, client, administrator):
+    def test_get_offers_all_cards_with_daily_defaults(self, client, administrator):
         from apps.core.models import DASHBOARD_CARDS
+        from apps.core.services import DEFAULT_CARDS
 
         client.force_login(administrator)
         response = client.get(reverse("core:dashboard_preferences"))
         assert response.status_code == 200
-        assert all(card["visible"] for card in response.context["cards"])
+        assert {
+            card["key"] for card in response.context["cards"] if card["visible"]
+        } == DEFAULT_CARDS
         assert len(response.context["cards"]) == len(DASHBOARD_CARDS)
 
     def test_unchecking_cards_hides_them_from_the_dashboard(self, client, administrator):
@@ -420,9 +423,9 @@ class TestDashboardPreferenceView:
 
         client.force_login(stock_manager)
         response = client.get(reverse("core:home"))
-        from apps.core.models import DASHBOARD_CARDS
+        from apps.core.services import DEFAULT_CARDS
 
-        assert response.context["visible_dashboard_cards"] == [key for key, _ in DASHBOARD_CARDS]
+        assert set(response.context["visible_dashboard_cards"]) == DEFAULT_CARDS
 
     def test_unknown_posted_keys_do_not_break_real_ones(self, client, administrator):
         """A manipulated POST naming a bogus card key alongside real ones

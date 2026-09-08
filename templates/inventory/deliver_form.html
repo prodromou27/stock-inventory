@@ -5,7 +5,8 @@
 {% block content %}
   <p><a href="{% url 'inventory:movements_hub' %}">&larr; Operations</a></p>
   <div class="page-header">
-    <h1>Deliver to customer</h1>
+    <div><p class="workspace-eyebrow">Customer handover</p><h1>Prepare a delivery</h1>
+    <p class="page-header__subtitle">Select stock, confirm the customer and project, then complete the delivery and open its printable document.</p></div>
   </div>
 
   {% if form.non_field_errors %}
@@ -14,21 +15,35 @@
 
   <form method="post" data-confirm="Remove the selected stock for this customer delivery?">
     {% csrf_token %}
+    <input type="hidden" name="generate_document" value="1">
 
     {% include "inventory/_movement_steps.html" with step=1 step_title="Select stock" %}
     {% include "inventory/_asset_picker.html" %}
     {% include "inventory/_balance_picker.html" %}
 
     {% include "inventory/_movement_steps.html" with step=2 step_title="Enter details" %}
-    <div class="card">
-      {% for field in form %}
-        {% include "_form_field.html" with field=field %}
-      {% endfor %}
+    <div class="card delivery-details">
+      {% for field in form.hidden_fields %}{{ field }}{% endfor %}
+      <div class="delivery-details__fields">
+        {% include "_form_field.html" with field=form.final_customer %}
+        {% include "_form_field.html" with field=form.project_reference %}
+        <p>{{ form.occurred_at.errors }}<label for="{{ form.occurred_at.id_for_label }}">Delivery date <span class="required-mark">*</span></label>{{ form.occurred_at }}</p>
+      </div>
+      <p class="text-muted">A shared customer and project are filled from selected items when available. Add missing details here.</p>
+      <details {% if form.notes.errors or form.accessories.errors or form.recipient_reference.errors %}open{% endif %}>
+        <summary>Additional details: notes, accessories, customer reference</summary>
+        <div class="delivery-details__fields">
+          {% include "_form_field.html" with field=form.recipient_reference %}
+          {% include "_form_field.html" with field=form.accessories %}
+          {% include "_form_field.html" with field=form.notes %}
+        </div>
+      </details>
     </div>
 
     {% include "inventory/_movement_steps.html" with step=3 step_title="Review and confirm" %}
     <div class="form-actions">
-      <button type="submit" class="btn btn--primary">Deliver</button>
+      <button type="submit" class="btn btn--primary">Complete delivery &amp; generate PDF</button>
+      <a class="btn" href="{% url 'inventory:asset_list' %}?in_storage=1">Back to stock</a>
     </div>
   </form>
 

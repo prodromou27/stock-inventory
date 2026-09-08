@@ -4,7 +4,7 @@ already restricted the queryset to. Kept out of views.py so it's reusable
 across the inventory list screens and the reporting app.
 """
 
-from django.db.models import Count, Q
+from django.db.models import Count, Exists, OuterRef, Q
 
 from apps.core.dates import parse_date_param
 from apps.locations.models import Location
@@ -26,6 +26,24 @@ def duplicate_serial_values(queryset):
 
 
 def _filter_by_location(queryset, params, *, location_field):
+    # Match named ancestors in SQL; the caller has already scoped the stock.
+    # A shelf belongs to its room/country even when those names aren't on
+    # the shelf row itself. EXISTS avoids duplicates and loading location IDs.
+    for key, level in (
+        ("country", Location.Level.COUNTRY),
+        ("storage_room", Location.Level.STORAGE_ROOM),
+        ("shelf", Location.Level.RACK_SHELF),
+    ):
+        if name := _get(params, key):
+            queryset = queryset.filter(
+                Exists(
+                    Location.objects.filter(
+                        level=level,
+                        name__icontains=name,
+                        path__ancestor_or_self=OuterRef(f"{location_field}__path"),
+                    )
+                )
+            )
     location_id = _get(params, "location")
     if not location_id:
         return queryset
@@ -54,12 +72,16 @@ def filter_unit_assets(queryset, params):
         queryset = queryset.filter(product__model__icontains=model)
     if sku := _get(params, "sku"):
         queryset = queryset.filter(product__sku__icontains=sku)
-    if product_type := _get(params, "type"):
+    if product_type := (_get(params, "type") or _get(params, "product_type")):
         queryset = queryset.filter(product__product_type__name__icontains=product_type)
     if serial := _get(params, "serial"):
         queryset = queryset.filter(normalized_serial__icontains=serial.upper())
     if status := _get(params, "status"):
         queryset = queryset.filter(status=status)
+    if _get(params, "in_storage") == "1":
+        queryset = queryset.filter(current_location__isnull=False)
+    if condition := _get(params, "condition"):
+        queryset = queryset.filter(condition=condition)
     if stock_purpose := _get(params, "stock_purpose"):
         queryset = queryset.filter(stock_purpose=stock_purpose)
     if project_reference := _get(params, "project_reference"):
@@ -89,6 +111,8 @@ def filter_unit_assets(queryset, params):
 
 
 def filter_stock_balances(queryset, params):
+    if _get(params, "in_storage") == "1":
+        queryset = queryset.filter(on_hand_quantity__gt=0)
     q = _get(params, "q")
     if q:
         queryset = queryset.filter(
@@ -104,7 +128,7 @@ def filter_stock_balances(queryset, params):
         queryset = queryset.filter(product__model__icontains=model)
     if sku := _get(params, "sku"):
         queryset = queryset.filter(product__sku__icontains=sku)
-    if product_type := _get(params, "type"):
+    if product_type := (_get(params, "type") or _get(params, "product_type")):
         queryset = queryset.filter(product__product_type__name__icontains=product_type)
     if stock_purpose := _get(params, "stock_purpose"):
         queryset = queryset.filter(stock_purpose=stock_purpose)

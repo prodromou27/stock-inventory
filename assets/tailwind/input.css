@@ -33,7 +33,7 @@
       sans-serif;
     --font-mono: ui-monospace, "Cascadia Code", "Consolas", "SFMono-Regular", monospace;
 
-    --color-bg: #f5f7f6;
+    --color-bg: #f4f3ef;
     --color-surface: #ffffff;
     --color-border: #dde4e1;
     --color-border-strong: #c1cbc7;
@@ -56,15 +56,15 @@
     --color-info-bg: #e0f2fe;
 
     --radius-sm: 6px;
-    --radius-md: 8px;
-    --radius-lg: 14px;
+    --radius-md: 6px;
+    --radius-lg: 8px;
 
     --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 1px rgba(15, 23, 42, 0.04);
     --shadow-md: 0 8px 24px -4px rgba(15, 23, 42, 0.12), 0 2px 8px -2px rgba(15, 23, 42, 0.08);
     --shadow-lg: 0 16px 40px -8px rgba(15, 23, 42, 0.18);
 
-    --sidebar-width: 15.5rem;
-    --topbar-height: 3.5rem;
+    --sidebar-width: 13rem;
+    --topbar-height: 4rem;
   }
 
   /* Explicit, user-controlled theming — not OS-driven. The app defaults to
@@ -87,7 +87,7 @@
     --color-primary: #4fb8ab;
     --color-primary-hover: #6bcabe;
     --color-primary-bg: #0f2e2a;
-    --color-primary-contrast: #ffffff;
+    --color-primary-contrast: #091b18;
 
     --color-success: #4fce85;
     --color-success-bg: #123423;
@@ -2542,3 +2542,63 @@
   padding: 0.4rem 0.6rem;
   font-size: 0.85rem;
 }
+
+/* Stock workspace: restrained surfaces, readable density, task-first navigation. */
+.sidebar { background: var(--color-surface); border-right: 1px solid var(--color-border); }
+.sidebar__brand { color: var(--color-text); min-height: var(--topbar-height); border-bottom: 1px solid var(--color-border); letter-spacing: -.03em; }
+.sidebar__brand-mark { background: var(--color-text); color: var(--color-surface); border-radius: 3px; box-shadow: none; }
+.sidebar__nav { padding: 1.5rem .75rem; }
+.sidebar__link { color: var(--color-text-muted); border-left: 0; padding: .7rem .8rem; margin-bottom: .3rem; }
+.sidebar__link:hover { background: var(--color-bg); color: var(--color-text); }
+.sidebar__link.is-active { background: var(--color-primary-bg); color: var(--color-primary); box-shadow: inset 3px 0 var(--color-primary); }
+.topbar { background: var(--color-surface); backdrop-filter: none; box-shadow: none; border-bottom: 1px solid var(--color-border); }
+.topbar__search { flex-basis: 28rem; }
+.topbar__search input { border-radius: 5px; background: var(--color-bg); }
+.content { max-width: 108rem; padding: 2rem 2.25rem 3rem; }
+.page-header { padding-bottom: 1.4rem; margin-bottom: 1.5rem; align-items: center; }
+.page-header h1 { font-size: 1.8rem; letter-spacing: -.045em; line-height: 1.2; }
+.page-header h2 { margin: 0; padding: 0; border: 0; }
+.workspace-eyebrow { color: var(--color-text-muted); font-size: .68rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; margin-bottom: .55rem; }
+.card, table, .stat-card, .action-card { box-shadow: none; }
+.card > h2:first-child { margin-top: 0; }
+.btn { box-shadow: none; border-radius: 5px; min-height: 2.2rem; }
+.btn--primary:hover { box-shadow: none; }
+.dashboard-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--color-border); border: 1px solid var(--color-border); border-radius: 6px; overflow: hidden; margin-bottom: 1.5rem; }
+.dashboard-actions .action-card { border: 0; border-radius: 0; margin: 0; padding: 1.25rem; background: var(--color-surface); }
+.dashboard-actions .action-card:hover { background: var(--color-primary-bg); transform: none; }
+.dashboard-actions .action-card__icon { background: transparent; padding: 0; width: 1.4rem; }
+.dashboard-actions .action-card__title { font-size: .95rem; }
+.dashboard-actions .action-card__desc { font-size: .8rem; line-height: 1.5; }
+.stat-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; }
+.stat-card { border-top: 2px solid var(--color-border-strong); padding: 1.2rem 1.35rem; }
+.stat-card__value { font-size: 2rem; font-weight: 600; letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
+.stat-card__label { text-transform: none; letter-spacing: 0; font-size: .82rem; }
+.room-browser { display: flex; justify-content: space-between; align-items: center; gap: 2rem; background: var(--color-surface); border: 1px solid var(--color-border); padding: 1.25rem 1.5rem; margin-bottom: 1.5rem; border-radius: 6px; }
+.room-browser h2 { margin: 0 0 .35rem; padding: 0; border: 0; }
+.room-browser p { margin: 0; }
+.room-browser form { flex: 0 1 30rem; }
+.room-browser label { display: block; font-size: .75rem; margin-bottom: .4rem; color: var(--color-text-muted); }
+.room-browser__controls, .room-switcher { display: flex; gap: .5rem; }
+.room-browser__controls select, .room-switcher select { min-width: 0; flex: 1; }
+.room-browser__controls button, .room-switcher button { white-space: nowrap; }
+.inventory-scope-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: 0 0 1.2rem; }
+.room-switcher { margin-left: auto; flex: 0 1 26rem; }
+.delivery-details__fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.2rem; margin-top: 1rem; }
+.delivery-details__fields p { max-width: none; min-width: 0; }
+.delivery-details__fields textarea { height: 6rem; }
+.receipt-defaults { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 1.25rem; }
+.receipt-defaults > p { max-width: none; min-width: 0; }
+.receipt-defaults textarea { height: 6rem; }
+.delivery-details details summary { cursor: pointer; color: var(--color-text-muted); padding: .75rem 0; border-top: 1px solid var(--color-border); }
+.grid-toolbar { gap: .45rem; }
+.grid-toolbar .btn { font-size: .75rem; }
+.grid-view-options { position: relative; }
+.grid-view-options summary { list-style: none; }
+.grid-view-options summary::-webkit-details-marker { display: none; }
+.grid-view-options__body { position: absolute; right: 0; top: calc(100% + .5rem); z-index: 25; width: min(36rem, 80vw); padding: 1rem; display: flex; flex-wrap: wrap; gap: .65rem; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 6px; box-shadow: var(--shadow-md); }
+.tabulator { border-radius: 4px !important; }
+.tabulator .tabulator-header { background: var(--color-bg) !important; }
+.grid-bulk-actions { position: sticky; bottom: .5rem; padding: .75rem; background: var(--color-surface); border: 1px solid var(--color-primary); border-radius: 5px; z-index: 10; }
+.template-editor-layout > div:last-child { top: calc(var(--topbar-height) + 1rem); }
+@media (max-width: 1100px) { .dashboard-actions, .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .room-browser { flex-wrap: wrap; gap: 1rem; } }
+@media (max-width: 700px) { .content { padding: 1.25rem; } .room-switcher { flex-basis: 100%; } .room-browser__controls { flex-wrap: wrap; } .page-header h1 { font-size: 1.5rem; } .delivery-details__fields, .receipt-defaults { grid-template-columns: 1fr; } }

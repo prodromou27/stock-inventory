@@ -114,20 +114,30 @@
     // and a Tabulator header-filter column (needs Tabulator's own
     // initialHeaderFilter option, applied before that first request).
     const urlParams = new URLSearchParams(window.location.search);
-    urlParams.forEach((value, key) => {
-      const input = document.querySelector(`[data-filter="${key}"]`);
-      if (!input) return;
+    if (urlParams.has("product_type") && !urlParams.has("type")) {
+      urlParams.set("type", urlParams.get("product_type"));
+    }
+    document.querySelectorAll("[data-filter]").forEach((input) => {
+      const key = input.dataset.filter;
+      if (!urlParams.has(key)) return;
+      const value = urlParams.get(key);
       if (input.type === "checkbox") input.checked = value === "1";
       else input.value = value;
     });
     const initialHeaderFilter = (options.columns || [])
-      .filter((col) => col.field && col.headerFilter && urlParams.has(col.field))
-      .map((col) => ({ field: col.field, value: urlParams.get(col.field) }));
+      .filter((col) => col.field && col.headerFilter && urlParams.has(col.field === "product_type" ? "type" : col.field))
+      .map((col) => ({ field: col.field, value: urlParams.get(col.field === "product_type" ? "type" : col.field) }));
 
-    let globalSearch = "";
+    let globalSearch = urlParams.get("q") || "";
+    const initialSearch = document.querySelector(options.searchInputSelector || "[data-unused-search]");
+    if (initialSearch) initialSearch.value = globalSearch;
 
     function buildParams(page, size) {
       const params = new URLSearchParams();
+      // Context links from a product or room have no header-filter column.
+      ["product", "location", "in_storage"].forEach((key) => {
+        if (urlParams.has(key)) params.set(key, urlParams.get(key));
+      });
       params.set("page", page);
       params.set("size", size);
       if (globalSearch) params.set("q", globalSearch);
@@ -456,7 +466,7 @@
           // never on a later refresh() (after save/rename/delete), which
           // would otherwise silently discard whatever the operator is
           // currently looking at.
-          if (options.applyDefaultOnLoad && !hasAppliedInitialDefault && !selectAfterId) {
+          if (options.applyDefaultOnLoad && !window.location.search && !hasAppliedInitialDefault && !selectAfterId) {
             const defaultView = data.views.find((view) => view.is_default);
             if (defaultView) {
               select.value = defaultView.id;
@@ -698,6 +708,10 @@
 
     function refresh() {
       const params = new URLSearchParams({ format: "csv" });
+      const context = new URLSearchParams(window.location.search);
+      ["product", "location", "in_storage"].forEach((key) => {
+        if (context.has(key)) params.set(key, context.get(key));
+      });
       if (searchInput) {
         const search = searchInput.value.trim();
         if (search) params.set("q", search);

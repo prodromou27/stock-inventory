@@ -8,7 +8,7 @@
   // Kept in sync with assets/tailwind/input.css's --color-bg for each theme —
   // this is the one place a bare hex has to live outside the stylesheet,
   // since <meta name="theme-color"> can't read a CSS custom property.
-  const THEME_COLOR = { light: "#f4f6f8", dark: "#0f1216" };
+  const THEME_COLOR = { light: "#f4f3ef", dark: "#0f1216" };
 
   function currentTheme() {
     return root.getAttribute("data-theme") === "dark" ? "dark" : "light";

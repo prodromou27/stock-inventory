@@ -53,3 +53,17 @@ class DescendantOrSelf(Lookup):
 
 
 LtreeField.register_lookup(DescendantOrSelf)
+
+
+class AncestorOrSelf(DescendantOrSelf):
+    """Reverse containment for filtering stock by a named ancestor."""
+
+    lookup_name = "ancestor_or_self"
+
+    def as_sql(self, compiler, connection):
+        lhs, lhs_params = self.process_lhs(compiler, connection)
+        rhs, rhs_params = self.process_rhs(compiler, connection)
+        return "%s @> %s" % (lhs, rhs), lhs_params + rhs_params
+
+
+LtreeField.register_lookup(AncestorOrSelf)

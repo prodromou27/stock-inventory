@@ -5,7 +5,8 @@
 
 {% block content %}
   <div class="page-header">
-    <h1>Stock balances</h1>
+    <div><p class="workspace-eyebrow">Inventory</p><h1>Quantity stock</h1>
+    <p class="page-header__subtitle">Items counted together by location. Available stock excludes reserved quantities.</p></div>
     <div class="page-header__actions">
       <a class="btn" href="?{{ request.GET.urlencode }}&format=csv" data-loading-link="Preparing export…">Export CSV</a>
     </div>

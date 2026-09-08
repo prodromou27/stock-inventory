@@ -7,7 +7,8 @@ from django.shortcuts import redirect, render
 from django.views import View
 from django.views.generic import TemplateView
 
-from .models import DASHBOARD_CARDS, DashboardPreference
+from .models import DASHBOARD_CARDS
+from .services import hidden_dashboard_cards, save_dashboard_cards
 
 DASHBOARD_CARD_KEYS = {key for key, _ in DASHBOARD_CARDS}
 
@@ -47,11 +48,17 @@ class HomeView(LoginRequiredMixin, TemplateView):
         context["stats"] = dashboard_summary(self.request.user)
         context["recent_activity"] = recent_transactions(self.request.user)
         context["recently_viewed"] = recently_viewed_for(self.request.user)
-        hidden = set(
-            DashboardPreference.objects.filter(user=self.request.user)
-            .values_list("hidden_cards", flat=True)
-            .first()
-            or []
+        hidden = hidden_dashboard_cards(self.request.user)
+        from apps.locations.models import Location
+        from apps.locations.scoping import accessible_locations
+
+        context["stock_rooms"] = (
+            accessible_locations(self.request.user)
+            .filter(
+                level__in=[Location.Level.STORAGE_ROOM, Location.Level.RACK_SHELF], is_active=True
+            )
+            .select_related("parent")
+            .order_by("name")
         )
         context["visible_dashboard_cards"] = [
             key for key, _ in DASHBOARD_CARDS if key not in hidden
@@ -71,12 +78,7 @@ class DashboardPreferenceView(LoginRequiredMixin, View):
     template_name = "core/dashboard_preferences_form.html"
 
     def get(self, request):
-        hidden = set(
-            DashboardPreference.objects.filter(user=request.user)
-            .values_list("hidden_cards", flat=True)
-            .first()
-            or []
-        )
+        hidden = hidden_dashboard_cards(request.user)
         return render(
             request,
             self.template_name,
@@ -90,10 +92,7 @@ class DashboardPreferenceView(LoginRequiredMixin, View):
 
     def post(self, request):
         checked = set(request.POST.getlist("visible_cards")) & DASHBOARD_CARD_KEYS
-        hidden_cards = [key for key, _ in DASHBOARD_CARDS if key not in checked]
-        DashboardPreference.objects.update_or_create(
-            user=request.user, defaults={"hidden_cards": hidden_cards}
-        )
+        save_dashboard_cards(request.user, checked)
         messages.success(request, "Dashboard preferences saved.")
         return redirect("core:home")
 

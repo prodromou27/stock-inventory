@@ -2733,6 +2733,19 @@ class DeliverView(LoginRequiredMixin, RoleRequiredMixin, View):
             )
 
         messages.success(request, f"Delivered stock — transaction {txn.transaction_number}.")
+        if request.POST.get("generate_document") == "1":
+            from apps.documents.services import generate_document
+
+            try:
+                document = generate_document(txn=txn, user=request.user)
+            except ValidationError as exc:
+                # The delivery is already committed. A PDF failure must not
+                # encourage resubmitting the movement or lose its audit trail.
+                messages.warning(
+                    request, "Delivery completed. PDF generation failed: " + "; ".join(exc.messages)
+                )
+            else:
+                return redirect(document.get_absolute_url())
         return redirect(txn.get_absolute_url())
 
 

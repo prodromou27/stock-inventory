@@ -9,17 +9,9 @@
 
   <h2>Primary actions</h2>
   <div class="card-grid">
-    <a class="action-card action-card--primary" href="{% url 'inventory:receive_stock' %}">
-      <span class="action-card__title">Add Stock</span>
-      <span class="action-card__desc">Record a new arrival into a location.</span>
-    </a>
-    <a class="action-card action-card--primary" href="{% url 'inventory:quick_receive' %}">
-      <span class="action-card__title">Quick receive</span>
-      <span class="action-card__desc">One product/location, many serials at once.</span>
-    </a>
     <a class="action-card action-card--primary" href="{% url 'inventory:receive_bulk' %}">
-      <span class="action-card__title">Receive (multi-line)</span>
-      <span class="action-card__desc">Several products in one atomic receipt, with review.</span>
+      <span class="action-card__title">Receive stock</span>
+      <span class="action-card__desc">Choose a room and record the arriving items.</span>
     </a>
     <a class="action-card action-card--primary" href="{% url 'inventory:transfer' %}">
       <span class="action-card__title">Transfer</span>
@@ -44,6 +36,9 @@
   <details class="card hub-more-actions">
     <summary>More actions</summary>
     <div class="hub-more-actions-content">
+      <h3 class="hub-panel__subheading">Other receiving options</h3>
+      <p><a href="{% url 'inventory:receive_stock' %}">Receive one catalog product</a> &middot;
+      <a href="{% url 'inventory:quick_receive' %}">Receive multiple serials for one product</a></p>
       <h3 class="hub-panel__subheading">Reservations &amp; returns</h3>
       <div class="card-grid">
         <a class="action-card" href="{% url 'inventory:reserve' %}">

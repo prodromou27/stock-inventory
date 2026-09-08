@@ -4,7 +4,7 @@ module.exports = {
   // the compiled static/css/app.css only ships the Tailwind utilities this
   // app references — see assets/tailwind/input.css for the component-class
   // layer (.btn, .card, .badge, etc.) every template already uses.
-  content: ["./templates/**/*.html", "./apps/**/templates/**/*.html"],
+  content: ["./templates/**/*.html", "./apps/**/templates/**/*.html", "./static/js/*.js"],
   // No darkMode key: no template ever uses a dark: utility variant, so
   // Tailwind's own dark-mode variant system plays no part in this app's
   // theming (an explicit `false` here still triggers a Tailwind CLI warning
