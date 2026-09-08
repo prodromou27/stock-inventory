@@ -5,6 +5,11 @@ from . import views
 app_name = "imports"
 
 urlpatterns = [
+    path(
+        "<uuid:pk>/rows/<uuid:row_pk>/review-status/",
+        views.ImportRowLifecycleView.as_view(),
+        name="row_lifecycle",
+    ),
     path("", views.ImportBatchListView.as_view(), name="batch_list"),
     path("upload/", views.ImportUploadView.as_view(), name="upload"),
     path("template.csv", views.ImportTemplateDownloadView.as_view(), name="template_download"),

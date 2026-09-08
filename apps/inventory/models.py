@@ -17,6 +17,7 @@ class UnitStatus(models.TextChoices):
     IN_STOCK = "in_stock", "In Stock"
     RESERVED = "reserved", "Reserved"
     ASSIGNED = "assigned", "Assigned"
+    IN_USE = "in_use", "In Use"
     DELIVERED = "delivered", "Delivered"
     RETURNED = "returned", "Returned"
     DAMAGED = "damaged", "Damaged"
@@ -49,6 +50,8 @@ class MovementType(models.TextChoices):
     RESERVATION = "reservation", "Reservation"
     RESERVATION_RELEASE = "reservation_release", "Reservation release"
     ASSIGNMENT = "assignment", "Employee assignment"
+    PUT_IN_USE = "put_in_use", "Put in internal use"
+    REMOVE_FROM_USE = "remove_from_use", "Return from internal use"
     DELIVERY = "delivery", "Customer delivery"
     RETURN = "return", "Return"
     RETURN_ASSESSMENT = "return_assessment", "Return assessment"
@@ -130,6 +133,7 @@ class UnitAsset(UUIDPrimaryKeyModel, UserStampedModel):
     product = models.ForeignKey(
         "catalog.Product", on_delete=models.PROTECT, related_name="unit_assets"
     )
+    name = models.CharField(max_length=160, blank=True)
     vendor_serial = models.CharField(max_length=120, blank=True)
     normalized_serial = models.CharField(max_length=120, blank=True, editable=False)
     status = models.CharField(

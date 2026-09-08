@@ -62,10 +62,13 @@ def _filter_by_location(queryset, params, *, location_field):
 
 
 def filter_unit_assets(queryset, params):
+    if name := _get(params, "name"):
+        queryset = queryset.filter(name__icontains=name)
     q = _get(params, "q")
     if q:
         queryset = queryset.filter(
-            Q(normalized_serial__icontains=q.upper())
+            Q(name__icontains=q)
+            | Q(normalized_serial__icontains=q.upper())
             | Q(product__brand__name__icontains=q)
             | Q(product__model__icontains=q)
             | Q(product__sku__icontains=q)

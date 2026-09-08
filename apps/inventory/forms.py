@@ -3,6 +3,7 @@ from django.forms import formset_factory
 from django.utils import timezone
 
 from apps.catalog.models import CATEGORY_TRACKING_METHOD, ItemCategory, Product, TrackingMethod
+from apps.locations.forms import location_choice_label
 from apps.locations.models import ROOM_OR_BELOW_LEVELS, Location, order_by_hierarchy
 from apps.locations.scoping import accessible_locations, require_room_or_below, scope_queryset
 
@@ -25,7 +26,9 @@ def _scoped_location_queryset(user):
     needs; was hand-copied in every form's __init__ before being factored
     out here.
     """
-    return order_by_hierarchy(accessible_locations(user).filter(is_active=True))
+    return order_by_hierarchy(
+        accessible_locations(user).filter(is_active=True).select_related("parent__parent")
+    )
 
 
 def _apply_scoped_location(field, user):
@@ -36,6 +39,7 @@ def _apply_scoped_location(field, user):
     unchanged; this is additive markup only.
     """
     field.queryset = _scoped_location_queryset(user)
+    field.label_from_instance = location_choice_label
     field.widget.attrs["data-filterable"] = "true"
 
 
@@ -58,6 +62,7 @@ def _apply_scoped_room_location(field, user):
     this one is read only by the Django template itself, server-side.
     """
     field.queryset = _scoped_location_queryset(user).filter(level__in=ROOM_OR_BELOW_LEVELS)
+    field.label_from_instance = location_choice_label
     field.widget.attrs["data-filterable"] = "true"
     if not field.queryset.exists():
         field.widget.attrs["data_empty_hint"] = (

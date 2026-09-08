@@ -14,18 +14,18 @@ from ..models import SavedGridView
 MAX_STATE_BYTES = 20_000
 
 
-def room_filter_choices(user):
+def inventory_location_choices(user):
     """Only offer authorized rooms; retain inactive rooms for historical stock."""
-    from apps.locations.models import Location
+    from apps.locations.models import Location, order_by_hierarchy
     from apps.locations.scoping import accessible_locations
 
-    return [
+    locations = list(order_by_hierarchy(accessible_locations(user).select_related("parent")))
+    rooms = [
         [f"id:{room.pk}", f"{room.parent.name} / {room.name}"]
-        for room in accessible_locations(user)
-        .filter(level=Location.Level.STORAGE_ROOM)
-        .select_related("parent")
-        .order_by("parent__name", "name", "pk")
+        for room in locations
+        if room.level == Location.Level.STORAGE_ROOM
     ]
+    return {"locations": locations, "room_filter_choices": rooms}
 
 
 # The one place that knows which grids exist — SavedGridView.grid_key is a

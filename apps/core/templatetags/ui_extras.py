@@ -25,7 +25,16 @@ _SECTION_LABELS = {
 }
 
 _SUCCESS = ("active", "available", "in_stock", "in stock", "new", "good", "healthy", "completed")
-_INFO = ("reserved", "assigned", "in_transit", "in transit", "pending", "processing")
+_INFO = (
+    "reserved",
+    "assigned",
+    "in_use",
+    "in use",
+    "in_transit",
+    "in transit",
+    "pending",
+    "processing",
+)
 _WARNING = ("damaged", "fair", "returned")
 _DANGER = ("lost", "disposed", "inactive", "error", "failed", "rejected", "cancelled")
 

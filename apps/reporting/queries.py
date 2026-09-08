@@ -347,6 +347,7 @@ def dashboard_summary(user):
 # part of the asset leaving storage). Anything else with a NULL location is
 # a genuine data-integrity gap, not a normal state.
 _STATUSES_WITHOUT_LOCATION = (
+    UnitStatus.IN_USE,
     UnitStatus.ASSIGNED,
     UnitStatus.DELIVERED,
     UnitStatus.LOST,

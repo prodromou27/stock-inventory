@@ -66,6 +66,7 @@
           extraFilters: () => ({
             {% if not picker_transaction_id %}
             statuses: "{{ eligible_statuses }}",
+            {% if picker_internal_use %}internal_use: "{{ picker_internal_use }}",{% endif %}
             product: new URLSearchParams(window.location.search).get("product") || "",
             {% endif %}
             preselected: new URLSearchParams(window.location.search).getAll("unit_asset_ids").join(","),

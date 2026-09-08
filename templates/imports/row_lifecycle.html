@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Review import status — {{ site_name }}{% endblock %}
+{% block content %}
+<h1>Review status · Row {{ row.row_number }}</h1>
+<p>{{ row.normalized_data.brand_name }} {{ row.normalized_data.model }} · {{ row.normalized_data.vendor_serial|default:"No serial" }}</p>
+<p>Assigned requires an employee. Delivered requires a customer and project reference. In Use requires an internally owned, unit-tracked item and installation notes. All three require a movement date and source room.</p>
+<p>This changes the staged import only. No inventory is changed until you execute the batch.</p>
+<form method="post" class="card">
+  {% csrf_token %}
+  {{ form.non_field_errors }}
+  <div class="delivery-details__fields">
+    {% for field in form %}{% include "_form_field.html" with field=field %}{% endfor %}
+  </div>
+  <div class="form-actions"><button type="submit">Save review</button> <a href="{{ row.batch.get_absolute_url }}">Back to preview</a></div>
+</form>
+{% endblock %}

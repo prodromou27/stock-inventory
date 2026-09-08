@@ -9,6 +9,14 @@
 
   <h2>Primary actions</h2>
   <div class="card-grid">
+    <a class="action-card action-card--primary" href="{% url 'inventory:put_in_use' %}">
+      <span class="action-card__title">Put in use</span>
+      <span class="action-card__desc">Install Internal assets in-house and record installation notes.</span>
+    </a>
+    <a class="action-card" href="{% url 'inventory:remove_from_use' %}">
+      <span class="action-card__title">Return from internal use</span>
+      <span class="action-card__desc">Receive removed equipment back into a stock room.</span>
+    </a>
     <a class="action-card action-card--primary" href="{% url 'inventory:receive_bulk' %}">
       <span class="action-card__title">Receive stock</span>
       <span class="action-card__desc">Choose a room and record the arriving items.</span>

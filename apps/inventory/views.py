@@ -41,7 +41,7 @@ from apps.core.sorting import (
     parse_multi_sort,
     positive_int_param,
 )
-from apps.locations.models import Location, order_by_hierarchy
+from apps.locations.models import Location
 from apps.locations.scoping import (
     accessible_locations,
     location_breadcrumb_map,
@@ -100,8 +100,8 @@ from .services.disposition import dispose, mark_damaged, mark_lost, return_repai
 from .services.grid_views import (
     create_saved_grid_view,
     delete_saved_grid_view,
+    inventory_location_choices,
     list_saved_grid_views,
-    room_filter_choices,
     update_saved_grid_view,
 )
 from .services.purpose import reclassify_quantity_purpose, reclassify_unit_purpose
@@ -910,10 +910,9 @@ class UnitAssetListView(LoginRequiredMixin, CSVExportMixin, SortableListMixin, L
         context = super().get_context_data(**kwargs)
         context["query"] = self.request.GET.get("q", "")
         context["selected_status"] = self.request.GET.get("status", "")
-        context["room_filter_choices"] = room_filter_choices(self.request.user)
+        context.update(inventory_location_choices(self.request.user))
         context["statuses"] = UnitStatus.choices
         context["stock_purposes"] = StockPurpose.choices
-        context["locations"] = order_by_hierarchy(accessible_locations(self.request.user))
         context["filters"] = self.request.GET
         return context
 
@@ -930,6 +929,7 @@ _positive_int = positive_int_param
 # per-row (location_breadcrumb_map(), not a DB column), so they can't be
 # ORDER BY'd — the grid simply doesn't offer a sorter on those 3 columns.
 ASSET_GRID_SORT_FIELDS = {
+    "name": "name",
     "brand": "product__brand__name",
     "model": "product__model",
     "sku": "product__sku",
@@ -1012,6 +1012,7 @@ class UnitAssetGridDataView(LoginRequiredMixin, View):
         breadcrumb = breadcrumbs.get(asset.current_location_id, {})
         return {
             "id": str(asset.pk),
+            "name": asset.name,
             "brand": asset.product.brand.name,
             "model": asset.product.model,
             "sku": asset.product.sku,
@@ -1165,7 +1166,9 @@ class SavedGridViewDeleteView(LoginRequiredMixin, View):
 # eligible_statuses regardless, so an out-of-date entry here could show a
 # link that turns out to have nothing preselected, never a bypass.
 ASSET_QUICK_ACTIONS_BY_STATUS = {
+    UnitStatus.IN_USE: ["remove_from_use"],
     UnitStatus.IN_STOCK: [
+        "put_in_use",
         "transfer",
         "reserve",
         "assign",
@@ -1183,6 +1186,8 @@ ASSET_QUICK_ACTIONS_BY_STATUS = {
     UnitStatus.DISPOSED: [],
 }
 ASSET_QUICK_ACTION_LABELS = {
+    "put_in_use": "Put in use",
+    "remove_from_use": "Return from internal use",
     "transfer": "Transfer",
     "reserve": "Reserve",
     "assign": "Assign to employee",
@@ -1236,6 +1241,10 @@ def _quick_actions_for(asset):
     """
     actions = []
     for name in ASSET_QUICK_ACTIONS_BY_STATUS.get(asset.status, []):
+        if name == "put_in_use" and (
+            asset.stock_purpose != StockPurpose.INTERNAL or asset.installed_in_id
+        ):
+            continue
         if name == "return":
             if asset.current_custody_transaction_id is None:
                 continue
@@ -1308,6 +1317,62 @@ class AssetGridFieldUpdateView(LoginRequiredMixin, View):
             new_values={field: value},
         )
         return JsonResponse({"field": field, "value": value})
+
+
+class AssetEditView(LoginRequiredMixin, View):
+    def get(self, request, pk):
+        from .asset_edit_form import AssetEditForm
+        from .services.asset_editing import get_editable_asset
+
+        asset = get_editable_asset(user=request.user, pk=pk)
+        return render(
+            request,
+            "inventory/asset_edit.html",
+            {"asset": asset, "form": AssetEditForm(instance=asset)},
+        )
+
+    def post(self, request, pk):
+        from .asset_edit_form import AssetEditForm
+        from .services.asset_editing import EDIT_FIELDS, edit_asset, get_editable_asset
+
+        asset = get_editable_asset(user=request.user, pk=pk)
+        form = AssetEditForm(request.POST, instance=asset)
+        matches = []
+        if form.is_valid():
+            data = form.cleaned_data
+            try:
+                asset = edit_asset(
+                    user=request.user,
+                    pk=pk,
+                    values={field: data[field] for field in EDIT_FIELDS},
+                    brand_name=data["brand_name"],
+                    model=data["model"],
+                    sku=data["sku"],
+                    duplicate_serial_acknowledged=data["duplicate_serial_acknowledged"],
+                    duplicate_product_acknowledged=data["duplicate_product_acknowledged"],
+                )
+            except DuplicateSerialError as exc:
+                matches = exc.matches
+                form.add_error(
+                    None,
+                    "A matching serial exists. Review and acknowledge the duplicate before saving.",
+                )
+            except DuplicateProductError:
+                form.add_error(
+                    None,
+                    "Similar catalog entries exist. Acknowledge a distinct product before saving.",
+                )
+            except ValidationError as exc:
+                form.add_error(None, "; ".join(exc.messages))
+            else:
+                messages.success(
+                    request,
+                    "Asset details updated. Previous documents and movements are unchanged.",
+                )
+                return redirect(asset)
+        return render(
+            request, "inventory/asset_edit.html", {"asset": asset, "form": form, "matches": matches}
+        )
 
 
 class UnitAssetDetailView(LoginRequiredMixin, DetailView):
@@ -1523,10 +1588,9 @@ class StockBalanceListView(LoginRequiredMixin, CSVExportMixin, SortableListMixin
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["locations"] = order_by_hierarchy(accessible_locations(self.request.user))
         context["stock_purposes"] = StockPurpose.choices
         context["filters"] = self.request.GET
-        context["room_filter_choices"] = room_filter_choices(self.request.user)
+        context.update(inventory_location_choices(self.request.user))
         return context
 
 
@@ -1935,6 +1999,12 @@ class AssetPickerDataView(LoginRequiredMixin, View):
             location_field="current_location",
         )
         queryset = queryset.filter(status__in=statuses) if statuses else queryset.none()
+        if request.GET.get("internal_use") in ("install", "remove"):
+            from .services.internal_use import eligible_internal_use_assets
+
+            queryset = eligible_internal_use_assets(
+                user=request.user, returning=request.GET["internal_use"] == "remove"
+            )
         product_id = request.GET.get("product")
         if product_id:
             queryset = queryset.filter(product_id=product_id)

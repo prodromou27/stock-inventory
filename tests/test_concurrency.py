@@ -20,7 +20,41 @@ from django.db import connection
 
 from apps.inventory.models import InventoryTransaction, StockBalance, UnitAsset, UnitStatus
 from apps.inventory.services.assignments import assign_to_employee, deliver_to_customer
+from apps.inventory.services.internal_use import change_internal_use
 from apps.inventory.services.receipts import receive_stock
+
+
+@pytest.mark.django_db(transaction=True, serialized_rollback=True)
+def test_internal_installation_racing_delivery_has_one_winner(
+    administrator, unit_product, location_tree
+):
+    receive_stock(
+        user=administrator,
+        product=unit_product,
+        location=location_tree["room"],
+        occurred_at=date.today(),
+        vendor_serial="INSTALL-RACE",
+    )
+    asset = UnitAsset.objects.get(vendor_serial="INSTALL-RACE")
+
+    def install():
+        change_internal_use(
+            user=administrator,
+            unit_asset_ids=[asset.pk],
+            occurred_at=date.today(),
+            notes="Server room X",
+        )
+
+    def deliver():
+        deliver_to_customer(
+            user=administrator,
+            final_customer="Customer",
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+        )
+
+    assert sorted(_run_concurrently(install, deliver)) == ["rejected", "success"]
+    assert asset.transaction_lines.exclude(transaction__movement_type="receipt").count() == 1
 
 
 def _run_concurrently(*callables):

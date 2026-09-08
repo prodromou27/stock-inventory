@@ -35,6 +35,7 @@ from .models import DataQualityIssueType, DataQualitySeverity
 # constants (the two checks share the underlying business rule, not code
 # that needs a single source of truth to stay correct).
 _STATUSES_WITHOUT_LOCATION = (
+    UnitStatus.IN_USE,
     UnitStatus.ASSIGNED,
     UnitStatus.DELIVERED,
     UnitStatus.LOST,

@@ -20,6 +20,7 @@ TRANSFERABLE_STATUSES = {UnitStatus.IN_STOCK, UnitStatus.RESERVED}
 
 VALID_UNIT_TRANSITIONS = {
     UnitStatus.IN_STOCK: {
+        UnitStatus.IN_USE,
         UnitStatus.RESERVED,
         UnitStatus.ASSIGNED,
         UnitStatus.DELIVERED,
@@ -52,6 +53,7 @@ VALID_UNIT_TRANSITIONS = {
         UnitStatus.IN_STOCK,
         UnitStatus.DISPOSED,
     },
+    UnitStatus.IN_USE: {UnitStatus.IN_STOCK},
     UnitStatus.LOST: set(),  # recovery only via Administrator correction
     UnitStatus.DISPOSED: set(),  # terminal except an Administrator reversal
 }

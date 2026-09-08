@@ -14,6 +14,8 @@ from apps.catalog.services import check_duplicate_products, resolve_or_create_pr
 from apps.core.authorization import ADMINISTRATOR, require_role
 from apps.core.spreadsheets import spreadsheet_safe_row
 from apps.inventory.models import StockPurpose
+from apps.inventory.services.assignments import assign_to_employee, deliver_to_customer
+from apps.inventory.services.internal_use import change_internal_use
 from apps.inventory.services.receipts import receive_stock
 
 from . import parsing
@@ -27,6 +29,83 @@ from .normalization import (
 )
 
 EXECUTE_BATCH_SIZE = 500
+
+STATUS_CHOICES = [
+    ("in_stock", "In Stock"),
+    ("assigned", "Assigned"),
+    ("delivered", "Delivered"),
+    ("in_use", "In Use"),
+]
+
+
+def validate_lifecycle(data):
+    status = data.get("import_status")
+    if status not in dict(STATUS_CHOICES):
+        raise ValidationError(
+            "Choose In Stock, Assigned, Delivered, or In Use in the status review. "
+            "Blank locations never imply In Stock."
+        )
+    if status == "in_stock":
+        return
+    if not data.get("movement_date"):
+        raise ValidationError("An issued/installed item requires a valid Movement Date.")
+    if data.get("used_default_arrival_date"):
+        raise ValidationError(
+            "Issued/installed stock requires an explicit Arrival Date. "
+            "Correct it in the status review."
+        )
+    movement_date = datetime.date.fromisoformat(data["movement_date"])
+    if data.get("arrival_date") and movement_date < datetime.date.fromisoformat(
+        data["arrival_date"]
+    ):
+        raise ValidationError(
+            "Movement Date cannot precede Arrival Date. Correct the source dates before import."
+        )
+    if status == "assigned" and not data.get("employee"):
+        raise ValidationError("Assigned stock requires an Employee.")
+    if status == "delivered" and (
+        not data.get("final_customer") or not data.get("project_reference")
+    ):
+        raise ValidationError("Delivered stock requires Final Customer and Project Reference.")
+    if status == "in_use":
+        if (
+            data.get("tracking_method") != "unit"
+            or data.get("stock_purpose") != StockPurpose.INTERNAL
+        ):
+            raise ValidationError("In Use requires unit tracking and Internal stock purpose.")
+        if not data.get("installation_notes"):
+            raise ValidationError("In Use requires Installation Notes.")
+
+
+def apply_import_movement(*, user, data, receipt, product, location):
+    status = data["import_status"]
+    if status == "in_stock":
+        return receipt
+    line = receipt.lines.get()
+    params = dict(
+        user=user,
+        occurred_at=datetime.date.fromisoformat(data["movement_date"]),
+        notes=data.get("notes", ""),
+    )
+    if line.unit_asset_id:
+        params["unit_asset_ids"] = [line.unit_asset_id]
+    else:
+        params["quantity_lines"] = [
+            {
+                "product": product,
+                "location": location,
+                "quantity": line.quantity_delta,
+                "stock_purpose": data.get("stock_purpose", "internal"),
+            }
+        ]
+    if status == "in_use":
+        params["notes"] = data["installation_notes"]
+        return change_internal_use(**params)
+    params["project_reference"] = data.get("project_reference", "")
+    if status == "assigned":
+        return assign_to_employee(**params, employee_name=data["employee"])
+    return deliver_to_customer(**params, final_customer=data["final_customer"])
+
 
 # A worker that crashes/is killed mid-execute_batch() leaves a batch stuck
 # at EXECUTING forever (the status is committed before the row loop, which
@@ -150,7 +229,18 @@ def _stage_row(raw, *, default_location=None, default_stock_purpose=StockPurpose
     if not quantity_valid:
         issues.append(f"Quantity '{raw.get('QTY')}' is not a valid non-negative whole number.")
 
+    tracking_text = normalize_text(raw.get("Tracking Method")).lower()
     tracking_method = TrackingMethod.UNIT if serial_text else TrackingMethod.QUANTITY
+    if tracking_text in TrackingMethod.values:
+        tracking_method = TrackingMethod(tracking_text)
+    elif tracking_text:
+        issues.append("Tracking Method must be unit or quantity.")
+    if tracking_method == TrackingMethod.QUANTITY and serial_text:
+        issues.append("A quantity-tracked row cannot contain a serial number.")
+    if tracking_method == TrackingMethod.UNIT and quantity and quantity > 1:
+        issues.append(
+            "Unit-tracked stock requires one row per item (QTY 1), even without a serial."
+        )
     if tracking_method == TrackingMethod.QUANTITY and (quantity is None or quantity <= 0):
         issues.append("Quantity-tracked rows (no serial number given) need a positive QTY.")
 
@@ -165,7 +255,7 @@ def _stage_row(raw, *, default_location=None, default_stock_purpose=StockPurpose
     if resolved_location is None and default_location is not None:
         resolved_location = default_location
         used_batch_default_location = True
-    elif resolved_location is None:
+    elif resolved_location is None and not raw.get("Source Room"):
         warnings.append(location_detail or f"Unknown location '{location_text}'.")
 
     stock_purpose_text = normalize_text(raw.get("Stock Purpose")).lower()
@@ -235,6 +325,7 @@ def _stage_row(raw, *, default_location=None, default_stock_purpose=StockPurpose
         "tracking_method": tracking_method,
         "quantity": quantity,
         "location_text": location_text,
+        "source_room_text": normalize_text(raw.get("Source Room")),
         "sub_location_text": sub_location_text,
         "resolved_location_id": str(resolved_location.pk) if resolved_location else None,
         "used_batch_default_location": used_batch_default_location,
@@ -248,6 +339,37 @@ def _stage_row(raw, *, default_location=None, default_stock_purpose=StockPurpose
         "duplicate_serial_ids": [str(pk) for pk in duplicate_serial_ids],
         "duplicate_product_ids": [str(pk) for pk in duplicate_product_ids],
     }
+
+    explicit_status = normalize_text(
+        raw.get("Status") or raw.get("PRODUCT DELIVERY / PRODUCT REMOVAL")
+    )
+    status = explicit_status.lower().replace(" ", "_")
+    if (
+        not status
+        and (location_text or sub_location_text)
+        and not any(raw.get(key) for key in ("Delivery Date", "Removal Date", "Return Date"))
+    ):
+        status = "in_stock"
+    movement_raw = raw.get("Movement Date") or raw.get("Delivery Date") or raw.get("Removal Date")
+    movement_date, movement_valid = parse_legacy_date(movement_raw)
+    normalized.update(
+        import_status=status,
+        movement_date=movement_date.isoformat() if movement_valid and movement_date else None,
+        employee=normalize_text(raw.get("Employee")),
+        installation_notes=normalize_text(raw.get("Installation Notes")),
+    )
+    if raw.get("Source Room") and status != "in_stock":
+        source, detail = resolve_location(normalize_text(raw["Source Room"]), "")
+        normalized["resolved_location_id"] = str(source.pk) if source else None
+        normalized["used_batch_default_location"] = False
+        if not source:
+            warnings.append(detail or "Source Room could not be resolved.")
+    try:
+        validate_lifecycle(normalized)
+    except ValidationError as exc:
+        warnings.extend(exc.messages)
+    if not normalized["resolved_location_id"] and not warnings:
+        warnings.append("Select a receipt/source room in the preview.")
 
     if issues:
         return normalized, ImportRowOutcome.FAILED, " ".join(issues)
@@ -300,6 +422,60 @@ def _build_legacy_notes(raw):
 # --- Row-level override -------------------------------------------------
 
 
+@transaction.atomic
+def review_row_lifecycle(*, row, user, location, **values):
+    from apps.locations.scoping import require_location_access, require_room_or_below
+
+    require_role(user, ADMINISTRATOR)
+    batch = ImportBatch.objects.select_for_update().get(pk=row.batch_id)
+    _require_editable_batch(batch)
+    row = ImportRow.objects.select_for_update().get(pk=row.pk, batch=batch)
+    if row.outcome not in (ImportRowOutcome.PENDING, ImportRowOutcome.WARNING):
+        raise ValidationError(
+            "Only pending or warning rows can be reviewed. "
+            "Correct failed source rows and re-upload them separately."
+        )
+    require_location_access(user, location)
+    require_room_or_below(location)
+    if not location.is_active:
+        raise ValidationError("Select an active source room.")
+    old = dict(row.normalized_data)
+    data = dict(old)
+    for key in (
+        "import_status",
+        "arrival_date",
+        "movement_date",
+        "employee",
+        "final_customer",
+        "project_reference",
+        "installation_notes",
+    ):
+        value = values.get(key)
+        data[key] = value.isoformat() if hasattr(value, "isoformat") else value
+    data["location_override_id"] = str(location.pk)
+    data["reviewed_location_label"] = str(location)
+    data["used_default_arrival_date"] = False
+    validate_lifecycle(data)
+    row.normalized_data = data
+    row.outcome_detail = "Status and source room reviewed."
+    row.outcome = ImportRowOutcome.PENDING
+    if data.get("duplicate_serial_ids") and not row.duplicate_serial_acknowledged:
+        row.outcome = ImportRowOutcome.WARNING
+        row.outcome_detail += " Duplicate serial acknowledgement is still required."
+    row.save(update_fields=["normalized_data", "outcome_detail", "outcome"])
+    batch.warning_count = batch.rows.filter(outcome=ImportRowOutcome.WARNING).count()
+    batch.save(update_fields=["warning_count"])
+    record_event(
+        actor=user,
+        event_type=AuditEvent.EventType.RECORD_UPDATED,
+        obj=row,
+        summary=f"Reviewed lifecycle for import row {row.row_number}",
+        old_values=old,
+        new_values=data,
+    )
+    return row
+
+
 def _require_editable_batch(batch):
     if batch.status not in (ImportBatchStatus.PREVIEWED, ImportBatchStatus.PARTIALLY_COMPLETED):
         raise ValidationError(
@@ -319,8 +495,17 @@ def set_row_location_override(*, row, location, user):
     re-validation pass is needed.
     """
     require_role(user, ADMINISTRATOR)
+    batch = ImportBatch.objects.select_for_update().get(pk=row.batch_id)
+    _require_editable_batch(batch)
     row = ImportRow.objects.select_for_update().get(pk=row.pk)
-    _require_editable_batch(row.batch)
+    if row.outcome in (ImportRowOutcome.IMPORTED, ImportRowOutcome.SKIPPED):
+        raise ValidationError("Imported or skipped rows cannot be edited.")
+    from apps.locations.scoping import require_location_access, require_room_or_below
+
+    require_location_access(user, location)
+    require_room_or_below(location)
+    if not location.is_active:
+        raise ValidationError("Select an active receipt/source room.")
 
     old_location_id = row.normalized_data.get("location_override_id")
     normalized = dict(row.normalized_data)
@@ -343,8 +528,11 @@ def set_row_location_override(*, row, location, user):
 @transaction.atomic
 def skip_row(*, row, user):
     require_role(user, ADMINISTRATOR)
+    batch = ImportBatch.objects.select_for_update().get(pk=row.batch_id)
+    _require_editable_batch(batch)
     row = ImportRow.objects.select_for_update().get(pk=row.pk)
-    _require_editable_batch(row.batch)
+    if row.outcome == ImportRowOutcome.IMPORTED:
+        raise ValidationError("Already imported rows cannot be skipped.")
     if row.outcome == ImportRowOutcome.SKIPPED:
         return row
     old_outcome = row.outcome
@@ -366,8 +554,11 @@ def skip_row(*, row, user):
 @transaction.atomic
 def acknowledge_row_duplicate_serial(*, row, user):
     require_role(user, ADMINISTRATOR)
+    batch = ImportBatch.objects.select_for_update().get(pk=row.batch_id)
+    _require_editable_batch(batch)
     row = ImportRow.objects.select_for_update().get(pk=row.pk)
-    _require_editable_batch(row.batch)
+    if row.outcome in (ImportRowOutcome.IMPORTED, ImportRowOutcome.SKIPPED):
+        raise ValidationError("Imported or skipped rows cannot be edited.")
     if not row.normalized_data.get("duplicate_serial_ids"):
         raise ValidationError("This row has no duplicate serial warning.")
     row.duplicate_serial_acknowledged = True
@@ -483,6 +674,23 @@ def _execute_row_chunk(rows, *, user):
 
 def _execute_row(row, *, user):
     data = row.normalized_data
+    if "import_status" not in data:
+        fresh, _, _ = _stage_row(
+            row.raw_data,
+            default_location=row.batch.default_location,
+            default_stock_purpose=row.batch.default_stock_purpose,
+        )
+        for key in ("import_status", "movement_date", "employee", "installation_notes"):
+            data[key] = fresh.get(key)
+        row.normalized_data = data
+        row.save(update_fields=["normalized_data"])
+    try:
+        validate_lifecycle(data)
+    except ValidationError as exc:
+        row.outcome = ImportRowOutcome.WARNING
+        row.outcome_detail = " ".join(exc.messages)
+        row.save(update_fields=["outcome", "outcome_detail"])
+        return
     if data.get("duplicate_serial_ids") and not row.duplicate_serial_acknowledged:
         # Appended, not overwritten — row.outcome_detail already names which
         # serial matched and how many existing assets it conflicts with
@@ -496,45 +704,18 @@ def _execute_row(row, *, user):
         return
     location_id = data.get("location_override_id") or data.get("resolved_location_id")
     if not location_id:
+        row.outcome = ImportRowOutcome.WARNING
         row.outcome_detail = (
             f"{row.outcome_detail} Not executed: no resolved or overridden location.".strip()
         )
-        row.save(update_fields=["outcome_detail"])
+        row.save(update_fields=["outcome", "outcome_detail"])
         return
 
-    from apps.locations.models import Location
-
     try:
-        location = Location.objects.get(pk=location_id)
-        product = _get_or_create_import_product(
+        txn = _import_inventory_row(
+            data=data,
+            location_id=location_id,
             user=user,
-            brand_name=data["brand_name"],
-            model=data["model"],
-            product_type_name=data["product_type_name"],
-            tracking_method=data["tracking_method"],
-        )
-        # _stage_row() always resolves and freezes a concrete arrival_date now
-        # (defaulting blank/unparseable cells to that day's business date at
-        # staging time, not here) — the `else` fallback only protects a batch
-        # staged under an older version of this code that's still sitting
-        # PREVIEWED when this runs.
-        arrival_date = (
-            datetime.date.fromisoformat(data["arrival_date"])
-            if data.get("arrival_date")
-            else timezone.localdate()
-        )
-        txn = receive_stock(
-            user=user,
-            product=product,
-            location=location,
-            occurred_at=arrival_date,
-            vendor_serial=data["vendor_serial"],
-            quantity=data["quantity"]
-            or (1 if data["tracking_method"] == TrackingMethod.UNIT else None),
-            stock_purpose=data.get("stock_purpose", StockPurpose.INTERNAL),
-            project_reference=data["project_reference"],
-            final_customer=data["final_customer"],
-            notes=data["notes"],
             duplicate_serial_acknowledged=row.duplicate_serial_acknowledged,
         )
     except ValidationError as exc:
@@ -558,6 +739,46 @@ def _execute_row(row, *, user):
         row.created_unit_asset = line.unit_asset
     row.save(
         update_fields=["outcome", "outcome_detail", "created_transaction", "created_unit_asset"]
+    )
+
+
+@transaction.atomic
+def _import_inventory_row(*, data, location_id, user, duplicate_serial_acknowledged):
+    from apps.locations.scoping import (
+        accessible_locations,
+        require_location_access,
+        require_room_or_below,
+    )
+
+    location = accessible_locations(user).get(pk=location_id)
+    require_location_access(user, location)
+    require_room_or_below(location)
+    if not location.is_active:
+        raise ValidationError("Select an active receipt/source room.")
+    validate_lifecycle(data)
+    product = _get_or_create_import_product(
+        user=user,
+        brand_name=data["brand_name"],
+        model=data["model"],
+        product_type_name=data["product_type_name"],
+        tracking_method=data["tracking_method"],
+    )
+    receipt = receive_stock(
+        user=user,
+        product=product,
+        location=location,
+        occurred_at=datetime.date.fromisoformat(data["arrival_date"]),
+        vendor_serial=data["vendor_serial"],
+        quantity=data["quantity"]
+        or (1 if data["tracking_method"] == TrackingMethod.UNIT else None),
+        stock_purpose=data.get("stock_purpose", StockPurpose.INTERNAL),
+        project_reference=data["project_reference"],
+        final_customer=data["final_customer"],
+        notes=data["notes"],
+        duplicate_serial_acknowledged=duplicate_serial_acknowledged,
+    )
+    return apply_import_movement(
+        user=user, data=data, receipt=receipt, product=product, location=location
     )
 
 
@@ -621,6 +842,12 @@ _TEMPLATE_SAMPLE_ROWS = [
         "",
         "",
         "Internal",
+        "In Stock",
+        "",
+        "",
+        "",
+        "",
+        "unit",
     ],
     [
         "Generic",
@@ -640,14 +867,42 @@ _TEMPLATE_SAMPLE_ROWS = [
         "",
         "",
         "Customer",
+        "In Stock",
+        "",
+        "",
+        "",
+        "",
+        "quantity",
     ],
 ]
+
+for _status, _employee, _customer, _project, _installation in (
+    ("Assigned", "Example Employee", "", "", ""),
+    ("Delivered", "", "Example Customer", "PROJECT-001", ""),
+    ("In Use", "", "", "", "Installed in server room X"),
+):
+    _sample = dict(zip(parsing.COLUMNS, _TEMPLATE_SAMPLE_ROWS[0], strict=True))
+    _sample.update(
+        {
+            "Status": _status,
+            "S/N": "",
+            "LOCATION": "",
+            "2nd floor Location": "",
+            "Source Room": "Basement 1",
+            "Employee": _employee,
+            "FINAL CUSTOMER": _customer,
+            "Project Ref. #": _project,
+            "Installation Notes": _installation,
+            "Movement Date": "2026-01-16",
+        }
+    )
+    _TEMPLATE_SAMPLE_ROWS.append([_sample[column] for column in parsing.COLUMNS])
 
 
 def build_template_csv():
     buffer = io.StringIO()
     writer = csv.writer(buffer)
-    writer.writerow(parsing.COLUMNS)
+    writer.writerow(parsing.TEMPLATE_COLUMNS)
     for row in _TEMPLATE_SAMPLE_ROWS:
         writer.writerow(row)
     return buffer.getvalue()
@@ -663,9 +918,56 @@ def build_template_xlsx():
     workbook = openpyxl.Workbook()
     sheet = workbook.active
     sheet.title = "Import Template"
-    sheet.append(parsing.COLUMNS)
+    sheet.append(parsing.TEMPLATE_COLUMNS)
     for row in _TEMPLATE_SAMPLE_ROWS:
         sheet.append(row)
+
+    from openpyxl.styles import Font, PatternFill
+    from openpyxl.utils import get_column_letter
+    from openpyxl.worksheet.datavalidation import DataValidation
+
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = sheet.dimensions
+    for cell in sheet[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="163B50")
+        sheet.column_dimensions[cell.column_letter].width = max(20, min(len(cell.value) + 3, 38))
+    for column, choices in (
+        ("Status", "In Stock,Assigned,Delivered,In Use"),
+        ("Tracking Method", "unit,quantity"),
+        ("Stock Purpose", "Internal,Customer"),
+    ):
+        validation = DataValidation(type="list", formula1=f'"{choices}"', allow_blank=True)
+        validation.showErrorMessage = True
+        validation.errorTitle = "Choose a listed value"
+        validation.error = "Use the dropdown options."
+        sheet.add_data_validation(validation)
+        letter = get_column_letter(parsing.COLUMNS.index(column) + 1)
+        validation.add(f"{letter}2:{letter}1048576")
+    instructions = workbook.create_sheet("Instructions")
+    for instruction in (
+        "Replace the five example rows before importing. Keep the header row unchanged.",
+        "Status: In Stock, Assigned, Delivered, or In Use. "
+        "Blank LOCATION without Status requires preview review.",
+        "In Stock: LOCATION is the current storage room. "
+        "Floor (Shelf/Rack) is the optional sub-location.",
+        "Assigned: Employee, Movement Date and Source Room are required.",
+        "Delivered: FINAL CUSTOMER, Project Ref. #, Movement Date and Source Room are required.",
+        "In Use: Internal Stock Purpose, unit Tracking Method, Installation Notes, "
+        "Movement Date and Source Room are required.",
+        "Source Room is the original receipt room, not the installed or delivered destination. "
+        "A batch default may supply it.",
+        "Tracking Method: unit for individual items (QTY 1, serial optional); "
+        "quantity for bulk items (positive QTY, no serial).",
+        "Use YYYY-MM-DD dates. Arrival Date must not be after Movement Date. "
+        "Existing product tracking cannot change.",
+        "Reserved, Returned, Damaged, Lost and Disposed are not supported import statuses; "
+        "resolve these separately.",
+        "Preview every row before execution. Duplicate serials require explicit acknowledgment. "
+        "Imported rows are not repeated on retry.",
+    ):
+        instructions.append([instruction])
+    instructions.column_dimensions["A"].width = 145
 
     buffer = io.BytesIO()
     workbook.save(buffer)

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Edit asset — {{ site_name }}{% endblock %}
+{% block content %}
+<div class="page-header"><div><h1>Edit asset</h1><p>Changes apply to this item only. Previous documents and movements remain unchanged.</p></div></div>
+<div class="card">
+  <p>To change its storage room or shelf, <a href="{% url 'inventory:transfer' %}?unit_asset_ids={{ asset.pk }}">record a transfer</a>. Items outside storage must follow the return workflow.</p>
+  {% if matches %}<h2>Matching serials</h2><ul>{% for match in matches %}<li><a href="{{ match.get_absolute_url }}">{{ match.product }} — {{ match.vendor_serial }}</a> · {{ match.get_status_display }} · {{ match.current_location|default:"Outside storage" }}</li>{% endfor %}</ul>{% endif %}
+  <form method="post">{% csrf_token %}{{ form.non_field_errors }}
+    <h2>Item identity</h2>
+    <div class="delivery-details__fields">
+      {% include "_form_field.html" with field=form.name %}
+      {% include "_form_field.html" with field=form.vendor_serial %}
+      {% include "_form_field.html" with field=form.sku %}
+      {% include "_form_field.html" with field=form.brand_name %}
+      {% include "_form_field.html" with field=form.model %}
+    </div>
+    <h2>References and notes</h2>
+    <div class="delivery-details__fields">
+      {% include "_form_field.html" with field=form.project_reference %}
+      {% include "_form_field.html" with field=form.final_customer %}
+      {% include "_form_field.html" with field=form.supplier %}
+      {% include "_form_field.html" with field=form.invoice_number %}
+      {% include "_form_field.html" with field=form.accessories %}
+      {% include "_form_field.html" with field=form.notes %}
+    </div>
+    <details {% if form.non_field_errors %}open{% endif %}><summary>Duplicate acknowledgements (only when prompted)</summary>
+      <label>{{ form.duplicate_serial_acknowledged }} {{ form.duplicate_serial_acknowledged.label }}</label>
+      <label>{{ form.duplicate_product_acknowledged }} {{ form.duplicate_product_acknowledged.label }}</label>
+    </details>
+    <div class="form-actions"><button class="btn btn--primary" type="submit">Save asset</button><a class="btn" href="{{ asset.get_absolute_url }}">Cancel</a></div>
+  </form>
+</div>
+{% endblock %}

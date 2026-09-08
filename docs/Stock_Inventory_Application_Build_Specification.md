@@ -172,6 +172,10 @@ Rules:
 
 ### Current statuses
 
+Approved extension: **In Use** is for internally installed unit assets, distinct
+from employee assignment. See architecture/14-internal-use.md for the two
+recorded movements, scope rules, and return-to-stock path.
+
 - In Stock
 - Reserved
 - Assigned
@@ -616,4 +620,3 @@ Use this document as the authoritative functional baseline.
 - Password complexity and session timeout values
 - Corporate date format and timezone display
 - Reverse proxy and TLS arrangement for the internal deployment
-

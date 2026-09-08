@@ -6,6 +6,11 @@ where applicable (see the Quantity-tracked column below).
 
 ## Status-transition table
 
+Approved internal-use extension: In Stock -> In Use (Internal purpose only),
+and In Use -> In Stock through a recorded return to an authorized room.
+See [14-internal-use.md](14-internal-use.md). All other ordinary transitions
+from In Use are rejected; corrections/reversals remain Administrator-only.
+
 | From ↓ / Movement → | Receipt | Transfer | Reserve | Release reservation | Assign | Deliver | Return | Return assessment | Mark damaged | Mark lost | Dispose | Admin correction | Reversal |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | *(none — new asset)* | → In Stock | — | — | — | — | — | — | — | — | — | — | → any (Admin only) | — |

@@ -40,6 +40,12 @@ COLUMNS = [
     "Removal Date",
     "Registrar",
     "Stock Purpose",
+    "Status",
+    "Source Room",
+    "Movement Date",
+    "Employee",
+    "Installation Notes",
+    "Tracking Method",
 ]
 
 REQUIRED_COLUMNS = ["BRAND", "MODEL/Part No./SKU", "TYPE/DESCRIPTION", "S/N", "QTY", "LOCATION"]
@@ -50,6 +56,8 @@ def _normalize_header(value):
 
 
 _HEADER_LOOKUP = {_normalize_header(col): col for col in COLUMNS}
+_HEADER_LOOKUP[_normalize_header("Floor (Shelf/Rack)")] = "2nd floor Location"
+TEMPLATE_COLUMNS = ["Floor (Shelf/Rack)" if col == "2nd floor Location" else col for col in COLUMNS]
 
 
 def compute_checksum(file_bytes):

@@ -181,6 +181,7 @@ def _search_results(user, query, limit):
             | Q(project_reference__trigram_similar=query)
             | Q(final_customer__trigram_similar=query)
             | Q(normalized_serial__icontains=query.upper())
+            | Q(name__icontains=query)
             | Q(project_reference__icontains=query)
             | Q(final_customer__icontains=query)
         )

@@ -492,7 +492,7 @@ class TestDownloads:
             "template.csv", content.encode("utf-8"), content_type="text/csv"
         )
         batch, _ = services.create_batch_from_upload(uploaded_file=upload, user=administrator)
-        assert batch.row_count() == 2
+        assert batch.row_count() == 5
         assert batch.rows.filter(outcome=ImportRowOutcome.FAILED).count() == 0
 
     def test_results_csv_lists_every_row(self, administrator, location_tree):
@@ -518,7 +518,7 @@ class TestDownloads:
         workbook = openpyxl.load_workbook(io.BytesIO(content))
         sheet = workbook.active
         header = [cell.value for cell in next(sheet.iter_rows(min_row=1, max_row=1))]
-        assert header == COLUMNS
+        assert header == services.parsing.TEMPLATE_COLUMNS
 
         upload = SimpleUploadedFile(
             "template.xlsx",
@@ -526,5 +526,5 @@ class TestDownloads:
             content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
         batch, _ = services.create_batch_from_upload(uploaded_file=upload, user=administrator)
-        assert batch.row_count() == 2
+        assert batch.row_count() == 5
         assert batch.rows.filter(outcome=ImportRowOutcome.FAILED).count() == 0

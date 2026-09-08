@@ -7,7 +7,7 @@
   // grid — see that function's docstring for why it's a heuristic, not a
   // per-choices-enum lookup.
   const BADGE_SUCCESS = ["active", "available", "in_stock", "in stock", "new", "good", "healthy", "completed"];
-  const BADGE_INFO = ["reserved", "assigned", "in_transit", "in transit", "pending", "processing"];
+  const BADGE_INFO = ["reserved", "assigned", "in_use", "in use", "in_transit", "in transit", "pending", "processing"];
   const BADGE_WARNING = ["damaged", "fair", "returned"];
   const BADGE_DANGER = ["lost", "disposed", "inactive", "error", "failed", "rejected", "cancelled"];
 

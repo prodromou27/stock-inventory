@@ -59,6 +59,7 @@ def correct_unit_status(
     resolved_location = to_location if to_location is not None else from_location
     requires_location = {UnitStatus.IN_STOCK, UnitStatus.RESERVED, UnitStatus.RETURNED}
     requires_no_location = {
+        UnitStatus.IN_USE,
         UnitStatus.ASSIGNED,
         UnitStatus.DELIVERED,
         UnitStatus.LOST,
@@ -404,6 +405,7 @@ def reverse_transaction(*, user, original_transaction, occurred_at, reason):
 
 def _recompute_last_removal_date(asset):
     removal_types = {
+        MovementType.PUT_IN_USE,
         MovementType.ASSIGNMENT,
         MovementType.DELIVERY,
         MovementType.MARK_LOST,

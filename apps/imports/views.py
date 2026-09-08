@@ -11,7 +11,7 @@ from apps.audit.models import AuditEvent
 from apps.audit.services import record_event
 from apps.core.authorization import ADMINISTRATOR, RoleRequiredMixin
 
-from .forms import ImportUploadForm, RowLocationOverrideForm
+from .forms import ImportUploadForm, RowLifecycleForm, RowLocationOverrideForm
 from .models import ImportBatch, ImportBatchStatus, ImportRow, ImportRowOutcome
 from .services import (
     acknowledge_row_duplicate_serial,
@@ -21,6 +21,7 @@ from .services import (
     create_batch_from_upload,
     execute_batch,
     is_stale_execution,
+    review_row_lifecycle,
     set_row_location_override,
     skip_row,
 )
@@ -151,6 +152,35 @@ class ImportRowOverrideLocationView(LoginRequiredMixin, RoleRequiredMixin, View)
         return redirect(batch.get_absolute_url())
 
 
+class ImportRowLifecycleView(LoginRequiredMixin, RoleRequiredMixin, View):
+    allowed_roles = (ADMINISTRATOR,)
+
+    def get(self, request, pk, row_pk):
+        return self.render_form(request, pk, row_pk)
+
+    def post(self, request, pk, row_pk):
+        return self.render_form(request, pk, row_pk)
+
+    def render_form(self, request, pk, row_pk):
+        row = get_object_or_404(ImportRow.objects.select_related("batch"), pk=row_pk, batch_id=pk)
+        initial = dict(row.normalized_data)
+        initial["location"] = initial.get("location_override_id") or initial.get(
+            "resolved_location_id"
+        )
+        form = RowLifecycleForm(
+            request.POST if request.method == "POST" else None, user=request.user, initial=initial
+        )
+        if request.method == "POST" and form.is_valid():
+            try:
+                review_row_lifecycle(row=row, user=request.user, **form.cleaned_data)
+            except ValidationError as exc:
+                form.add_error(None, exc)
+            else:
+                messages.success(request, f"Row {row.row_number}: status reviewed.")
+                return redirect(row.batch.get_absolute_url())
+        return render(request, "imports/row_lifecycle.html", {"row": row, "form": form})
+
+
 class ImportRowSkipView(LoginRequiredMixin, RoleRequiredMixin, View):
     allowed_roles = (ADMINISTRATOR,)
 
@@ -203,7 +233,7 @@ class ImportExecuteView(LoginRequiredMixin, RoleRequiredMixin, View):
             return redirect(batch.get_absolute_url())
 
         try:
-            execute_batch(batch=batch, user=request.user)
+            batch = execute_batch(batch=batch, user=request.user)
         except ValidationError as exc:
             messages.error(request, "; ".join(exc.messages))
             return redirect(batch.get_absolute_url())

@@ -19,6 +19,7 @@
   <div class="inventory-scope-bar">
     <a class="btn btn--sm" href="?in_storage=1">In storage</a>
     <a class="btn btn--sm" href="?status=assigned">Assigned</a>
+    <a class="btn btn--sm" href="?status=in_use">In Use</a>
     <a class="btn btn--sm" href="?status=delivered">Delivered</a>
     <a class="btn btn--sm" href="{% url 'inventory:asset_list' %}?view=all">All items / clear filters</a>
     <form method="get" class="room-switcher">
@@ -245,6 +246,7 @@
             headerFilterParams: { values: Object.fromEntries([["", "All statuses"], ...statusChoices]) },
             formatter: G.badgeFormatter,
           },
+          { title: "Asset name", field: "name", headerFilter: "input", width: 170, formatter: G.linkFormatter },
           { title: "Condition", field: "condition", width: 110, visible: false, displayField: "condition_display",
             headerFilter: "list",
             headerFilterParams: { values: { "": "Any condition", new: "New", refurbished: "Refurbished", used: "Used", damaged: "Damaged" } },
@@ -266,7 +268,7 @@
           },
           { title: "Country", field: "country", headerFilter: "input", width: 130, visible: false, headerSort: false },
           { title: "Storage Room", field: "storage_room", headerFilter: "list", headerFilterParams: { values: Object.fromEntries([["", "All rooms"], ...JSON.parse(document.getElementById("room-filter-choices").textContent)]) }, width: 190, headerSort: false },
-          { title: "Shelf", field: "shelf", headerFilter: "input", width: 110, visible: false, headerSort: false },
+          { title: "Floor (Shelf/Rack)", field: "shelf", headerFilter: "input", width: 180, visible: false, headerSort: false },
           { title: "Project Reference", field: "project_reference", headerFilter: "input", width: 160, editor: canEditGrid ? "input" : false, cssClass: canEditGrid ? "grid-cell-editable" : "" },
           { title: "Final Customer", field: "final_customer", headerFilter: "input", width: 160, editor: canEditGrid ? "input" : false, cssClass: canEditGrid ? "grid-cell-editable" : "" },
           { title: "Supplier", field: "supplier", headerFilter: "input", width: 140, visible: false, editor: canEditGrid ? "input" : false, cssClass: canEditGrid ? "grid-cell-editable" : "" },
@@ -298,6 +300,7 @@
       // lands the operator on a form with nothing preselected, never a
       // bypass of the real eligibility check).
       const ACTIONS_BY_STATUS = {
+        in_use: ["remove_from_use"],
         in_stock: ["transfer", "reserve", "assign", "deliver", "mark_damaged", "mark_lost", "dispose"],
         reserved: ["transfer", "assign", "deliver", "mark_damaged", "mark_lost", "dispose"],
         assigned: ["mark_damaged", "mark_lost", "dispose"],
@@ -308,6 +311,8 @@
         disposed: [],
       };
       const ACTION_URLS = {
+        put_in_use: "{% url 'inventory:put_in_use' %}",
+        remove_from_use: "{% url 'inventory:remove_from_use' %}",
         transfer: "{% url 'inventory:transfer' %}",
         reserve: "{% url 'inventory:reserve' %}",
         assign: "{% url 'inventory:assign' %}",
@@ -318,6 +323,8 @@
         repair_damaged: "{% url 'inventory:repair_damaged' %}",
       };
       const ACTION_LABELS = {
+        put_in_use: "Put selected in use",
+        remove_from_use: "Return from internal use",
         transfer: "Transfer selected",
         reserve: "Reserve selected",
         assign: "Assign selected",
@@ -353,6 +360,7 @@
           return;
         }
         const availableActions = new Set();
+        if (rows.some((row) => row.status === "in_stock" && row.stock_purpose === "internal")) availableActions.add("put_in_use");
         rows.forEach((row) => (ACTIONS_BY_STATUS[row.status] || []).forEach((a) => availableActions.add(a)));
         availableActions.forEach((action) => {
           const link = document.createElement("a");

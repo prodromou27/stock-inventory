@@ -139,7 +139,7 @@
           { title: "Location", field: "location", width: 170 },
           { title: "Country", field: "country", headerFilter: "input", width: 130, visible: false },
           { title: "Storage Room", field: "storage_room", headerFilter: "list", headerFilterParams: { values: Object.fromEntries([["", "All rooms"], ...JSON.parse(document.getElementById("room-filter-choices").textContent)]) }, width: 190, headerSort: false },
-          { title: "Shelf", field: "shelf", headerFilter: "input", width: 110, visible: false },
+          { title: "Floor (Shelf/Rack)", field: "shelf", headerFilter: "input", width: 180, visible: false, headerSort: false },
           {
             title: "Stock Purpose", field: "stock_purpose", width: 130, displayField: "stock_purpose_display",
             headerFilter: "list",

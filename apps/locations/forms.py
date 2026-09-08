@@ -6,6 +6,11 @@ from .scoping import accessible_locations
 MANAGER_LEVELS = tuple((level, level.label) for level in ROOM_OR_BELOW_LEVELS)
 
 
+def location_choice_label(obj):
+    breadcrumb = " > ".join(loc.name for loc in [*obj.ancestors(), obj])
+    return f"{breadcrumb} ({obj.get_level_display()})"
+
+
 class LocationChoiceField(forms.ModelChoiceField):
     """Labels each option with its level and full breadcrumb (e.g. "Wonderland
     > Room A (Storage Room)") — a flat dropdown over locations at more than
@@ -17,9 +22,7 @@ class LocationChoiceField(forms.ModelChoiceField):
     """
 
     def label_from_instance(self, obj):
-        breadcrumb = " > ".join(loc.name for loc in obj.ancestors())
-        prefix = f"{breadcrumb} > " if breadcrumb else ""
-        return f"{prefix}{obj.name} ({obj.get_level_display()})"
+        return location_choice_label(obj)
 
 
 class LocationForm(forms.Form):

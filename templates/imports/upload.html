@@ -5,9 +5,10 @@
 {% block content %}
   <h1>Upload legacy Excel/CSV file</h1>
   <p>
-    Every row is imported as an initial stock receipt only (using its Arrival Date). Delivery, return, and
-    removal information from the file is preserved in the resulting record's notes, not converted into further
-    movements — enter those manually afterward if needed.
+    Set Status to In Stock, Assigned, Delivered, or In Use. Issued and installed items create a receipt
+    followed by the appropriate movement, keeping them out of available stock. A blank LOCATION without
+    an explicit status requires review; it never silently becomes In Stock. Select a Source Room for
+    issued equipment, or use the default below. Dates alone do not determine the status.
   </p>
   <p>
     Download the template for the expected column layout:
@@ -15,6 +16,8 @@
     <a href="{% url 'imports:template_xlsx_download' %}">Excel</a>.
     The optional "Stock Purpose" column accepts "Internal" or "Customer" — leave it blank to use the
     default set below.
+    Choose Tracking Method "unit" for individually tracked items, even without serial numbers (one row per item),
+    or "quantity" for bulk stock. Remove the sample rows before uploading your own data.
   </p>
 
   <form method="post" enctype="multipart/form-data">

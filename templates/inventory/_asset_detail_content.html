@@ -1,6 +1,13 @@
 {% load ui_extras %}
 <div class="card">
+  {% if user_is_administrator or "StockManager" in user_role_groups %}<a class="btn" href="{% url 'inventory:asset_edit' asset.pk %}">Edit asset</a>{% endif %}
   <dl class="definition-list">
+    {% if user_is_administrator or "StockManager" in user_role_groups %}
+      {% if asset.status == "in_use" %}<dt>Internal use</dt><dd><a class="btn" href="{% url 'inventory:remove_from_use' %}?unit_asset_ids={{ asset.pk }}">Return from internal use</a></dd>
+      {% elif asset.status == "in_stock" and asset.stock_purpose == "internal" %}<dt>Internal use</dt><dd><a class="btn" href="{% url 'inventory:put_in_use' %}?unit_asset_ids={{ asset.pk }}">Put in use</a></dd>{% endif %}
+    {% endif %}
+    <dt>Asset name</dt><dd>{{ asset.name|default:"—" }}</dd>
+    <dt>Brand / Model</dt><dd>{{ asset.product }}</dd>
     <dt>Serial</dt><dd>{{ asset.vendor_serial|default:"—" }}</dd>
     <dt>Status</dt><dd><span class="badge {{ asset.status|badge_class }}">{{ asset.get_status_display }}</span></dd>
     <dt>Stock purpose</dt>

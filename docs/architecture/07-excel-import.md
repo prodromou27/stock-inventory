@@ -66,5 +66,30 @@ Covers spec §13, Prompt 6.
 
 ## Auditing
 
+### Explicit lifecycle import extension (September 2026)
+
+The user-approved lifecycle workflow adds optional Status, Source Room, Movement Date,
+Employee, Installation Notes, and Tracking Method columns to CSV/XLSX imports. Supported
+statuses are In Stock, Assigned, Delivered, and In Use. A blank location without an explicit
+status requires review, even when a batch default room exists. Legacy rows with a location
+and no outbound/return indicators retain receipt behavior. Dates alone never select an issue type.
+
+Assigned requires an employee; Delivered requires customer and project reference; In Use
+requires Internal unit-tracked stock and installation notes. All issued/installed rows require
+explicit arrival and movement dates plus an authorized receipt/source room. The importer calls
+the existing receipt service followed by the appropriate movement service within a per-row
+savepoint: failure rolls back both movements and any newly created catalog records. Existing
+ledger rows are never rewritten. The import row references its final transaction; ledger links
+retain the original receipt. Retry skips successful rows.
+
+Administrators can review status, dates, recipient details, and source room for pending/warning
+rows. Reviews are audited and leave raw cells untouched. Failed source rows must be corrected
+and uploaded separately, excluding already imported rows. Other lifecycle statuses remain
+unsupported by this importer and require separate stock operations, not inferred transitions.
+
+Explicit unit tracking allows blank serials with one row per physical item. Quantity tracking
+requires positive QTY and no serial. Existing product tracking remains immutable. The Excel
+template includes all four statuses, dropdowns and instructions; CSV uses the same columns.
+
 `AuditEvent` rows for: batch upload, validation run, execution start/finish (with counts), any retry, and results
 export — matching spec §12's explicit list.

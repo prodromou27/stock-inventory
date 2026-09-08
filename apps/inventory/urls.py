@@ -1,10 +1,13 @@
 from django.urls import path
 
 from . import views
+from .internal_use_ui import InternalUseView
 
 app_name = "inventory"
 
 urlpatterns = [
+    path("put-in-use/", InternalUseView.as_view(), name="put_in_use"),
+    path("remove-from-use/", InternalUseView.as_view(returning=True), name="remove_from_use"),
     path("movements/", views.MovementsHubView.as_view(), name="movements_hub"),
     path("receive/", views.ReceiveStockView.as_view(), name="receive_stock"),
     path("receive/quick/", views.QuickReceiveView.as_view(), name="quick_receive"),
@@ -18,6 +21,7 @@ urlpatterns = [
         name="asset_grid_field_update",
     ),
     path("assets/<uuid:pk>/", views.UnitAssetDetailView.as_view(), name="asset_detail"),
+    path("assets/<uuid:pk>/edit/", views.AssetEditView.as_view(), name="asset_edit"),
     path("assets/<uuid:pk>/correct/", views.AdminCorrectUnitView.as_view(), name="asset_correct"),
     path(
         "assets/<uuid:pk>/reclassify/",
