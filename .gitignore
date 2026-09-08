@@ -31,3 +31,8 @@ deploy/backups/
 node_modules/
 static/css/app.css
 .qa-screenshots/
+
+# Local tooling artifacts — browser/automation debug output and editor-local
+# config, never repo content.
+debug.log
+.claude/
