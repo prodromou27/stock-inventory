@@ -22,7 +22,7 @@ def test_receiving_location_labels_include_room_and_floor(
     locations = list(field.queryset)
     with django_assert_num_queries(0):
         labels = {str(node.pk): field.label_from_instance(node) for node in locations}
-    assert labels[str(floor.pk)] == "Wonderland > Room A > B (Floor (Shelf/Rack))"
+    assert labels[str(floor.pk)] == "Wonderland > Room A > B (Shelf/Rack)"
     assert labels[str(location_tree["room"].pk)] == "Wonderland > Room A (Storage Room)"
     assert floor.level == "rack_shelf"
 

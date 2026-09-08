@@ -114,6 +114,24 @@
     // and a Tabulator header-filter column (needs Tabulator's own
     // initialHeaderFilter option, applied before that first request).
     const urlParams = new URLSearchParams(window.location.search);
+    const locationNodes = JSON.parse(document.getElementById("location-filter-nodes")?.textContent || "[]");
+    const switcher = document.querySelector("[data-location-switcher]");
+    const countrySelect = switcher?.querySelector('[name="country"]');
+    const locationSelect = switcher?.querySelector('[name="location"]');
+    const nodeFor = (value) => locationNodes.find((node) => `id:${node.id}` === value || node.id === value);
+    const selectedNode = nodeFor(urlParams.get("location") || urlParams.get("shelf") || urlParams.get("storage_room"));
+    if (selectedNode) urlParams.set("country", selectedNode.country);
+    if (countrySelect && locationSelect) {
+      countrySelect.value = urlParams.get("country") || "";
+      locationSelect.addEventListener("change", () => {
+        const node = nodeFor(locationSelect.value);
+        if (node) countrySelect.value = node.country;
+      });
+      countrySelect.addEventListener("change", () => {
+        // Country selection broadens to all its authorized rooms and shelves.
+        locationSelect.value = "";
+      });
+    }
     if (urlParams.has("product_type") && !urlParams.has("type")) {
       urlParams.set("type", urlParams.get("product_type"));
     }
@@ -197,6 +215,35 @@
     });
     table.on("dataLoading", () => container.classList.add("is-loading"));
     table.on("dataLoaded", () => container.classList.remove("is-loading"));
+
+    let syncingLocation = false;
+    let previousLocationFilters = Object.fromEntries(initialHeaderFilter.map((f) => [f.field, f.value]));
+    table.on("dataFiltering", () => {
+      if (syncingLocation || !locationNodes.length) return;
+      const current = Object.fromEntries(table.getHeaderFilters().map((f) => [f.field, f.value]));
+      const changed = ["shelf", "storage_room", "country"].find((key) =>
+        (current[key] || "") !== (previousLocationFilters[key] || ""));
+      if (!changed) return;
+      syncingLocation = true;
+      // A fresh header selection replaces an older location shortcut constraint.
+      urlParams.delete("location");
+      const address = new URL(window.location.href);
+      address.searchParams.delete("location");
+      window.history.replaceState(null, "", address);
+      if (locationSelect) locationSelect.value = "";
+      const node = nodeFor(current[changed]);
+      if (changed === "country") {
+        table.setHeaderFilterValue("storage_room", "");
+        table.setHeaderFilterValue("shelf", "");
+      } else if (node) {
+        table.setHeaderFilterValue("country", node.country);
+        table.setHeaderFilterValue("storage_room", changed === "shelf" ? node.room : current.storage_room);
+        if (changed === "storage_room") table.setHeaderFilterValue("shelf", "");
+      }
+      previousLocationFilters = Object.fromEntries(table.getHeaderFilters().map((f) => [f.field, f.value]));
+      if (countrySelect) countrySelect.value = previousLocationFilters.country || "";
+      syncingLocation = false;
+    });
 
     table.on("tableBuilt", () => {
       const fallback = document.querySelector(options.fallbackSelector);

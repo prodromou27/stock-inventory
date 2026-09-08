@@ -179,7 +179,7 @@ def test_excel_template_has_lifecycle_choices_and_instructions():
     assert len(sheet.data_validations.dataValidation) == 3
     assert "In Use" in sheet.data_validations.dataValidation[0].formula1
     assert sheet.max_column == len(services.parsing.COLUMNS)
-    assert sheet.cell(1, 7).value == "Floor (Shelf/Rack)"
+    assert sheet.cell(1, 7).value == "Shelf/Rack"
     assert (
         services.parsing._map_headers([cell.value for cell in sheet[1]])["2nd floor Location"] == 6
     )

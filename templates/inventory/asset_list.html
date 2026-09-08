@@ -22,17 +22,8 @@
     <a class="btn btn--sm" href="?status=in_use">In Use</a>
     <a class="btn btn--sm" href="?status=delivered">Delivered</a>
     <a class="btn btn--sm" href="{% url 'inventory:asset_list' %}?view=all">All items / clear filters</a>
-    <form method="get" class="room-switcher">
-      {% if filters.in_storage %}<input type="hidden" name="in_storage" value="1">{% endif %}
-      {% if selected_status %}<input type="hidden" name="status" value="{{ selected_status }}">{% endif %}
-      <label class="sr-only" for="inventory-room">Room or shelf</label>
-      <select name="location" id="inventory-room">
-        <option value="">All accessible locations</option>
-        {% for location in locations %}<option value="{{ location.pk }}" {% if filters.location == location.pk|stringformat:"s" %}selected{% endif %}>{{ location.name }} ({{ location.get_level_display }})</option>{% endfor %}
-      </select>
-      <button class="btn btn--sm" type="submit">View location</button>
-    </form>
   </div>
+  {% include "inventory/_location_filters.html" %}
 
   {{ statuses|json_script:"asset-status-choices" }}
   {{ room_filter_choices|json_script:"room-filter-choices" }}
@@ -266,9 +257,9 @@
               return `<a href="${value.transaction_url}">${name}</a> <span class="text-muted">(${value.type_display})</span>`;
             },
           },
-          { title: "Country", field: "country", headerFilter: "input", width: 130, visible: false, headerSort: false },
+          { title: "Country", field: "country", headerFilter: "list", headerFilterParams: { values: Object.fromEntries([["", "All countries"], ...JSON.parse(document.getElementById("country-filter-choices").textContent)]) }, width: 130, visible: false, headerSort: false },
           { title: "Storage Room", field: "storage_room", headerFilter: "list", headerFilterParams: { values: Object.fromEntries([["", "All rooms"], ...JSON.parse(document.getElementById("room-filter-choices").textContent)]) }, width: 190, headerSort: false },
-          { title: "Floor (Shelf/Rack)", field: "shelf", headerFilter: "input", width: 180, visible: false, headerSort: false },
+          { title: "Shelf/Rack", field: "shelf", headerFilter: "list", headerFilterParams: { values: Object.fromEntries([["", "All shelves/racks"], ...JSON.parse(document.getElementById("shelf-filter-choices").textContent)]) }, width: 180, visible: false, headerSort: false },
           { title: "Project Reference", field: "project_reference", headerFilter: "input", width: 160, editor: canEditGrid ? "input" : false, cssClass: canEditGrid ? "grid-cell-editable" : "" },
           { title: "Final Customer", field: "final_customer", headerFilter: "input", width: 160, editor: canEditGrid ? "input" : false, cssClass: canEditGrid ? "grid-cell-editable" : "" },
           { title: "Supplier", field: "supplier", headerFilter: "input", width: 140, visible: false, editor: canEditGrid ? "input" : false, cssClass: canEditGrid ? "grid-cell-editable" : "" },

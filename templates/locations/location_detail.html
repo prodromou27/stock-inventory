@@ -26,6 +26,12 @@
     {% endif %}
   </div>
 
+  <div class="form-actions">
+    <a class="btn btn--primary" href="{% url 'inventory:asset_list' %}?location={{ location.pk }}">View individual items</a>
+    <a class="btn" href="{% url 'inventory:balance_list' %}?location={{ location.pk }}">View quantity stock</a>
+  </div>
+  <p>Includes stock in all rooms and shelves/racks beneath this location, within your access permissions.</p>
+
   <div class="card">
     <dl class="definition-list">
       <dt>Level</dt><dd>{{ location.get_level_display }}</dd>

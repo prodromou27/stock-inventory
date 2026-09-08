@@ -101,7 +101,7 @@ def require_room_or_below(location):
     if location.level not in ROOM_OR_BELOW_LEVELS:
         raise ValidationError(
             f"'{location}' is a {location.get_level_display()}, not a storage location. "
-            "Select a Storage Room (or a Floor (Shelf/Rack) within one)."
+            "Select a Storage Room (or a Shelf/Rack within one)."
         )
 
 

@@ -950,7 +950,7 @@ def build_template_xlsx():
         "Status: In Stock, Assigned, Delivered, or In Use. "
         "Blank LOCATION without Status requires preview review.",
         "In Stock: LOCATION is the current storage room. "
-        "Floor (Shelf/Rack) is the optional sub-location.",
+        "Shelf/Rack is the optional sub-location.",
         "Assigned: Employee, Movement Date and Source Room are required.",
         "Delivered: FINAL CUSTOMER, Project Ref. #, Movement Date and Source Room are required.",
         "In Use: Internal Stock Purpose, unit Tracking Method, Installation Notes, "

@@ -19,13 +19,41 @@ def inventory_location_choices(user):
     from apps.locations.models import Location, order_by_hierarchy
     from apps.locations.scoping import accessible_locations
 
-    locations = list(order_by_hierarchy(accessible_locations(user).select_related("parent")))
+    locations = list(
+        order_by_hierarchy(accessible_locations(user).select_related("parent__parent"))
+    )
     rooms = [
         [f"id:{room.pk}", f"{room.parent.name} / {room.name}"]
         for room in locations
         if room.level == Location.Level.STORAGE_ROOM
     ]
-    return {"locations": locations, "room_filter_choices": rooms}
+    countries = {}
+    nodes = []
+    shelves = []
+    for location in locations:
+        ancestors = [*location.ancestors(), location]
+        country = next(node for node in ancestors if node.level == Location.Level.COUNTRY)
+        room = next((node for node in ancestors if node.level == Location.Level.STORAGE_ROOM), None)
+        countries[str(country.pk)] = country.name
+        label = " / ".join(node.name for node in ancestors)
+        nodes.append(
+            {
+                "id": str(location.pk),
+                "country": f"id:{country.pk}",
+                "room": f"id:{room.pk}" if room else "",
+                "level": location.level,
+                "label": f"{label} ({location.get_level_display()})",
+            }
+        )
+        if location.level == Location.Level.RACK_SHELF:
+            shelves.append([f"id:{location.pk}", label])
+    return {
+        "locations": locations,
+        "room_filter_choices": rooms,
+        "country_filter_choices": [[f"id:{pk}", name] for pk, name in countries.items()],
+        "shelf_filter_choices": shelves,
+        "location_filter_nodes": nodes,
+    }
 
 
 # The one place that knows which grids exist — SavedGridView.grid_key is a

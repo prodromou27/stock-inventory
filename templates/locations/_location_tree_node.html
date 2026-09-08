@@ -2,7 +2,8 @@
   <details {% if node.children %}open{% endif %}>
     <summary>
       <a href="{{ node.location.get_absolute_url }}">{{ node.location.name }}</a>
-      <span class="location-tree__level">{{ node.location.get_level_display }}</span>
+      <span class="location-tree__level">({{ node.location.get_level_display }})</span>
+      <a href="{% url 'inventory:asset_list' %}?location={{ node.location.pk }}" aria-label="View stock in {{ node.location.name }}">View stock</a>
       {% if not node.location.is_active %}
         <span class="badge badge--neutral">Inactive</span>
       {% endif %}

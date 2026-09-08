@@ -11,7 +11,7 @@ from .fields import LtreeField
 class LocationLevel(models.TextChoices):
     COUNTRY = "country", "Country"
     STORAGE_ROOM = "storage_room", "Storage Room"
-    RACK_SHELF = "rack_shelf", "Floor (Shelf/Rack)"
+    RACK_SHELF = "rack_shelf", "Shelf/Rack"
 
 
 class Location(UUIDPrimaryKeyModel, TimestampedModel):

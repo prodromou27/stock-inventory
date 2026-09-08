@@ -13,6 +13,7 @@
   </div>
 
   {% include "inventory/_inventory_tabs.html" %}
+  {% include "inventory/_location_filters.html" %}
 
   {{ stock_purposes|json_script:"balance-stock-purpose-choices" }}
   {{ room_filter_choices|json_script:"room-filter-choices" }}
@@ -137,9 +138,9 @@
           { title: "Model", field: "model", headerFilter: "input", formatter: G.linkFormatter, minWidth: 160 },
           { title: "SKU", field: "sku", headerFilter: "input", width: 120, visible: false },
           { title: "Location", field: "location", width: 170 },
-          { title: "Country", field: "country", headerFilter: "input", width: 130, visible: false },
+          { title: "Country", field: "country", headerFilter: "list", headerFilterParams: { values: Object.fromEntries([["", "All countries"], ...JSON.parse(document.getElementById("country-filter-choices").textContent)]) }, width: 130, visible: false },
           { title: "Storage Room", field: "storage_room", headerFilter: "list", headerFilterParams: { values: Object.fromEntries([["", "All rooms"], ...JSON.parse(document.getElementById("room-filter-choices").textContent)]) }, width: 190, headerSort: false },
-          { title: "Floor (Shelf/Rack)", field: "shelf", headerFilter: "input", width: 180, visible: false, headerSort: false },
+          { title: "Shelf/Rack", field: "shelf", headerFilter: "list", headerFilterParams: { values: Object.fromEntries([["", "All shelves/racks"], ...JSON.parse(document.getElementById("shelf-filter-choices").textContent)]) }, width: 180, visible: false, headerSort: false },
           {
             title: "Stock Purpose", field: "stock_purpose", width: 130, displayField: "stock_purpose_display",
             headerFilter: "list",

@@ -4,6 +4,8 @@ already restricted the queryset to. Kept out of views.py so it's reusable
 across the inventory list screens and the reporting app.
 """
 
+from uuid import UUID
+
 from django.db.models import Count, Exists, OuterRef, Q
 
 from apps.core.dates import parse_date_param
@@ -36,9 +38,7 @@ def _filter_by_location(queryset, params, *, location_field):
     ):
         if name := _get(params, key):
             match = {"name__icontains": name}
-            if key == "storage_room" and name.startswith("id:"):
-                from uuid import UUID
-
+            if name.startswith("id:"):
                 try:
                     match = {"pk": UUID(name[3:])}
                 except ValueError:
@@ -55,6 +55,10 @@ def _filter_by_location(queryset, params, *, location_field):
     location_id = _get(params, "location")
     if not location_id:
         return queryset
+    try:
+        location_id = UUID(location_id)
+    except ValueError:
+        return queryset.none()
     location = Location.objects.filter(pk=location_id).first()
     if location is None:
         return queryset.none()
