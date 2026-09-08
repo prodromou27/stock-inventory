@@ -175,7 +175,8 @@
       dataSendParams: { page: "page", size: "size" },
       layout: "fitDataStretch",
       height: options.height || "70vh",
-      placeholder: "No results — try widening your filters.",
+      placeholder: options.placeholder || "No results — try widening your filters.",
+      movableColumns: true,
       columns: options.columns,
       initialSort: options.initialSort || [],
       initialHeaderFilter,
@@ -659,10 +660,16 @@
     const toggle = document.querySelector(options.toggleSelector);
     if (!panel || !toggle) return;
 
-    options.table.on("tableBuilt", () => {
-      options.table.getColumns().forEach((column) => {
+    function renderColumns() {
+      panel.replaceChildren();
+      const hint = document.createElement("p");
+      hint.textContent = "Drag headers or use arrows to arrange columns. Save view to keep your layout; administrators can share it.";
+      panel.appendChild(hint);
+      const columns = options.table.getColumns().filter((column) => column.getField() && !column.getDefinition().frozen);
+      columns.forEach((column, index) => {
         const field = column.getField();
         if (!field) return;
+        const row = document.createElement("div");
         const label = document.createElement("label");
         const checkbox = document.createElement("input");
         checkbox.type = "checkbox";
@@ -670,11 +677,29 @@
         checkbox.addEventListener("change", () => (checkbox.checked ? column.show() : column.hide()));
         label.appendChild(checkbox);
         label.append(column.getDefinition().title);
-        panel.appendChild(label);
+        row.appendChild(label);
+        [-1, 1].forEach((direction) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "btn btn--sm";
+          button.textContent = direction < 0 ? "↑" : "↓";
+          button.setAttribute("aria-label", `Move ${column.getDefinition().title} ${direction < 0 ? "left" : "right"}`);
+          button.disabled = !columns[index + direction];
+          button.addEventListener("click", () => {
+            options.table.moveColumn(field, columns[index + direction].getField(), direction > 0);
+            renderColumns();
+            const buttons = panel.querySelectorAll("button");
+            buttons[(index + direction) * 2 + (direction > 0 ? 1 : 0)]?.focus();
+          });
+          row.appendChild(button);
+        });
+        panel.appendChild(row);
       });
-    });
+    }
+    options.table.on("tableBuilt", renderColumns);
     toggle.addEventListener("click", () => {
       const expanded = toggle.getAttribute("aria-expanded") === "true";
+      if (!expanded) renderColumns();
       toggle.setAttribute("aria-expanded", String(!expanded));
       panel.hidden = expanded;
     });

@@ -12,6 +12,38 @@ from apps.inventory.services.receipts import receive_stock
 pytestmark = pytest.mark.django_db
 
 
+@pytest.mark.parametrize("page", ["asset_list", "balance_list"])
+def test_room_dropdown_is_scoped(
+    client, stock_manager, stock_manager_with_room_access, location_tree, page
+):
+    client.force_login(stock_manager_with_room_access)
+    response = client.get(reverse(f"inventory:{page}"))
+    assert [f"id:{location_tree['room'].pk}", "Wonderland / Room A"] in response.context[
+        "room_filter_choices"
+    ]
+    from apps.accounts.models import UserLocationAccess
+
+    UserLocationAccess.objects.filter(user=stock_manager).delete()
+    client.force_login(stock_manager)
+    assert client.get(reverse(f"inventory:{page}")).context["room_filter_choices"] == []
+
+
+def test_room_dropdown_matches_exact_room_and_rejects_invalid_id(
+    client, stock_manager_with_room_access, room_asset, location_tree
+):
+    client.force_login(stock_manager_with_room_access)
+    url = reverse("inventory:asset_grid_data")
+    assert (
+        client.get(url, {"storage_room": f"id:{location_tree['room'].pk}"}).json()["total_count"]
+        == 1
+    )
+    assert client.get(url, {"storage_room": "id:invalid"}).json()["total_count"] == 0
+    assert (
+        client.get(url, {"storage_room": f"id:{location_tree['country'].pk}"}).json()["total_count"]
+        == 0
+    )
+
+
 @pytest.fixture
 def room_asset(administrator, unit_product, location_tree):
     receive_stock(

@@ -35,11 +35,19 @@ def _filter_by_location(queryset, params, *, location_field):
         ("shelf", Location.Level.RACK_SHELF),
     ):
         if name := _get(params, key):
+            match = {"name__icontains": name}
+            if key == "storage_room" and name.startswith("id:"):
+                from uuid import UUID
+
+                try:
+                    match = {"pk": UUID(name[3:])}
+                except ValueError:
+                    return queryset.none()
             queryset = queryset.filter(
                 Exists(
                     Location.objects.filter(
                         level=level,
-                        name__icontains=name,
+                        **match,
                         path__ancestor_or_self=OuterRef(f"{location_field}__path"),
                     )
                 )

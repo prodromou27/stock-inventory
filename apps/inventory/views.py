@@ -101,6 +101,7 @@ from .services.grid_views import (
     create_saved_grid_view,
     delete_saved_grid_view,
     list_saved_grid_views,
+    room_filter_choices,
     update_saved_grid_view,
 )
 from .services.purpose import reclassify_quantity_purpose, reclassify_unit_purpose
@@ -909,6 +910,7 @@ class UnitAssetListView(LoginRequiredMixin, CSVExportMixin, SortableListMixin, L
         context = super().get_context_data(**kwargs)
         context["query"] = self.request.GET.get("q", "")
         context["selected_status"] = self.request.GET.get("status", "")
+        context["room_filter_choices"] = room_filter_choices(self.request.user)
         context["statuses"] = UnitStatus.choices
         context["stock_purposes"] = StockPurpose.choices
         context["locations"] = order_by_hierarchy(accessible_locations(self.request.user))
@@ -1524,6 +1526,7 @@ class StockBalanceListView(LoginRequiredMixin, CSVExportMixin, SortableListMixin
         context["locations"] = order_by_hierarchy(accessible_locations(self.request.user))
         context["stock_purposes"] = StockPurpose.choices
         context["filters"] = self.request.GET
+        context["room_filter_choices"] = room_filter_choices(self.request.user)
         return context
 
 

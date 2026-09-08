@@ -15,6 +15,8 @@
   {% include "inventory/_inventory_tabs.html" %}
 
   {{ stock_purposes|json_script:"balance-stock-purpose-choices" }}
+  {{ room_filter_choices|json_script:"room-filter-choices" }}
+  <p class="help-text">Quantity stock means items counted together, such as 50 pens or 20 cables, rather than tracked individually. Receive a quantity-tracked product to populate this page. Items tracked individually remain under Individual items, even when their serial number is blank.</p>
 
   <div class="inventory-grid is-hidden">
     <div class="grid-toolbar">
@@ -105,7 +107,7 @@
         </nav>
       {% endif %}
     {% else %}
-      <p class="empty-state">No stock balances found in your authorized scope.</p>
+      <p class="empty-state">No quantity stock matches your filters and access. Individually tracked items appear under Individual items instead.</p>
     {% endif %}
   </div>
 {% endblock %}
@@ -128,14 +130,15 @@
         pageSize: 50,
         initialSort: [{ field: "brand", dir: "asc" }],
         rowSelectable: false,
+        placeholder: "No quantity stock matches your filters and access. Check Individual items for separately tracked stock.",
         columns: [
           { title: "Type", field: "product_type", headerFilter: "input", width: 130 },
           { title: "Brand", field: "brand", headerFilter: "input", width: 140 },
           { title: "Model", field: "model", headerFilter: "input", formatter: G.linkFormatter, minWidth: 160 },
           { title: "SKU", field: "sku", headerFilter: "input", width: 120, visible: false },
-          { title: "Location", field: "location", headerFilter: "input", width: 170 },
+          { title: "Location", field: "location", width: 170 },
           { title: "Country", field: "country", headerFilter: "input", width: 130, visible: false },
-          { title: "Storage Room", field: "storage_room", headerFilter: "input", width: 150, visible: false },
+          { title: "Storage Room", field: "storage_room", headerFilter: "list", headerFilterParams: { values: Object.fromEntries([["", "All rooms"], ...JSON.parse(document.getElementById("room-filter-choices").textContent)]) }, width: 190, headerSort: false },
           { title: "Shelf", field: "shelf", headerFilter: "input", width: 110, visible: false },
           {
             title: "Stock Purpose", field: "stock_purpose", width: 130, displayField: "stock_purpose_display",

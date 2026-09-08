@@ -20,11 +20,18 @@ pytestmark = [
 
 
 def test_stock_manager_room_filters_and_delivery(
-    live_server, stock_manager_with_room_access, unit_product, location_tree
+    live_server, stock_manager_with_room_access, unit_product, quantity_product, location_tree
 ):
     from playwright.sync_api import expect, sync_playwright
 
     manager = stock_manager_with_room_access
+    receive_stock(
+        user=manager,
+        product=quantity_product,
+        location=location_tree["room"],
+        occurred_at=date.today(),
+        quantity=50,
+    )
     for serial in ["ROOM-STOCK", "DELIVERED-HISTORY"]:
         receive_stock(
             user=manager,
@@ -85,6 +92,24 @@ def test_stock_manager_room_filters_and_delivery(
         expect(page.locator("#asset-grid-saved-views option")).to_have_count(2)
         expect(rows).to_contain_text("ROOM-STOCK")
         page.screenshot(path=str(screenshots / "workspace-room-stock.png"))
+        room_filter = page.locator(
+            '[tabulator-field="storage_room"] .tabulator-header-filter input'
+        )
+        room_filter.click()
+        page.get_by_text("Wonderland / Room A", exact=True).click()
+        expect(page.locator("#asset-grid-export-filtered")).to_have_attribute(
+            "href", re.compile("storage_room=id%3A")
+        )
+        expect(rows).to_have_count(1)
+        page.locator("details").filter(has=page.locator("#asset-grid-columns-toggle")).locator(
+            "summary"
+        ).click()
+        page.locator("#asset-grid-columns-toggle").click()
+        page.get_by_role("button", name="Move Brand right", exact=True).click()
+        headers = page.locator("#asset-grid-table .tabulator-headers > .tabulator-col")
+        fields = headers.evaluate_all("els => els.map(el => el.getAttribute('tabulator-field'))")
+        assert fields.index("model") < fields.index("brand")
+        page.locator("#asset-grid-columns-toggle").click()
         url = live_server.url + reverse("inventory:asset_list")
         page.goto(url + "?type=Firewall&q=ROOM-STOCK&location=" + str(location_tree["room"].pk))
         expect(page.locator("#asset-grid-search")).to_have_value("ROOM-STOCK")
@@ -116,6 +141,18 @@ def test_stock_manager_room_filters_and_delivery(
             "settings:hub",
         ]:
             page.goto(live_server.url + reverse(route))
+            if route == "inventory:balance_list":
+                balance_rows = page.locator("#balance-grid-table .tabulator-row")
+                expect(balance_rows).to_have_count(1)
+                expect(balance_rows.locator('[tabulator-field="on_hand"]')).to_have_text("50")
+                page.locator(
+                    '[tabulator-field="storage_room"] .tabulator-header-filter input'
+                ).click()
+                page.get_by_text("Wonderland / Room A", exact=True).click()
+                expect(page.locator("#balance-grid-export-filtered")).to_have_attribute(
+                    "href", re.compile("storage_room=id%3A")
+                )
+                expect(balance_rows).to_have_count(1)
             page.screenshot(path=str(screenshots / f"workspace-{route.replace(':', '-')}.png"))
         page.goto(live_server.url + reverse("core:home"))
         page.locator("#theme-toggle").click()

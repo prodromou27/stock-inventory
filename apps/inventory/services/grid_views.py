@@ -13,6 +13,21 @@ from ..models import SavedGridView
 # anything larger is either abuse or a client bug, not a real saved view.
 MAX_STATE_BYTES = 20_000
 
+
+def room_filter_choices(user):
+    """Only offer authorized rooms; retain inactive rooms for historical stock."""
+    from apps.locations.models import Location
+    from apps.locations.scoping import accessible_locations
+
+    return [
+        [f"id:{room.pk}", f"{room.parent.name} / {room.name}"]
+        for room in accessible_locations(user)
+        .filter(level=Location.Level.STORAGE_ROOM)
+        .select_related("parent")
+        .order_by("parent__name", "name", "pk")
+    ]
+
+
 # The one place that knows which grids exist — SavedGridView.grid_key is a
 # plain, unconstrained CharField precisely so a new grid (like "products",
 # added here after templates/catalog/product_list.html was already calling

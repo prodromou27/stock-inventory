@@ -34,6 +34,7 @@
   </div>
 
   {{ statuses|json_script:"asset-status-choices" }}
+  {{ room_filter_choices|json_script:"room-filter-choices" }}
   {{ stock_purposes|json_script:"asset-stock-purpose-choices" }}
 
   <div class="inventory-grid is-hidden">
@@ -264,7 +265,7 @@
             },
           },
           { title: "Country", field: "country", headerFilter: "input", width: 130, visible: false, headerSort: false },
-          { title: "Storage Room", field: "storage_room", headerFilter: "input", width: 150, headerSort: false },
+          { title: "Storage Room", field: "storage_room", headerFilter: "list", headerFilterParams: { values: Object.fromEntries([["", "All rooms"], ...JSON.parse(document.getElementById("room-filter-choices").textContent)]) }, width: 190, headerSort: false },
           { title: "Shelf", field: "shelf", headerFilter: "input", width: 110, visible: false, headerSort: false },
           { title: "Project Reference", field: "project_reference", headerFilter: "input", width: 160, editor: canEditGrid ? "input" : false, cssClass: canEditGrid ? "grid-cell-editable" : "" },
           { title: "Final Customer", field: "final_customer", headerFilter: "input", width: 160, editor: canEditGrid ? "input" : false, cssClass: canEditGrid ? "grid-cell-editable" : "" },
