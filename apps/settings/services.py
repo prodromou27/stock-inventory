@@ -35,11 +35,22 @@ def sniff_logo_content_type(file_obj):
     return None
 
 
+_LOGO_EXTENSION_BY_CONTENT_TYPE = {"image/png": ".png", "image/jpeg": ".jpg"}
+
+
 def _validate_logo(logo_file):
+    """Also pins logo_file.name's extension to match the sniffed content
+    type, not whatever the client sent — otherwise an Administrator could
+    upload a real PNG/JPEG (passing the magic-byte check) named
+    "logo.html", which the media server would then serve as HTML from the
+    app's own origin.
+    """
     if logo_file.size > MAX_LOGO_SIZE_BYTES:
         raise ValidationError("Logo file exceeds the 2 MB size limit.")
-    if sniff_logo_content_type(logo_file) is None:
+    content_type = sniff_logo_content_type(logo_file)
+    if content_type is None:
         raise ValidationError("Logo must be a PNG or JPEG image.")
+    logo_file.name = "logo" + _LOGO_EXTENSION_BY_CONTENT_TYPE[content_type]
 
 
 @transaction.atomic

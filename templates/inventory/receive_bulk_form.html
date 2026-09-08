@@ -152,11 +152,26 @@
         "notes",
       ];
 
+      // Tabulator assigns a string formatter's return value via innerHTML,
+      // so the "not a known choice" fallback below — the raw cell value,
+      // which for a pasted/typed override can be arbitrary operator
+      // input — must be escaped before it's returned, the same as
+      // static/js/inventory_grid.js's own escapeHtml (this page builds its
+      // own standalone Tabulator instance rather than going through that
+      // shared module, so it doesn't have access to that copy).
+      function escapeHtml(text) {
+        const div = document.createElement("div");
+        div.textContent = text == null ? "" : String(text);
+        return div.innerHTML;
+      }
+
       function lookupFormatter(map) {
         return (cell) => {
           const value = cell.getValue();
           if (value === null || value === undefined || value === "") return "";
-          return Object.prototype.hasOwnProperty.call(map, value) ? map[value] : value;
+          return Object.prototype.hasOwnProperty.call(map, value)
+            ? map[value]
+            : escapeHtml(value);
         };
       }
 
@@ -300,10 +315,23 @@
         });
       });
       if (rowErrors.length) {
+        // Built via DOM nodes/textContent, not innerHTML — a choice
+        // field's "invalid choice" error message embeds the raw
+        // submitted value verbatim (Django's own default wording), so
+        // this is user-controlled text that must never be parsed as
+        // markup.
         const box = document.createElement("div");
         box.className = "messages__item messages__item--error";
-        box.innerHTML = "<p>Fix the following and submit again:</p><ul>" +
-          rowErrors.map((m) => `<li>${m}</li>`).join("") + "</ul>";
+        const intro = document.createElement("p");
+        intro.textContent = "Fix the following and submit again:";
+        const list = document.createElement("ul");
+        rowErrors.forEach((message) => {
+          const item = document.createElement("li");
+          item.textContent = message;
+          list.appendChild(item);
+        });
+        box.appendChild(intro);
+        box.appendChild(list);
         errorsContainer.appendChild(box);
       }
 
