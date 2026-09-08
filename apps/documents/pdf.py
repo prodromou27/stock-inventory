@@ -75,9 +75,11 @@ def build_document_context(*, transaction, document_number):
 
     return {
         "document_number": document_number,
+        "document_type": transaction.movement_type,
         "transaction_number": transaction.transaction_number,
         "movement_type_display": transaction.get_movement_type_display(),
         "occurred_at": transaction.occurred_at.isoformat(),
+        "document_date_display": f"{transaction.occurred_at.day} {transaction.occurred_at:%B %Y}",
         "employee_name": transaction.employee_name,
         "final_customer": transaction.final_customer,
         "project_reference": transaction.project_reference,
@@ -113,9 +115,11 @@ def sample_document_context():
     """
     return {
         "document_number": "DOC-000123",
+        "document_type": "delivery",
         "transaction_number": "TXN-000456",
         "movement_type_display": "Customer delivery",
         "occurred_at": "2026-01-15",
+        "document_date_display": "15 January 2026",
         "employee_name": "",
         "final_customer": "Acme Corp",
         "project_reference": "PRJ-0001",
@@ -185,6 +189,12 @@ def render_styleable_source(*, logo_position, accent_color, font_choice, page_ma
     # Freeze the section markup into the saved source/version, rather than
     # allowing later packaged partial edits to change an existing template.
     section_source = "{% for section_key in section_order %}"
+    section_source += (
+        "{% for block in custom_blocks %}{% if block.before == section_key %}"
+        '<div class="custom-text-block" style="text-align:{{ block.alignment }};'
+        'margin:1em 0;">{{ block.text|linebreaksbr }}</div>'
+        "{% endif %}{% endfor %}"
+    )
     for key, _ in SECTIONS:
         section_source += '{% if section_key == "' + key + '" %}'
         section_source += django_engine.get_template(

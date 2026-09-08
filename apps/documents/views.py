@@ -374,6 +374,8 @@ class DocumentTemplateEditView(LoginRequiredMixin, RoleRequiredMixin, View):
         return initial
 
     def _render(self, request, document_type, form, template_obj):
+        from .gallery import signoff_preset
+
         return render(
             request,
             self.template_name,
@@ -384,6 +386,7 @@ class DocumentTemplateEditView(LoginRequiredMixin, RoleRequiredMixin, View):
                 "template_obj": template_obj,
                 "editor_columns": REPORT_COLUMNS,
                 "editor_sections": SECTIONS,
+                "signoff_preset": signoff_preset(document_type),
                 "other_document_types": [
                     (value, label)
                     for value, label in DocumentType.choices

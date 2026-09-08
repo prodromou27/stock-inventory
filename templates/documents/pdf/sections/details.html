@@ -1,3 +1,9 @@
+{% if layout_variant == "acceptance" %}
+<div class="acceptance-introduction">
+  <span data-editor-field="notes_text">{% if notes_text %}{{ notes_text|linebreaksbr }}{% else %}I hereby confirm that the product listed below has been received/delivered to us in good condition according to the proposal with reference number:{% endif %}</span>
+  <strong>{{ project_reference }}</strong>
+</div>
+{% else %}
 <div class="meta">
     <p>Document number: {{ document_number }}</p>
     <p>Transaction number: {{ transaction_number }}</p>
@@ -7,3 +13,4 @@
     {% if project_reference %}<p>Project reference: {{ project_reference }}</p>{% endif %}
     <p>Source location(s): {% if source_locations %}{{ source_locations|join:", " }}{% else %}—{% endif %}</p>
   </div>
+{% endif %}

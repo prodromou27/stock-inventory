@@ -47,6 +47,16 @@
   .signature-line { border-bottom: 1px solid #000; height: 2.5em; }
   .signature-caption { margin-top: 0.3em; font-size: 9pt; }
   :root { --section-gap: {{ section_spacing_em }}; }
+  .acceptance-letterhead { min-height: 3.1cm; position: relative; }
+  .acceptance-letterhead .letterhead__logo { max-width: 6cm; max-height: 1.5cm; }
+  .acceptance-reference { position: absolute; right: 0; top: 1.3cm; min-width: 3cm;
+    padding: .2cm; border: 1px solid __ACCENT_COLOR__; color: __ACCENT_COLOR__;
+    text-align: center; font-weight: bold; }
+  .acceptance-date { text-align: right; margin: .8cm 0 1cm; }
+  .acceptance-title { text-align: center; margin-bottom: .9cm; }
+  .acceptance-introduction { line-height: 1.9; margin-bottom: 1.2cm; }
+  .acceptance-customer { margin-top: 1cm; }
+  .acceptance-signatures p { margin: 1cm 0; }
 </style>
 </head>
 <body>

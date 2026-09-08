@@ -1,4 +1,12 @@
 {% if show_signature_block %}
+  {% if layout_variant == "acceptance" %}
+    <div class="acceptance-signatures">
+      <p><strong><span data-editor-field="acceptance_signature_label">{{ acceptance_signature_label|default:"Signature" }}</span>: ........................................</strong></p>
+      <p><strong><span data-editor-field="acceptance_name_label">{{ acceptance_name_label|default:"Name" }}</span>: .............................................</strong></p>
+      <p><strong><span data-editor-field="acceptance_position_label">{{ acceptance_position_label|default:"Position" }}</span>: ..........................................</strong></p>
+      <p><strong><span data-editor-field="acceptance_date_label">{{ acceptance_date_label|default:"Date" }}</span>: ................................................</strong></p>
+    </div>
+  {% else %}
     <table class="signatures">
       <tr>
         <td>
@@ -12,3 +20,4 @@
       </tr>
     </table>
   {% endif %}
+{% endif %}

@@ -31,8 +31,8 @@
   {% endif %}
 
   {% if not template_obj %}
-    <div class="card">
-      <h2>Start from a layout</h2>
+    <details class="card">
+      <summary>Start from a layout (optional)</summary>
       <p class="text-muted">Pick an approved starting point instead of configuring everything below from scratch — you can freely customize it afterward. Or skip this and start from the packaged default using the form below.</p>
       <div class="starter-gallery">
         {% for key, preset in starter_templates.items %}
@@ -46,14 +46,20 @@
           </form>
         {% endfor %}
       </div>
-    </div>
+    </details>
   {% endif %}
 
   <div class="template-editor-layout">
     <div>
       <form method="post" enctype="multipart/form-data" id="template-style-form" data-preview-url="{% url 'documents:template_preview' document_type %}">
         {% csrf_token %}
+        <p class="messages__item messages__item--info">No code needed. Edit wording on the paper preview, or use the controls below. Drag sections/columns to reorder them. Transaction values are read-only sample data.</p>
+        <div id="template-designer-navigation" class="form-actions" aria-label="Designer controls"></div>
+        <p id="template-designer-mode" role="status"></p>
         <div class="card">
+          {% include "_form_field.html" with field=form.layout_variant %}
+          {% include "_form_field.html" with field=form.reference_caption %}
+          <button type="button" class="btn btn--sm" id="template-acceptance-preset">Apply {{ document_type_label }} sign-off layout</button>
           <p><label for="{{ form.logo.id_for_label }}">{{ form.logo.label }}</label></p>
           <div class="dropzone" data-dropzone>
             <img class="dropzone__preview" data-dropzone-preview alt="Logo preview"
@@ -177,20 +183,32 @@
             <h3>Line-item columns</h3>
             <div id="column-layout"></div>
             <h3>Typography and signatures</h3>
+            <h3>Custom text blocks</h3>
+            <p>Add instructions, declarations, contact details or other wording anywhere between document sections. No HTML or Django syntax is needed.</p>
+            {{ form.custom_blocks }}
+            {{ form.custom_blocks.errors }}
+            <div id="template-text-blocks"></div>
+            <button type="button" class="btn btn--sm" id="template-add-text-block">Add text block</button>
             {% include "_form_field.html" with field=form.body_font_size %}
             {% include "_form_field.html" with field=form.heading_font_size %}
             {% include "_form_field.html" with field=form.table_font_size %}
             {% include "_form_field.html" with field=form.table_cell_padding %}
             {% include "_form_field.html" with field=form.signature_left_label %}
             {% include "_form_field.html" with field=form.signature_right_label %}
+            <h3>Sign-off field labels</h3>
+            {% include "_form_field.html" with field=form.acceptance_signature_label %}
+            {% include "_form_field.html" with field=form.acceptance_name_label %}
+            {% include "_form_field.html" with field=form.acceptance_position_label %}
+            {% include "_form_field.html" with field=form.acceptance_date_label %}
           </div>
         </details>
         <details class="card template-editor__advanced" {% if form.custom_html_enabled.value %}open{% endif %}>
           <summary>
-            <span>Raw HTML/CSS</span>
-            <span class="text-muted">Full layout control, beyond the structured options above</span>
+            <span>Developer source (optional)</span>
+            <span class="text-muted">For existing coded templates; not needed for visual editing</span>
           </summary>
           <div class="template-editor__advanced-content">
+            <p>Source templates cannot be converted automatically into visual blocks. Switching to visual mode uses the structured layout; the existing source remains in version history after saving.</p>
             <p>
               <label>{{ form.custom_html_enabled }} {{ form.custom_html_enabled.label }}</label>
               <span class="helptext">{{ form.custom_html_enabled.help_text }}</span>
@@ -330,5 +348,6 @@
 {% block extra_scripts %}
   {{ editor_columns|json_script:"editor-columns" }}
   {{ editor_sections|json_script:"editor-sections" }}
+  {{ signoff_preset|json_script:"signoff-preset" }}
   <script src="{% static 'js/document_editor.js' %}" defer></script>
 {% endblock %}

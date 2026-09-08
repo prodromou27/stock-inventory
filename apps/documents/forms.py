@@ -161,7 +161,7 @@ class DocumentTemplateStyleForm(forms.Form):
         label="Column order (optional)",
         help_text='Comma-separated column keys, e.g. "serial,brand,model,quantity" — '
         f"valid keys: {', '.join(key for key, _ in REPORT_COLUMNS)}. Leave blank for the default "
-        "order. A visual drag-and-drop editor is planned for a later phase.",
+        "order. Use Arrange & columns in the visual designer to change this without typing keys.",
     )
     column_labels = forms.CharField(
         required=False,
@@ -171,6 +171,21 @@ class DocumentTemplateStyleForm(forms.Form):
     )
 
     section_order = forms.CharField(required=False, label="Section order")
+    acceptance_signature_label = forms.CharField(
+        max_length=120, required=False, initial="Signature"
+    )
+    acceptance_name_label = forms.CharField(max_length=120, required=False, initial="Name")
+    acceptance_position_label = forms.CharField(max_length=120, required=False, initial="Position")
+    acceptance_date_label = forms.CharField(max_length=120, required=False, initial="Date")
+    layout_variant = forms.ChoiceField(
+        choices=[("standard", "Standard document"), ("acceptance", "Acceptance / sign-off")],
+        initial="standard",
+        required=False,
+    )
+    reference_caption = forms.CharField(
+        max_length=40, required=False, initial="P.D", label="Document reference box caption"
+    )
+    custom_blocks = forms.JSONField(required=False, widget=forms.HiddenInput(), initial=list)
     body_font_size = forms.IntegerField(required=False, min_value=8, max_value=16, initial=10)
     heading_font_size = forms.IntegerField(required=False, min_value=12, max_value=32, initial=16)
     table_font_size = forms.IntegerField(required=False, min_value=7, max_value=14, initial=9)

@@ -66,6 +66,11 @@ def test_country_room_shelf_controls(live_server, administrator, location_tree, 
         expect(rows).to_have_count(3)
         Path(".qa-screenshots").mkdir(exist_ok=True)
         page.screenshot(path=".qa-screenshots/location-filters-1366.png")
+        country_box = page.locator("#inventory-country").bounding_box()
+        room_box = page.locator("#inventory-room").bounding_box()
+        label_box = page.locator('label[for="inventory-country"]').bounding_box()
+        assert abs(country_box["y"] - room_box["y"]) < 2
+        assert label_box["y"] + label_box["height"] <= country_box["y"]
         page.set_viewport_size({"width": 1440, "height": 900})
         page.screenshot(path=".qa-screenshots/location-filters-1440.png")
         page.goto(live_server.url + reverse("inventory:balance_list") + f"?location={room.pk}")

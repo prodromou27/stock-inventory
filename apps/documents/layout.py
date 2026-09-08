@@ -21,11 +21,25 @@ LAYOUT_DEFAULTS = {
     "table_cell_padding": 4,
     "signature_left_label": "",
     "signature_right_label": "",
+    "custom_blocks": [],
+    "layout_variant": "standard",
+    "reference_caption": "P.D",
+    "acceptance_signature_label": "Signature",
+    "acceptance_name_label": "Name",
+    "acceptance_position_label": "Position",
+    "acceptance_date_label": "Date",
 }
 
 
 def clean_presentation(config):
     result = {key: config.get(key, default) for key, default in LAYOUT_DEFAULTS.items()}
+    result["layout_variant"] = result["layout_variant"] or "standard"
+    if result["layout_variant"] not in ("standard", "acceptance"):
+        raise ValidationError("Choose a supported document layout.")
+    caption = result["reference_caption"] or "P.D"
+    if not isinstance(caption, str) or len(caption) > 40:
+        raise ValidationError("Reference caption must be 40 characters or fewer.")
+    result["reference_caption"] = caption
     order = result["section_order"] or LAYOUT_DEFAULTS["section_order"]
     if not isinstance(order, list) or any(key not in dict(SECTIONS) for key in order):
         raise ValidationError("Unknown document section.")
@@ -44,9 +58,32 @@ def clean_presentation(config):
         if isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum:
             raise ValidationError(f"{key} must be between {minimum} and {maximum}.")
         result[key] = value
-    for key in ("signature_left_label", "signature_right_label"):
+    for key in (
+        "signature_left_label",
+        "signature_right_label",
+        "acceptance_signature_label",
+        "acceptance_name_label",
+        "acceptance_position_label",
+        "acceptance_date_label",
+    ):
         value = result[key] or ""
         if not isinstance(value, str) or len(value) > 120:
             raise ValidationError("Signature labels must be 120 characters or fewer.")
         result[key] = value
+    blocks = result["custom_blocks"] or []
+    if not isinstance(blocks, list) or len(blocks) > 12:
+        raise ValidationError("Use at most 12 custom text blocks.")
+    cleaned_blocks = []
+    for block in blocks:
+        if not isinstance(block, dict):
+            raise ValidationError("Invalid text block.")
+        text = block.get("text", "")
+        before = block.get("before", "signatures")
+        alignment = block.get("alignment", "left")
+        if not isinstance(text, str) or len(text) > 5000:
+            raise ValidationError("Each text block must be 5,000 characters or fewer.")
+        if before not in dict(SECTIONS) or alignment not in ("left", "center", "right"):
+            raise ValidationError("Choose a valid text block position and alignment.")
+        cleaned_blocks.append({"text": text, "before": before, "alignment": alignment})
+    result["custom_blocks"] = cleaned_blocks
     return result

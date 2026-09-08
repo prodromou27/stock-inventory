@@ -12,6 +12,44 @@ pytestmark = [
 ]
 
 
+def test_signoff_design_for_all_document_types(live_server, administrator):
+    from playwright.sync_api import expect, sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch()
+        page = browser.new_page(viewport={"width": 1440, "height": 900})
+        page.on("dialog", lambda dialog: dialog.accept())
+        errors = []
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.goto(live_server.url + reverse("login"))
+        page.locator('[name="username"]').fill(administrator.username)
+        page.locator('[name="password"]').fill("a-strong-test-password-123")
+        page.get_by_role("button", name="Log in").click()
+        page.wait_for_url(live_server.url + "/")
+        for kind, title in [
+            ("delivery", "PRODUCT DELIVERY ACCEPTANCE AND SIGN OFF"),
+            ("assignment", "EQUIPMENT ASSIGNMENT AND ACCEPTANCE"),
+            ("disposal", "EQUIPMENT DISPOSAL CERTIFICATE"),
+        ]:
+            page.goto(live_server.url + reverse("documents:template_edit", args=[kind]))
+            page.locator("#template-acceptance-preset").click()
+            preview = page.locator("#template-preview-frame").content_frame
+            expect(preview.locator("h1")).to_have_text(title)
+            expect(preview.locator("[data-editor-column]")).to_have_count(4)
+            expect(preview.locator(".acceptance-signatures")).to_have_count(1)
+            page.get_by_role("button", name="Save", exact=True).click()
+            expect(page.locator('[name="layout_variant"]')).to_have_value("acceptance")
+            expect(preview.locator("h1")).to_have_text(title)
+            page.evaluate(
+                "window.scrollTo(0, document.querySelector('.template-editor-layout')"
+                ".getBoundingClientRect().top + window.scrollY - 90)"
+            )
+            Path(".qa-screenshots").mkdir(exist_ok=True)
+            page.screenshot(path=f".qa-screenshots/signoff-{kind}.png")
+        assert not errors, errors
+        browser.close()
+
+
 def test_document_editor_browser(live_server, administrator, stock_manager, location_tree):
     from playwright.sync_api import expect, sync_playwright
 
@@ -52,7 +90,30 @@ def test_document_editor_browser(live_server, administrator, stock_manager, loca
             expect(
                 page.locator("#template-preview-frame").content_frame.locator("h1")
             ).to_have_text("QA delivery form")
-            page.screenshot(path=str(screenshots / f"editor-{width}.png"), full_page=True)
+            title = page.locator("#template-preview-frame").content_frame.locator("h1")
+            expect(title).to_have_attribute("contenteditable", "plaintext-only")
+            title.fill("Edited on the paper")
+            page.locator("h1").first.click()
+            expect(page.locator('[name="document_title"]')).to_have_value("Edited on the paper")
+            page.get_by_role("button", name="Add text block", exact=True).click()
+            page.get_by_role("textbox", name="Text block 1 wording").fill(
+                "Equipment must be returned in good condition."
+            )
+            expect(
+                page.locator("#template-preview-frame").content_frame.locator(".custom-text-block")
+            ).to_have_text("Equipment must be returned in good condition.")
+            page.get_by_role("checkbox", name="Show SKU column", exact=True).uncheck()
+            expect(
+                page.locator("#template-preview-frame").content_frame.locator(
+                    '[data-editor-column="sku"]'
+                )
+            ).to_have_count(0)
+            assert page.locator("#template-paper-viewport").bounding_box()["width"] > 500
+            page.evaluate(
+                "window.scrollTo(0, document.querySelector('.template-editor-layout')"
+                ".getBoundingClientRect().top + window.scrollY - 90)"
+            )
+            page.screenshot(path=str(screenshots / f"editor-{width}.png"))
             print("PREVIEW", page.locator("#template-preview-empty").text_content())
         for route in [
             "core:home",
@@ -231,7 +292,9 @@ def test_custom_html_editing_drives_the_live_preview(live_server, administrator,
         page.wait_for_url(live_server.url + "/")
         page.goto(live_server.url + reverse("documents:template_edit", args=["delivery"]))
 
-        details = page.locator("details.template-editor__advanced", has_text="Raw HTML/CSS")
+        details = page.locator(
+            "details.template-editor__advanced", has_text="Developer source (optional)"
+        )
         details.locator("summary").click()
         page.locator('[name="custom_html_enabled"]').check()
         page.locator('[name="custom_html_source"]').fill(

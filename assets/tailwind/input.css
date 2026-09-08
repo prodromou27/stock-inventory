@@ -19,6 +19,28 @@
 @tailwind components;
 @tailwind utilities;
 
+/* A usable paper canvas, with an independently scrollable property panel. */
+.template-editor-layout { grid-template-columns: minmax(20rem, 25rem) minmax(0, 1fr); }
+#template-style-form { max-height: calc(100vh - var(--topbar-height) - 3rem); overflow-y: auto; padding-right: .5rem; }
+#template-designer-navigation { position: sticky; top: 0; z-index: 2; background: var(--color-surface); padding: .65rem 0; gap: .35rem; }
+#template-style-form > .card { scroll-margin-top: 9rem; }
+.layout-arranger li > input[type="checkbox"] { width: 1rem; min-width: 1rem; flex: 0 0 auto; }
+.template-editor-layout .template-preview-frame-wrap { max-height: calc(100vh - var(--topbar-height) - 13rem); overflow: auto; }
+.template-editor-layout .template-field-reference { margin-top: 1rem; }
+.room-switcher[data-location-switcher] { display: grid; grid-template-columns: minmax(10rem, 1fr) minmax(16rem, 2fr) auto; gap: .75rem; align-items: end; width: 100%; }
+[data-location-switcher] .location-filter-field { display: flex; flex-direction: column; gap: .35rem; min-width: 0; }
+[data-location-switcher] label { font-weight: 600; font-size: .8rem; }
+[data-location-switcher] select { width: 100%; max-width: none; margin: 0; }
+[data-location-switcher] button { min-height: 2.5rem; }
+@media (max-width: 1100px) {
+  .template-editor-layout { grid-template-columns: minmax(18rem, 22rem) minmax(0, 1fr); }
+}
+@media (max-width: 800px) {
+  .template-editor-layout { grid-template-columns: minmax(0, 1fr); }
+  #template-style-form { max-height: none; overflow: visible; }
+  .room-switcher[data-location-switcher] { grid-template-columns: minmax(0, 1fr); }
+}
+
 @layer base {
   :root {
     color-scheme: light;

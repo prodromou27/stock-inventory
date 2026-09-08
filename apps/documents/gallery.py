@@ -9,6 +9,38 @@ picking a starter never edits, and is never itself editable.
 """
 
 STARTER_TEMPLATES = {
+    "delivery_acceptance": {
+        "label": "Acceptance / sign-off",
+        "description": "Logo, boxed reference, acceptance statement, four-column table and "
+        "customer signature fields, based on the supplied delivery form.",
+        "fields": {
+            "logo_position": "left",
+            "accent_color": "#ff0000",
+            "font_choice": "sans",
+            "page_margin": "normal",
+            "heading_text_color": "#000000",
+            "table_header_bg_color": "#d99694",
+            "document_title": "PRODUCT DELIVERY ACCEPTANCE AND SIGN OFF",
+        },
+        "layout_config": {
+            "layout_variant": "acceptance",
+            "reference_caption": "P.D",
+            "section_order": [
+                "heading",
+                "details",
+                "items",
+                "notes",
+                "signatures",
+                "company",
+                "disposal",
+                "terms",
+            ],
+            "hidden_columns": ["model", "sku", "condition", "accessories"],
+            "column_order": ["brand", "serial", "type", "quantity"],
+            "column_labels": {"type": "Description", "quantity": "Qty"},
+            "show_signature_block": True,
+        },
+    },
     "classic": {
         "label": "Classic",
         "description": "Left logo, a restrained blue accent, serif heading — a traditional, "
@@ -50,3 +82,45 @@ STARTER_TEMPLATES = {
         },
     },
 }
+
+
+def signoff_preset(document_type):
+    """Presentation defaults shared by the gallery and the unsaved visual designer."""
+    from copy import deepcopy
+
+    preset = deepcopy(STARTER_TEMPLATES["delivery_acceptance"])
+    wording = {
+        "delivery": (
+            "PRODUCT DELIVERY ACCEPTANCE AND SIGN OFF",
+            "P.D",
+            "I hereby confirm that the product listed below has been received/delivered "
+            "to us in good condition according to the proposal with reference number:",
+        ),
+        "assignment": (
+            "EQUIPMENT ASSIGNMENT AND ACCEPTANCE",
+            "Assignment",
+            "I hereby acknowledge receipt of the equipment listed below under reference:",
+        ),
+        "disposal": (
+            "EQUIPMENT DISPOSAL CERTIFICATE",
+            "Disposal",
+            "The equipment listed below is recorded as disposed under reference:",
+        ),
+    }
+    title, caption, text = wording[document_type]
+    preset["fields"]["document_title"] = title
+    preset["layout_config"].update(
+        reference_caption=caption,
+        notes_text=text,
+        section_order=[
+            "heading",
+            "details",
+            "items",
+            "disposal",
+            "notes",
+            "signatures",
+            "company",
+            "terms",
+        ],
+    )
+    return preset

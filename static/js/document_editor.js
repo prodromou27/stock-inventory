@@ -66,10 +66,38 @@ document.addEventListener('DOMContentLoaded', () => {
     paperViewport.style.height = `${contentHeightPx * scale}px`;
   }
   frame.addEventListener('load', layoutPaper);
+  frame.addEventListener('load', () => {
+    if (form.elements.custom_html_enabled?.checked) return;
+    const doc = frame.contentDocument;
+    if (!doc) return;
+    const style = doc.createElement('style');
+    style.textContent = `@media screen{body{margin:${paperDimensions().marginPx}px!important;}}` +
+      '[contenteditable=true]{outline:1px dashed #0f766e;cursor:text;min-height:1em}' +
+      '[contenteditable=true]:focus{outline:2px solid #0f766e;background:#f0fdfa}';
+    doc.head.append(style);
+    layoutPaper();
+    doc.querySelectorAll('[data-editor-field], [data-editor-column]').forEach(element => {
+      const column = element.dataset.editorColumn;
+      const target = column
+        ? document.querySelector(`#column-layout li[data-key="${column}"] input[type="text"]`)
+        : form.elements[element.dataset.editorField];
+      if (!target) return;
+      element.contentEditable = 'plaintext-only';
+      element.setAttribute('role', 'textbox');
+      element.setAttribute('aria-label', target.getAttribute('aria-label') || target.name.replaceAll('_', ' '));
+      element.title = 'Click to edit. Click outside to apply.';
+      // Only text is copied back. Never save DOM markup or Django template syntax.
+      element.addEventListener('blur', () => {
+        target.value = element.innerText.trim();
+        target.dispatchEvent(new Event('input', {bubbles: true}));
+      });
+    });
+  });
   window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(layoutPaper, 150); });
 
   function arrange(containerId, definitions, orderField, columns) {
     const container = document.getElementById(containerId);
+    container.replaceChildren();
     const field = form.elements[orderField];
     const order = field.value.split(',').map(x => x.trim()).filter(Boolean);
     const known = new Map(definitions);
@@ -97,6 +125,19 @@ document.addEventListener('DOMContentLoaded', () => {
       title.textContent = known.get(key);
       row.append(title);
       if (columns) {
+        const hidden = [...form.querySelectorAll('[name="hidden_columns"]')].find(input => input.value === key);
+        if (hidden) {
+          const visibility = document.createElement('input');
+          visibility.type = 'checkbox';
+          visibility.checked = !hidden.checked;
+          visibility.setAttribute('aria-label', `Show ${known.get(key)} column`);
+          visibility.addEventListener('change', () => {
+            hidden.checked = !visibility.checked;
+            hidden.dispatchEvent(new Event('change', {bubbles: true}));
+          });
+          hidden.addEventListener('change', () => { visibility.checked = !hidden.checked; });
+          row.append(visibility);
+        }
         const input = document.createElement('input');
         input.type = 'text';
         input.maxLength = 120;
@@ -140,7 +181,11 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function refreshPreview() {
-    if (!form.reportValidity()) return;
+    if (!form.checkValidity()) {
+      state.hidden = false;
+      state.textContent = 'Complete or correct the highlighted settings, then refresh the preview.';
+      return;
+    }
     controller?.abort();
     controller = new AbortController();
     state.textContent = 'Updating preview…';
@@ -151,6 +196,10 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       const html = await response.text();
       if (!response.ok) throw new Error(html || 'Preview failed. Please check your settings.');
+      if (frame.contentDocument?.activeElement?.isContentEditable) {
+        state.textContent = 'Finish editing the paper to refresh the preview.';
+        return;
+      }
       frame.srcdoc = html;
       paper.hidden = false;
       state.hidden = true;
@@ -160,7 +209,9 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   form.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(refreshPreview, 600); });
   form.addEventListener('change', () => { clearTimeout(timer); timer = setTimeout(refreshPreview, 200); });
-  document.getElementById('template-preview-refresh').addEventListener('click', refreshPreview);
+  document.getElementById('template-preview-refresh').addEventListener('click', () => {
+    if (form.reportValidity()) refreshPreview();
+  });
   document.getElementById('template-preview-pdf').addEventListener('click', () => {
     if (!form.reportValidity()) return;
     const preview = document.createElement('form');
@@ -173,5 +224,107 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   arrange('section-layout', JSON.parse(document.getElementById('editor-sections').textContent), 'section_order', false);
   arrange('column-layout', JSON.parse(document.getElementById('editor-columns').textContent), 'column_order', true);
+  const navigation = document.getElementById('template-designer-navigation');
+  const blockContainer = document.getElementById('template-text-blocks');
+  const blockField = form.elements.custom_blocks;
+  if (blockContainer && blockField) {
+    let blocks;
+    try { blocks = JSON.parse(blockField.value || '[]') || []; } catch { blocks = []; }
+    const syncBlocks = () => {
+      blockField.value = JSON.stringify(blocks);
+      form.dispatchEvent(new Event('input', {bubbles: true}));
+    };
+    const renderBlocks = () => {
+      blockContainer.replaceChildren();
+      blocks.forEach((block, index) => {
+        const group = document.createElement('fieldset');
+        group.className = 'card';
+        const legend = document.createElement('legend');
+        legend.textContent = `Text block ${index + 1}`;
+        group.append(legend);
+        const text = document.createElement('textarea');
+        text.value = block.text; text.rows = 4; text.maxLength = 5000;
+        text.setAttribute('aria-label', `Text block ${index + 1} wording`);
+        text.addEventListener('input', () => { block.text = text.value; syncBlocks(); });
+        group.append(text);
+        [['before', JSON.parse(document.getElementById('editor-sections').textContent)],
+          ['alignment', [['left', 'Left'], ['center', 'Center'], ['right', 'Right']]]].forEach(([key, choices]) => {
+          const label = document.createElement('label');
+          label.textContent = key === 'before' ? 'Place before section' : 'Alignment';
+          const select = document.createElement('select');
+          choices.forEach(([value, title]) => select.add(new Option(title, value)));
+          select.value = block[key];
+          select.addEventListener('change', () => { block[key] = select.value; syncBlocks(); });
+          label.append(select); group.append(label);
+        });
+        const remove = document.createElement('button');
+        remove.type = 'button'; remove.className = 'btn btn--sm'; remove.textContent = 'Remove block';
+        remove.addEventListener('click', () => { blocks.splice(index, 1); renderBlocks(); syncBlocks(); });
+        group.append(remove); blockContainer.append(group);
+      });
+      document.getElementById('template-add-text-block').disabled = blocks.length >= 12;
+    };
+    document.getElementById('template-add-text-block').addEventListener('click', () => {
+      blocks.push({text: '', before: 'signatures', alignment: 'left'});
+      renderBlocks(); syncBlocks();
+      blockContainer.lastElementChild.querySelector('textarea').focus();
+    });
+    renderBlocks();
+  }
+  const cards = [...form.querySelectorAll(':scope > .card')];
+  ['Branding', 'Wording', 'Page & content', 'Arrange & columns', 'Developer source'].forEach((label, index) => {
+    if (!cards[index] || !navigation) return;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'btn btn--sm';
+    button.textContent = label;
+    button.addEventListener('click', () => {
+      if (cards[index].tagName === 'DETAILS') cards[index].open = true;
+      cards[index].scrollIntoView({block: 'start', behavior: 'smooth'});
+    });
+    navigation.append(button);
+  });
+  const saveActions = form.querySelector('.template-save-actions');
+  if (saveActions && navigation) navigation.append(saveActions);
+  const mode = document.getElementById('template-designer-mode');
+  const updateMode = () => {
+    if (!mode) return;
+    mode.replaceChildren(document.createTextNode(form.elements.custom_html_enabled.checked
+      ? 'Developer source is active. Visual arrangement controls cannot change this custom source. '
+      : 'Visual designer active. Click outlined text on the paper to edit it. '));
+    if (form.elements.custom_html_enabled.checked) {
+      const switchButton = document.createElement('button');
+      switchButton.type = 'button';
+      switchButton.className = 'btn btn--sm';
+      switchButton.textContent = 'Use visual designer';
+      switchButton.addEventListener('click', () => {
+        if (!window.confirm('Use the visual layout instead? Your current source is preserved until you save, and previous saved versions remain available.')) return;
+        form.elements.custom_html_enabled.checked = false;
+        form.elements.custom_html_enabled.dispatchEvent(new Event('change', {bubbles: true}));
+      });
+      mode.append(switchButton);
+    }
+  };
+  form.elements.custom_html_enabled.addEventListener('change', updateMode);
+  updateMode();
+  document.getElementById('template-acceptance-preset')?.addEventListener('click', () => {
+    if (!window.confirm('Apply the sign-off layout to this editor? Save afterward to keep it. Existing versions and generated documents remain unchanged.')) return;
+    const preset = JSON.parse(document.getElementById('signoff-preset').textContent);
+    const values = {...preset.fields, ...preset.layout_config};
+    Object.entries(values).forEach(([key, value]) => {
+      const field = form.elements[key];
+      if (!field || key === 'hidden_columns') return;
+      if (key === 'column_labels') field.value = Object.entries(value).map(([k, v]) => `${k}:${v}`).join('\n');
+      else if (field.type === 'checkbox') field.checked = value;
+      else field.value = Array.isArray(value) ? value.join(',') : value;
+    });
+    form.elements.custom_html_enabled.checked = false;
+    form.querySelectorAll('[name="hidden_columns"]').forEach(input => {
+      input.checked = preset.layout_config.hidden_columns.includes(input.value);
+    });
+    arrange('section-layout', JSON.parse(document.getElementById('editor-sections').textContent), 'section_order', false);
+    arrange('column-layout', JSON.parse(document.getElementById('editor-columns').textContent), 'column_order', true);
+    updateMode(); refreshPreview();
+  });
   refreshPreview();
 });

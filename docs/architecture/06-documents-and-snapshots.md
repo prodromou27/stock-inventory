@@ -66,6 +66,29 @@ screen remains Administrator-only; Stock Managers have read-only preview access.
 
 ## Rendering pipeline
 
+### No-code designer refinement (September 2026)
+
+The editor now gives the paper preview most of the workspace and keeps properties in a
+scrollable panel. Administrators can edit title/company wording, standing notes, terms and
+column labels directly on the preview. Only plain text is copied to the existing validated
+form fields; preview DOM/HTML is never persisted. Column visibility controls sit alongside
+column labels and ordering. Existing source templates remain in a clearly marked optional
+developer mode; switching back to the structured layout is explicit, not an automatic conversion.
+
+Up to 12 custom text blocks can be placed before named document sections with left/center/right
+alignment. The presentation validator limits each block to 5,000 characters and allow-lists
+positions and alignment. Server-owned template markup escapes all block text. The configuration
+is included in append-only template version snapshots and follows the existing preview/save/
+publish/restore workflow. Saved source and generated PDFs are never rewritten by a UI upgrade.
+
+The supplied acceptance/sign-off design is a selectable layout for Delivery, Assignment and
+Disposal, not a delivery-only override. A shared preset supplies type-specific titles,
+declarations and reference captions, plus logo/reference placement, date/title alignment,
+four line-item columns and stacked sign-off fields. Customer/employee/witness values still
+come from the transaction snapshot. The reference box uses the existing generated document
+number; it does not introduce a second numbering sequence. Applying a preset to an existing
+editor changes unsaved form values only; the normal save/version/publish rules still apply.
+
 `DocumentService.generate(transaction) -> GeneratedDocument`:
 
 1. Assert the transaction's `movement_type` is `assignment` or `delivery` (only those produce a printable form,

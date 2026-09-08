@@ -1,9 +1,12 @@
+{% if layout_variant == "acceptance" %}
+<p class="acceptance-customer"><strong>{% if document_type == "disposal" %}Witness: {{ witness_name|default:"________________" }}{% elif employee_name %}Employee: {{ employee_name }}{% else %}Customer: {{ final_customer }}{% endif %}</strong></p>
+{% endif %}
 {% if notes %}
     <div class="notes"><strong>Notes:</strong> {{ notes }}</div>
   {% endif %}
 
-  {% if notes_text %}
-    <div class="notes">{{ notes_text|linebreaksbr }}</div>
+  {% if notes_text and layout_variant != "acceptance" %}
+    <div class="notes" data-editor-field="notes_text">{{ notes_text|linebreaksbr }}</div>
   {% endif %}
 
   <p style="margin-top: 1.5em;">Prepared by: {{ prepared_by }}</p>

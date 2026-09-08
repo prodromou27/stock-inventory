@@ -1,4 +1,13 @@
+{% if layout_variant == "acceptance" %}
+<div class="acceptance-letterhead">
+  {% if logo_data_uri %}<img src="{{ logo_data_uri }}" class="letterhead__logo" alt="Company logo">{% endif %}
+  <div class="acceptance-reference"><span data-editor-field="reference_caption">{{ reference_caption }}</span><br>{{ document_number }}</div>
+</div>
+<p class="acceptance-date"><strong>Date: {{ document_date_display|default:occurred_at }}</strong></p>
+<h1 class="acceptance-title" data-editor-field="document_title">{% if document_title %}{{ document_title }}{% else %}PRODUCT DELIVERY ACCEPTANCE AND SIGN OFF{% endif %}</h1>
+{% else %}
 <div class="letterhead __LOGO_POSITION_CLASS__">
     {% if logo_data_uri %}<img src="{{ logo_data_uri }}" class="letterhead__logo">{% endif %}
-    <h1>{% if document_title %}{{ document_title }}{% else %}{{ movement_type_display }}{% endif %}</h1>
+    <h1 data-editor-field="document_title">{% if document_title %}{{ document_title }}{% else %}{{ movement_type_display }}{% endif %}</h1>
   </div>
+{% endif %}

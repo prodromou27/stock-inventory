@@ -134,7 +134,7 @@ class TestEditView:
         assert response.status_code == 200
         content = response.content.decode()
         assert 'name="html_source"' not in content
-        assert "Raw HTML/CSS" in content
+        assert "Developer source (optional)" in content
         # Neither <details> block (advanced layout, raw HTML) starts open
         # for a fresh template with no saved custom_html_enabled=True.
         assert 'template-editor__advanced" open' not in content

@@ -1,7 +1,7 @@
 <table>
     <thead>
       <tr>
-        {% for key, label in report_columns %}<th>{{ label }}</th>{% endfor %}
+        {% for key, label in report_columns %}<th data-editor-column="{{ key }}">{{ label }}</th>{% endfor %}
       </tr>
     </thead>
     <tbody>

@@ -9,7 +9,13 @@ from apps.audit.services import record_event
 from apps.core.authorization import ADMINISTRATOR, require_role
 
 from .layout import clean_presentation
-from .models import REPORT_COLUMNS, DocumentTemplate, DocumentTemplateVersion, TemplateStatus
+from .models import (
+    REPORT_COLUMNS,
+    DocumentTemplate,
+    DocumentTemplateVersion,
+    DocumentType,
+    TemplateStatus,
+)
 from .pdf import (
     _default_layout_config,
     build_logo_data_uri,
@@ -573,13 +579,15 @@ def apply_starter_template(*, user, document_type, preset_key):
     template. An Administrator can freely edit the result afterward; picking
     a starter is a one-time copy, not a live link back to the preset.
     """
-    from .gallery import STARTER_TEMPLATES
+    from .gallery import STARTER_TEMPLATES, signoff_preset
     from .pdf import render_styleable_source
 
     require_role(user, ADMINISTRATOR)
     preset = STARTER_TEMPLATES.get(preset_key)
     if preset is None:
         raise ValidationError("Unknown starter template.")
+    if preset_key == "delivery_acceptance":
+        preset = signoff_preset(document_type)
     if get_template(document_type) is not None:
         raise ValidationError(
             "This document type already has a template — reset it first if you want to "
@@ -598,7 +606,7 @@ def apply_starter_template(*, user, document_type, preset_key):
         if field in fields:
             setattr(new_template, field, fields[field])
     new_template.html_source = html_source
-    new_template.layout_config = _clean_layout_config({})
+    new_template.layout_config = _clean_layout_config(preset.get("layout_config", {}))
     new_template.updated_by = user
     new_template.version = 1
     new_template.full_clean()
@@ -685,6 +693,16 @@ def render_preview_pdf(
     """
     saved_template = get_template(document_type)
     context = dict(sample_document_context())
+    context["document_type"] = document_type
+    context["movement_type_display"] = DocumentType(document_type).label
+    if document_type != DocumentType.DISPOSAL:
+        context["wipe_method_display"] = ""
+        context["witness_name"] = ""
+    if document_type == DocumentType.ASSIGNMENT:
+        context["employee_name"] = "Alex Morgan"
+        context["final_customer"] = ""
+    elif document_type == DocumentType.DISPOSAL:
+        context["final_customer"] = ""
     try:
         if logo_file is not None:
             _validate_logo(logo_file)

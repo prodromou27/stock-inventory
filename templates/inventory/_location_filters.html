@@ -4,16 +4,20 @@
 <form method="get" class="room-switcher" data-location-switcher>
   {% if filters.in_storage %}<input type="hidden" name="in_storage" value="1">{% endif %}
   {% if selected_status %}<input type="hidden" name="status" value="{{ selected_status }}">{% endif %}
+  <div class="location-filter-field">
   <label for="inventory-country">Country</label>
   <select name="country" id="inventory-country">
     <option value="">All countries</option>
     {% for value, label in country_filter_choices %}<option value="{{ value }}" {% if filters.country == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
   </select>
+  </div>
+  <div class="location-filter-field">
   <label for="inventory-room">Room or Shelf/Rack</label>
   <select name="location" id="inventory-room">
     <option value="">All rooms and shelves</option>
     {% for node in location_filter_nodes %}<option value="{{ node.id }}" data-country="{{ node.country }}" {% if filters.location == node.id %}selected{% endif %}>{{ node.label }}</option>{% endfor %}
   </select>
+  </div>
   <button class="btn btn--sm" type="submit">View location</button>
 </form>
 <p class="help-text">A country includes all its rooms. A room includes all its shelves/racks. Only stock you have permission to view is shown.</p>
