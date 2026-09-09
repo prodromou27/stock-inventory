@@ -28,6 +28,9 @@ class InternalUseForm(forms.Form):
 
     def __init__(self, *args, user, returning=False, **kwargs):
         super().__init__(*args, **kwargs)
+        if returning:
+            self.fields["notes"].required = False
+            self.fields["notes"].label = "Return notes (optional)"
         self.fields["unit_asset_ids"] = forms.ModelMultipleChoiceField(
             queryset=eligible_internal_use_assets(user=user, returning=returning),
             label="Assets",

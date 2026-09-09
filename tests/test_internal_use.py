@@ -88,6 +88,40 @@ def test_invalid_transitions_and_missing_notes(administrator, internal_asset):
         install(administrator, internal_asset, returning=True)
 
 
+def test_return_from_internal_use_allows_blank_notes(
+    client, stock_manager_with_room_access, internal_asset, location_tree
+):
+    user = stock_manager_with_room_access
+    install(user, internal_asset)
+    internal_asset.refresh_from_db()
+    original_notes = internal_asset.notes
+
+    client.force_login(user)
+    response = client.get(reverse("inventory:remove_from_use"))
+    assert response.status_code == 200
+    assert response.context["form"].fields["notes"].required is False
+    assert response.context["form"].fields["notes"].label == "Return notes (optional)"
+    response = client.post(
+        reverse("inventory:remove_from_use"),
+        {
+            "unit_asset_ids": [str(internal_asset.pk)],
+            "occurred_at": date.today(),
+            "notes": "",
+            "location": str(location_tree["room"].pk),
+            "submission_token": response.context["form"].initial["submission_token"],
+        },
+    )
+    assert response.status_code == 302
+    txn = InventoryTransaction.objects.get(movement_type="remove_from_use")
+
+    internal_asset.refresh_from_db()
+    assert txn.notes == ""
+    assert txn.lines.get().notes == ""
+    assert internal_asset.status == UnitStatus.IN_STOCK
+    assert internal_asset.current_location == location_tree["room"]
+    assert internal_asset.notes == original_notes
+
+
 def test_reservations_cannot_be_bypassed(administrator, internal_asset):
     reserve_stock(
         user=administrator,

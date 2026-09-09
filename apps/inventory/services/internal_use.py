@@ -34,8 +34,8 @@ def change_internal_use(
 ):
     require_role(user, ADMINISTRATOR, STOCK_MANAGER)
     notes = notes.strip()
-    if not notes:
-        raise ValidationError("Enter installation details or removal notes.")
+    if not returning and not notes:
+        raise ValidationError("Enter installation details.")
     ids = set(unit_asset_ids or [])
     if not ids:
         raise ValidationError("Select at least one asset.")
@@ -73,15 +73,12 @@ def change_internal_use(
     )
     for number, asset in enumerate(assets, 1):
         old_notes = asset.notes
-        asset.notes = "\n".join(
-            filter(
-                None,
-                [
-                    old_notes,
-                    f"{occurred_at}: {'Removed from use' if returning else 'In use'} — {notes}",
-                ],
-            )
+        note_entry = (
+            f"{occurred_at}: Removed from use — {notes}"
+            if returning and notes
+            else (f"{occurred_at}: In use — {notes}" if not returning else "")
         )
+        asset.notes = "\n".join(filter(None, [old_notes, note_entry]))
         write_unit_line(
             transaction=txn,
             line_number=number,
@@ -91,14 +88,15 @@ def change_internal_use(
             user=user,
             notes=notes,
         )
-        record_event(
-            actor=user,
-            event_type=AuditEvent.EventType.RECORD_UPDATED,
-            obj=asset,
-            summary="Recorded internal installation/removal notes",
-            old_values={"notes": old_notes},
-            new_values={"notes": asset.notes},
-        )
+        if asset.notes != old_notes:
+            record_event(
+                actor=user,
+                event_type=AuditEvent.EventType.RECORD_UPDATED,
+                obj=asset,
+                summary="Recorded internal installation/removal notes",
+                old_values={"notes": old_notes},
+                new_values={"notes": asset.notes},
+            )
     record_event(
         actor=user,
         event_type=AuditEvent.EventType.MOVEMENT_COMPLETED,
