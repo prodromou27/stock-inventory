@@ -46,6 +46,9 @@ VALID_UNIT_TRANSITIONS = {
     },
     UnitStatus.RETURNED: {
         UnitStatus.IN_STOCK,
+        UnitStatus.IN_USE,
+        UnitStatus.ASSIGNED,
+        UnitStatus.DELIVERED,
         UnitStatus.DAMAGED,
         UnitStatus.DISPOSED,
     },

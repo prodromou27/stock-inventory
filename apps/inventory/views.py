@@ -1187,7 +1187,7 @@ ASSET_QUICK_ACTIONS_BY_STATUS = {
     UnitStatus.ASSIGNED: ["return", "mark_damaged", "mark_lost", "dispose"],
     UnitStatus.DELIVERED: ["return", "mark_damaged"],
     UnitStatus.DAMAGED: ["repair_damaged", "dispose"],
-    UnitStatus.RETURNED: ["dispose"],
+    UnitStatus.RETURNED: ["put_in_use", "assign", "deliver", "dispose"],
     UnitStatus.LOST: [],
     UnitStatus.DISPOSED: [],
 }
@@ -2556,7 +2556,7 @@ class AssignView(LoginRequiredMixin, RoleRequiredMixin, View):
         if reservation is not None:
             initial["project_reference"] = reservation.project_reference
         form = AssignForm(user=request.user, initial=initial)
-        eligible_statuses = [UnitStatus.IN_STOCK, UnitStatus.RESERVED]
+        eligible_statuses = [UnitStatus.IN_STOCK, UnitStatus.RESERVED, UnitStatus.RETURNED]
         assets = _eligible_assets(request, eligible_statuses)
         return render(
             request,
@@ -2574,7 +2574,9 @@ class AssignView(LoginRequiredMixin, RoleRequiredMixin, View):
     def post(self, request):
         form = AssignForm(request.POST, user=request.user)
         unit_asset_ids = request.POST.getlist("unit_asset_ids")
-        assets = _eligible_assets(request, [UnitStatus.IN_STOCK, UnitStatus.RESERVED])
+        assets = _eligible_assets(
+            request, [UnitStatus.IN_STOCK, UnitStatus.RESERVED, UnitStatus.RETURNED]
+        )
         balances = _eligible_balances_for_fallback(request)
         if not form.is_valid():
             return render(
@@ -2739,7 +2741,7 @@ class DeliverView(LoginRequiredMixin, RoleRequiredMixin, View):
             if reservation.final_customer:
                 initial["final_customer"] = reservation.final_customer
         form = DeliverForm(user=request.user, initial=initial)
-        eligible_statuses = [UnitStatus.IN_STOCK, UnitStatus.RESERVED]
+        eligible_statuses = [UnitStatus.IN_STOCK, UnitStatus.RESERVED, UnitStatus.RETURNED]
         assets = _eligible_assets(request, eligible_statuses)
         return render(
             request,
@@ -2757,7 +2759,9 @@ class DeliverView(LoginRequiredMixin, RoleRequiredMixin, View):
     def post(self, request):
         form = DeliverForm(request.POST, user=request.user)
         unit_asset_ids = request.POST.getlist("unit_asset_ids")
-        assets = _eligible_assets(request, [UnitStatus.IN_STOCK, UnitStatus.RESERVED])
+        assets = _eligible_assets(
+            request, [UnitStatus.IN_STOCK, UnitStatus.RESERVED, UnitStatus.RETURNED]
+        )
         balances = _eligible_balances_for_fallback(request)
         if not form.is_valid():
             return render(

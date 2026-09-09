@@ -302,7 +302,7 @@
         assigned: ["mark_damaged", "mark_lost", "dispose"],
         delivered: ["mark_damaged"],
         damaged: ["repair_damaged", "dispose"],
-        returned: ["dispose"],
+        returned: ["put_in_use", "assign", "deliver", "dispose"],
         lost: [],
         disposed: [],
       };
@@ -356,7 +356,7 @@
           return;
         }
         const availableActions = new Set();
-        if (rows.some((row) => row.status === "in_stock" && row.stock_purpose === "internal")) availableActions.add("put_in_use");
+        if (rows.some((row) => ["in_stock", "returned"].includes(row.status) && row.stock_purpose === "internal")) availableActions.add("put_in_use");
         rows.forEach((row) => (ACTIONS_BY_STATUS[row.status] || []).forEach((a) => availableActions.add(a)));
         availableActions.forEach((action) => {
           const link = document.createElement("a");

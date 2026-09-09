@@ -18,7 +18,7 @@ from In Use are rejected; corrections/reversals remain Administrator-only.
 | **Reserved** | — | → Reserved (new location) | — | → In Stock | → Assigned | → Delivered | — | — | — | → Lost | → Disposed | → any | — |
 | **Assigned** | — | — | — | — | — | — | → Returned | — | → Damaged | → Lost | → Disposed | → any | — |
 | **Delivered** | — | — | — | — | — | — | → Returned* | — | — | — | — | → any | — |
-| **Returned** | — | — | — | — | — | — | — | → In Stock / Damaged / Disposed | — | — | — | → any | — |
+| **Returned** | — | — | — | — | → Assigned | → Delivered | — | → In Stock / Damaged / Disposed | — | — | — | → any | — |
 | **Damaged** | — | — | — | — | — | — | — | — | — | — | → Disposed | → any | — |
 | **Lost** | — | — | — | — | — | — | — | — | — | — | — | → In Stock (recovery) | — |
 | **Disposed** | — | — | — | — | — | — | — | — | — | — | — | — | → prior status |

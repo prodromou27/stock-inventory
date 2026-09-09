@@ -24,7 +24,9 @@ def eligible_internal_use_assets(*, user, returning=False):
     if returning:
         return assets.filter(status=UnitStatus.IN_USE)
     return assets.filter(
-        status=UnitStatus.IN_STOCK, stock_purpose=StockPurpose.INTERNAL, installed_in=None
+        status__in=(UnitStatus.IN_STOCK, UnitStatus.RETURNED),
+        stock_purpose=StockPurpose.INTERNAL,
+        installed_in=None,
     )
 
 
@@ -51,11 +53,14 @@ def change_internal_use(
     assets = list(UnitAsset.objects.select_for_update().filter(pk__in=ids).order_by("pk"))
     if len(assets) != len(ids):
         raise ValidationError("One or more assets could not be found.")
-    expected = UnitStatus.IN_USE if returning else UnitStatus.IN_STOCK
+    eligible_statuses = (
+        {UnitStatus.IN_USE} if returning else {UnitStatus.IN_STOCK, UnitStatus.RETURNED}
+    )
     for asset in assets:
         require_asset_access(user, asset)
-        if asset.status != expected:
-            raise ValidationError(f"Only {expected.label} assets are eligible for this action.")
+        if asset.status not in eligible_statuses:
+            labels = " or ".join(UnitStatus(status).label for status in eligible_statuses)
+            raise ValidationError(f"Only {labels} assets are eligible for this action.")
         if asset.installed_in_id:
             raise ValidationError(
                 "Remove installed components from their parent before this action."

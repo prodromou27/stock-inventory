@@ -185,7 +185,9 @@ recorded movements, scope rules, and return-to-stock path.
 - Lost
 - Disposed
 
-`Returned` represents an item received back and awaiting assessment. Once assessed, it should transition to `In Stock`, `Damaged`, or `Disposed`.
+`Returned` represents an item received back. It may be assessed into `In Stock`,
+`Damaged`, or `Disposed`, or issued directly through a new assignment, delivery,
+or eligible internal-use movement when no separate assessment is needed.
 
 ### Movement types
 
@@ -214,7 +216,7 @@ If an asset returns, the prior removal date remains in history. The asset can la
 - Reserved -> In Stock, Assigned, Delivered, Lost, or Disposed
 - Assigned -> Returned, Lost, Damaged, or Disposed
 - Delivered -> Returned only when returns are allowed and recorded
-- Returned -> In Stock, Damaged, or Disposed
+- Returned -> In Stock, Assigned, Delivered, In Use (for eligible internal assets), Damaged, or Disposed
 - Damaged -> In Stock after repair, or Disposed
 - Lost -> In Stock only through an Administrator correction/recovery movement
 - Disposed is terminal except for an Administrator reversal

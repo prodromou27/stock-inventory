@@ -6,10 +6,48 @@ from django.core.exceptions import ValidationError
 from apps.inventory.models import InventoryTransactionLine, StockBalance, UnitAsset, UnitStatus
 from apps.inventory.services.assignments import assign_to_employee, deliver_to_customer
 from apps.inventory.services.receipts import receive_stock
+from apps.inventory.services.returns import return_stock
 
 
 @pytest.mark.django_db
 class TestAssignToEmployee:
+    def test_returned_asset_can_be_assigned_without_assessment(
+        self, administrator, unit_product, location_tree
+    ):
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-RETURN-REASSIGN",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-RETURN-REASSIGN")
+        original = assign_to_employee(
+            user=administrator,
+            employee_name="First employee",
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+        )
+        return_stock(
+            user=administrator,
+            original_transaction=original,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+        )
+
+        reassignment = assign_to_employee(
+            user=administrator,
+            employee_name="Second employee",
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+        )
+
+        asset.refresh_from_db()
+        assert asset.status == UnitStatus.ASSIGNED
+        assert asset.current_custody_transaction == reassignment
+        assert reassignment.lines.get().from_status == UnitStatus.RETURNED
+
     def test_unit_assignment_removes_from_storage(self, administrator, unit_product, location_tree):
         receive_stock(
             user=administrator,
@@ -287,6 +325,43 @@ class TestReservedUnitBindingEnforcement:
 
 @pytest.mark.django_db
 class TestDeliverToCustomer:
+    def test_returned_asset_can_be_delivered_without_assessment(
+        self, administrator, unit_product, location_tree
+    ):
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-RETURN-DELIVER",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-RETURN-DELIVER")
+        original = assign_to_employee(
+            user=administrator,
+            employee_name="Returning employee",
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+        )
+        return_stock(
+            user=administrator,
+            original_transaction=original,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+        )
+
+        delivery = deliver_to_customer(
+            user=administrator,
+            final_customer="Next customer",
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+        )
+
+        asset.refresh_from_db()
+        assert asset.status == UnitStatus.DELIVERED
+        assert asset.current_custody_transaction == delivery
+        assert delivery.lines.get().from_status == UnitStatus.RETURNED
+
     def test_unit_delivery_sets_delivered_status(self, administrator, unit_product, location_tree):
         receive_stock(
             user=administrator,

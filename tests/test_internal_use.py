@@ -7,10 +7,12 @@ from django.urls import reverse
 
 from apps.audit.models import AuditEvent
 from apps.inventory.models import InventoryTransaction, UnitAsset, UnitStatus
+from apps.inventory.services.assignments import assign_to_employee
 from apps.inventory.services.corrections import reverse_transaction
 from apps.inventory.services.internal_use import change_internal_use
 from apps.inventory.services.receipts import receive_stock
 from apps.inventory.services.reservations import reserve_stock
+from apps.inventory.services.returns import return_stock
 
 pytestmark = pytest.mark.django_db
 
@@ -120,6 +122,36 @@ def test_return_from_internal_use_allows_blank_notes(
     assert internal_asset.status == UnitStatus.IN_STOCK
     assert internal_asset.current_location == location_tree["room"]
     assert internal_asset.notes == original_notes
+
+
+def test_returned_internal_asset_can_be_put_in_use(
+    client, administrator, internal_asset, location_tree
+):
+    assignment = assign_to_employee(
+        user=administrator,
+        employee_name="Internal employee",
+        occurred_at=date.today(),
+        unit_asset_ids=[internal_asset.pk],
+    )
+    return_stock(
+        user=administrator,
+        original_transaction=assignment,
+        location=location_tree["room"],
+        occurred_at=date.today(),
+        unit_asset_ids=[internal_asset.pk],
+    )
+
+    client.force_login(administrator)
+    for url_name in ("assign", "deliver", "put_in_use"):
+        response = client.get(reverse(f"inventory:{url_name}"))
+        assert response.status_code == 200
+        assert internal_asset in response.context["assets"]
+
+    txn = install(administrator, internal_asset)
+
+    internal_asset.refresh_from_db()
+    assert internal_asset.status == UnitStatus.IN_USE
+    assert txn.lines.get().from_status == UnitStatus.RETURNED
 
 
 def test_reservations_cannot_be_bypassed(administrator, internal_asset):

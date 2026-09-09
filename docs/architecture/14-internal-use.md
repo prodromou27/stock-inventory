@@ -4,7 +4,7 @@ User-approved addition: In Use distinguishes installed internal infrastructure
 from equipment assigned to employees. Product examples are guidance, not
 category restrictions. Quantity balances keep their existing workflows.
 
-- Put in use: Internal, In Stock unit assets become In Use, leave storage,
+- Put in use: Internal, In Stock or Returned unit assets become In Use, leave storage,
   record removal date, and retain installation details in notes and the ledger.
 - Reserved assets must first be released; Customer-purpose stock must first
   be reclassified using the existing audited workflow.
