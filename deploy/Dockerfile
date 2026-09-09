@@ -1,3 +1,12 @@
+FROM node:20-slim AS assets
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY assets/ ./assets/
+COPY templates/ ./templates/
+COPY tailwind.config.js ./
+RUN npm run build:css && npm run build:vendor
+
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -24,6 +33,8 @@ COPY requirements.txt requirements-dev.txt ./
 RUN pip install --no-cache-dir -r requirements-dev.txt
 
 COPY . .
+COPY --from=assets /app/static/css/app.css ./static/css/app.css
+COPY --from=assets /app/static/vendor/grapesjs ./static/vendor/grapesjs
 # See deploy/Dockerfile.prod's identical line for why media/ is created
 # explicitly here rather than left for Django to lazily mkdir at runtime.
 RUN mkdir -p media && chown -R app:app /app && chmod +x deploy/entrypoint.sh deploy/backup.sh

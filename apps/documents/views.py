@@ -1,3 +1,4 @@
+import json
 import logging
 
 from django.contrib import messages
@@ -9,6 +10,7 @@ from django.http import (
     HttpResponse,
     HttpResponseBadRequest,
     HttpResponseServerError,
+    JsonResponse,
 )
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
@@ -273,6 +275,76 @@ _STYLE_KWARG_FIELDS = (
 
 def _style_kwargs(data):
     return {field: data[field] for field in _STYLE_KWARG_FIELDS}
+
+
+class VisualDocumentDesignerView(LoginRequiredMixin, RoleRequiredMixin, View):
+    allowed_roles = (ADMINISTRATOR,)
+
+    def get(self, request, document_type):
+        from .designer_services import FIELDS, LINE_FIELDS
+
+        _require_valid_document_type(document_type)
+        current = get_template(document_type)
+        return render(
+            request,
+            "documents/visual_designer.html",
+            {
+                "document_type": document_type,
+                "document_type_label": DocumentType(document_type).label,
+                "designer_config": {
+                    "design": current.layout_config.get("visual_design") if current else None,
+                    "version": current.version if current else 0,
+                    "fields": FIELDS,
+                    "lineFields": LINE_FIELDS,
+                    "kind": document_type,
+                },
+                "template_obj": current,
+            },
+        )
+
+    def post(self, request, document_type):
+        from .designer_services import preview_design, save_design
+
+        _require_valid_document_type(document_type)
+        try:
+            raw = request.POST.get("design", "")
+            if len(raw) > 350000:
+                raise ValidationError("Document is too large.")
+            design = json.loads(raw)
+            action = request.POST.get("action")
+            if action == "save":
+                saved = save_design(
+                    user=request.user,
+                    document_type=document_type,
+                    design=design,
+                    version=int(request.POST.get("version", "0")),
+                    preview_confirmed=request.POST.get("preview_confirmed") == "true",
+                    logo=request.FILES.get("logo"),
+                )
+                return JsonResponse({"version": saved.version, "message": "Template saved."})
+            if action not in ("preview", "pdf"):
+                raise ValidationError("Unknown designer action.")
+            result = preview_design(
+                user=request.user,
+                document_type=document_type,
+                design=design,
+                logo=request.FILES.get("logo"),
+                output_format="html" if action == "preview" else "pdf",
+            )
+            return HttpResponse(
+                result, content_type="text/html" if action == "preview" else "application/pdf"
+            )
+        except (ValidationError, ValueError, TypeError, RecursionError) as exc:
+            return JsonResponse(
+                {
+                    "error": (
+                        "; ".join(exc.messages)
+                        if isinstance(exc, ValidationError)
+                        else "Invalid designer data."
+                    )
+                },
+                status=400,
+            )
 
 
 class DocumentTemplateEditView(LoginRequiredMixin, RoleRequiredMixin, View):

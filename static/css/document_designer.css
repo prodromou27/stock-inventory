@@ -1,0 +1,9 @@
+.designer-workspace{display:grid;grid-template-columns:180px minmax(400px,1fr) 250px;height:75vh;border:1px solid #ccd5d8;background:#f5f7f8}
+.designer-workspace>aside{overflow:auto;padding:12px;background:#fff}.designer-workspace h2{font-size:14px;margin:12px 0}
+#grapes-canvas{min-width:0}#visual-designer .gjs-one-bg{background:#f5f7f8}#visual-designer .gjs-two-color{color:#263c40}#visual-designer .gjs-four-color{color:#087f78}
+#grapes-canvas .gjs-cv-canvas{width:100%;height:100%;top:0}
+#visual-designer .gjs-block{width:100%;min-height:55px;margin:5px 0;box-shadow:none;border:1px solid #ccd5d8}
+#visual-designer .gjs-field{background:#fff;color:#172c30;border:1px solid #c5d0d3}#visual-designer .gjs-label{font-size:12px}
+#designer-toolbar{gap:8px;align-items:center}#designer-toolbar label{font-size:12px}#designer-toolbar input[type=file]{max-width:190px}
+#designer-preview-dialog{width:85vw;height:90vh;border:1px solid #ccd5d8}#designer-preview-dialog::backdrop{background:#10272a99}#designer-preview-frame{display:block;width:100%;height:90%;border:0}
+@media(max-width:1200px){.designer-workspace{grid-template-columns:145px minmax(340px,1fr) 210px}}

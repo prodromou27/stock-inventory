@@ -13,6 +13,7 @@ COPY tailwind.config.js ./
 COPY assets/ ./assets/
 COPY templates/ ./templates/
 RUN npm run build:css
+RUN npm run build:vendor
 
 FROM python:3.12-slim
 
@@ -42,6 +43,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 COPY --from=assets /app/static/css/app.css ./static/css/app.css
+COPY --from=assets /app/static/vendor/grapesjs ./static/vendor/grapesjs
 # media_data (deploy/docker-compose.prod.yml) is a named volume mounted at
 # /app/media with nothing in the repo to COPY there (git doesn't track
 # empty directories, and generated PDFs/logos obviously aren't committed).

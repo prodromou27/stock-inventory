@@ -6,6 +6,7 @@
 {% block content %}
   <p><a href="{% url 'documents:template_hub' %}">&larr; All document templates</a></p>
   <div class="page-header">
+    <a class="btn btn--primary" href="{% url 'documents:template_designer' document_type %}">Open drag-and-drop designer</a>
     <h1>{{ document_type_label }} document template</h1>
     <div class="page-header__actions">
       {% if template_obj %}

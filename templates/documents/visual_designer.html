@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}{{ document_type_label }} designer{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="{% static 'vendor/grapesjs/grapes.min.css' %}">
+<link rel="stylesheet" href="{% static 'vendor/grapesjs/font-awesome/css/font-awesome.min.css' %}">
+<link rel="stylesheet" href="{% static 'css/document_designer.css' %}">
+<div id="visual-designer" data-url="{% url 'documents:template_designer' document_type %}">
+  <div class="page-header"><div><h1>{{ document_type_label }} — visual designer</h1>
+    <p>Drag blocks onto the page. Double-click text to edit. Select any element to style, duplicate or delete it.</p></div>
+    <a href="{% url 'documents:template_edit' document_type %}">Publishing, branding &amp; version history</a></div>
+  {% if template_obj %}<p class="messages__item messages__item--info">Opening this designer does not change your saved template. Save replaces its layout as a new version. Published templates affect newly generated documents immediately.</p>{% endif %}
+  <form id="designer-toolbar" class="form-actions">
+    {% csrf_token %}
+    <button type="button" class="btn" id="designer-blank">Blank page</button>
+    <button type="button" class="btn" id="designer-starter">Sign-off starter</button>
+    <button type="button" class="btn" id="designer-undo">Undo</button>
+    <button type="button" class="btn" id="designer-redo">Redo</button>
+    <button type="button" class="btn" id="designer-remove">Delete selected</button>
+    <label>Insert inventory field <select id="designer-field"></select></label>
+    <button type="button" class="btn" id="designer-insert">Insert</button>
+    <label>Company logo <input type="file" id="designer-logo" accept="image/png,image/jpeg"></label>
+    <button type="button" class="btn" id="designer-preview">Preview</button>
+    <button type="button" class="btn" id="designer-pdf">Open PDF</button>
+    <label><input type="checkbox" id="designer-reviewed"> PDF reviewed</label>
+    <button type="button" class="btn btn--primary" id="designer-save">Save</button>
+  </form>
+  <p id="designer-status" role="status">Loading visual designer…</p>
+  <div class="designer-workspace"><aside><h2>Blocks</h2><div id="designer-blocks"></div></aside>
+    <div id="grapes-canvas"></div>
+    <aside><h2>Selected element</h2><div id="designer-traits"></div>
+      <details><summary>Asset table columns</summary>
+        <label>Column <select id="designer-column"></select></label>
+        <button type="button" class="btn btn--sm" id="designer-add-column">Add column</button>
+        <button type="button" class="btn btn--sm" id="designer-remove-column">Remove selected column</button>
+        <p>Select the table or a cell first. Double-click a header to rename it.</p>
+      </details>
+      <div id="designer-styles"></div><h2>Layers</h2><div id="designer-layers"></div></aside>
+  </div>
+  <dialog id="designer-preview-dialog"><button type="button" class="btn" id="designer-close">Close preview</button><iframe id="designer-preview-frame" title="Rendered document preview" sandbox></iframe></dialog>
+</div>
+{{ designer_config|json_script:"designer-config" }}
+{% endblock %}
+{% block extra_scripts %}
+<script src="{% static 'vendor/grapesjs/grapes.min.js' %}" defer></script>
+<script src="{% static 'js/visual_designer.js' %}" defer></script>
+{% endblock %}

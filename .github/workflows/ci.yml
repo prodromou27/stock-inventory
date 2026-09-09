@@ -54,6 +54,7 @@ jobs:
         run: |
           npm ci
           npm run build:css
+          npm run build:vendor
 
       # WeasyPrint's PDF-rendering dependencies (docs/architecture/06-documents-and-snapshots.md)
       # — same packages deploy/Dockerfile installs for the app image.

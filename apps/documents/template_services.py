@@ -329,6 +329,16 @@ def template_completeness(template_obj):
     """
     if template_obj is None:
         return []
+    if template_obj.layout_config.get("visual_design") is not None:
+        # The Administrator controls all printed content in the visual designer.
+        # Review confirmation still gates publishing; omitted fields are intentional.
+        return [
+            {
+                "key": "preview",
+                "label": "PDF preview reviewed and confirmed",
+                "satisfied": template_obj.preview_confirmed,
+            }
+        ]
     hidden_columns = set(template_obj.layout_config.get("hidden_columns") or [])
     visible_columns = {key for key, _ in REPORT_COLUMNS} - hidden_columns
     show_signatures = template_obj.layout_config.get("show_signature_block", True)

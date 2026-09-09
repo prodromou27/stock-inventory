@@ -66,6 +66,32 @@ screen remains Administrator-only; Stock Managers have read-only preview access.
 
 ## Rendering pipeline
 
+### Embedded GrapesJS designer (September 2026)
+
+On explicit Administrator approval, printed content is entirely optional in the new
+visual designer: document numbers, dates, prepared-by text, tables and signatures may
+all be removed. This supersedes the fixed printed-field checklist for visual designs
+only. Transaction data, numbering, authorization and immutable generated documents are
+unchanged. Publishing still requires PDF review and the existing approval workflow.
+
+`/documents/templates/<type>/designer/` embeds locally bundled GrapesJS core. The
+Administrator edits HTML-like layout blocks, not Django source. The service in
+`apps/documents/designer_services.py` validates markup, bounded CSS and allow-listed inventory
+tokens, then emits the server-owned Django expressions and repeating asset-row loop.
+Scripts, event handlers, arbitrary template expressions and external images/styles
+are not accepted. A company-logo block uses the existing validated logo upload.
+Designer HTML/CSS is saved in `layout_config.visual_design` alongside compiled source
+in each existing append-only version snapshot. Stale saves to existing templates are
+rejected using their version number. Existing structured/source templates are not
+automatically converted or overwritten on opening the canvas; replacement is explicit
+on Save. Restoring or duplicating a visual design retains its editable layout.
+
+Build local assets with `npm ci`, `npm run build:css`, and `npm run build:vendor`.
+Both Docker builds, development Compose's asset watcher and CI run the vendor build.
+GrapesJS is pinned in package-lock.json; no CDN, Studio SDK or telemetry is used.
+The canvas represents the A4 printable area with 20 mm margins. PDF preview is the
+authoritative pagination check; this is not a DOCX editor or a free-position DTP tool.
+
 ### No-code designer refinement (September 2026)
 
 The editor now gives the paper preview most of the workspace and keeps properties in a

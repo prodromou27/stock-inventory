@@ -6,6 +6,11 @@ app_name = "documents"
 
 urlpatterns = [
     path(
+        "templates/<str:document_type>/designer/",
+        views.VisualDocumentDesignerView.as_view(),
+        name="template_designer",
+    ),
+    path(
         "transactions/<uuid:pk>/generate/",
         views.GenerateDocumentView.as_view(),
         name="generate_document",

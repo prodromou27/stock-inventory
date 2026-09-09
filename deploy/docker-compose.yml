@@ -54,7 +54,7 @@ services:
     working_dir: /app
     volumes:
       - ..:/app
-    command: sh -c "npm ci && npm run build:css && touch /tmp/assets-ready && npm run watch:css"
+    command: sh -c "npm ci && npm run build:css && npm run build:vendor && touch /tmp/assets-ready && npm run watch:css"
     healthcheck:
       test: ["CMD", "test", "-f", "/tmp/assets-ready"]
       interval: 2s
