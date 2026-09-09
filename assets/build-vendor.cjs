@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const target = path.join(__dirname, '../static/vendor/grapesjs');
 fs.mkdirSync(target, {recursive: true});
-for (const [from, to] of [['dist/grapes.min.js', 'grapes.min.js'], ['dist/css/grapes.min.css', 'grapes.min.css'], ['LICENSE', 'LICENSE']]) {
+for (const [from, to] of [['dist/grapes.min.js', 'grapes.min.js'], ['dist/grapes.min.js.map', 'grapes.min.js.map'], ['dist/css/grapes.min.css', 'grapes.min.css'], ['LICENSE', 'LICENSE']]) {
   fs.copyFileSync(path.join(__dirname, '../node_modules/grapesjs', from), path.join(target, to));
 }
 const bundled = ['backbone','backbone-undo','underscore','codemirror','codemirror-formatting','html-entities','promise-polyfill'];
