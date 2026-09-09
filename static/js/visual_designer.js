@@ -5,7 +5,15 @@ document.addEventListener('DOMContentLoaded', () => {
   const config = JSON.parse(document.getElementById('designer-config').textContent);
   const status = document.getElementById('designer-status');
   const reviewed = document.getElementById('designer-reviewed');
+  let logoUrl = config.logo || '';
+  const usage = document.getElementById('designer-usage');
+  function showUsage(state) {
+    usage.textContent = state === 'published'
+      ? `Version ${version} is in use for NEW ${config.kind} documents. Existing PDFs stay unchanged.`
+      : `This design is ${state === 'default' ? 'not saved' : 'a draft — not in use'}. Operations currently use the packaged default form.`;
+  }
   let version = config.version, dirty = false, busy = false, textView, revision = 0;
+  showUsage(config.status);
   const fields = {...config.fields, ...Object.fromEntries(Object.entries(config.lineFields).map(([k,v]) => ['line.' + k, 'Asset: ' + v]))};
   const fieldOptions = Object.entries(fields).map(([value, name]) => ({value, name}));
   const fieldBlock = key => ({type:'stock-field', attributes:{'data-stock-field':key}});
@@ -22,7 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
       model:{defaults:{tagName:'img', void:true, droppable:false, editable:false, traits:[],
         attributes:{src:'stock-logo',alt:'Company logo'}, style:{width:'180px',height:'60px'}}},
       view:{onRender() {
-        this.el.src = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="180" height="60"><rect width="180" height="60" fill="#eef4f4"/><text x="20" y="35" font-size="14" fill="#526565">Company logo</text></svg>');
+        this.el.src = logoUrl || 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="180" height="60"><rect width="180" height="60" fill="#eef4f4"/><text x="20" y="35" font-size="14" fill="#526565">Choose a logo</text></svg>');
         this.el.alt = 'Company logo (shown in PDF preview)';
       }},
     });
@@ -41,10 +49,31 @@ document.addEventListener('DOMContentLoaded', () => {
     canvasCss:'body{font-family:Arial,sans-serif;font-size:10pt}table{width:100%;border-collapse:collapse}td,th{border:1px solid #555;padding:5px}',
     canvas:{styles:[],scripts:[]},
   });
-  const fitCanvas = () => editor.Canvas.setZoom(Math.min(100, Math.floor((document.getElementById('grapes-canvas').clientWidth - 32) / 643 * 100)));
+  const pageSize = document.getElementById('designer-page-size');
+  const orientation = document.getElementById('designer-orientation');
+  const margin = document.getElementById('designer-margin');
+  pageSize.value = config.design?.page?.size || 'A4';
+  orientation.value = config.design?.page?.orientation || 'portrait';
+  margin.value = config.design?.page?.margin ?? 20;
+  const pageSettings = () => ({size:pageSize.value,orientation:orientation.value,margin:Number(margin.value)});
+  const fitCanvas = () => {
+    const dimensions = pageSize.value === 'Letter' ? [215.9,279.4] : [210,297];
+    const width = (dimensions[orientation.value === 'landscape' ? 1 : 0] - 2 * Number(margin.value)) * 96 / 25.4;
+    editor.Devices.getSelected().set('width',`${width}px`);
+    editor.Canvas.setZoom(Math.max(20,Math.min(100, Math.floor((document.getElementById('grapes-canvas').clientWidth - 32) / width * 100))));
+  };
   editor.on('load', fitCanvas);
   editor.on('rte:enable', view => {textView = view;});
   window.addEventListener('resize', fitCanvas);
+  [pageSize,orientation,margin].forEach(input => input.addEventListener('change', () => {
+    if (!margin.checkValidity()) {status.textContent = 'Margins must be between 5 and 40 mm.';return;}
+    revision += 1;dirty = true;reviewed.checked = false;fitCanvas();status.textContent = 'Page setup changed — preview before saving';
+  }));
+  document.getElementById('designer-fullscreen').onclick = event => {
+    root.classList.toggle('designer-expanded');
+    event.target.textContent = root.classList.contains('designer-expanded') ? 'Exit expanded workspace' : 'Expand workspace';
+    fitCanvas();
+  };
   function assetTable() {
     return {tagName:'table',components:[
       {tagName:'thead',components:[{tagName:'tr',components:['brand','serial','description','quantity'].map(k => ({tagName:'th',type:'text',content:config.lineFields[k]}))}]},
@@ -80,7 +109,7 @@ document.addEventListener('DOMContentLoaded', () => {
   editor.on('update', () => {revision += 1;dirty = true; reviewed.checked = false; status.textContent = 'Unsaved changes';});
   editor.on('load', () => {dirty = false; status.textContent = config.design ? 'Saved design loaded' : 'Starter loaded — your existing template is unchanged until you save';});
   const select = document.getElementById('designer-field');
-  fieldOptions.forEach(({value,name}) => select.add(new Option(name,value)));
+  Object.entries(config.fields).forEach(([value,name]) => select.add(new Option(name,value)));
   document.getElementById('designer-insert').onclick = () => {
     const selected = editor.getSelected();
     (selected && selected.get('droppable') !== false ? selected : editor.getWrapper()).append(fieldBlock(select.value));
@@ -90,6 +119,20 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('designer-undo').onclick = () => editor.UndoManager.undo();
   document.getElementById('designer-redo').onclick = () => editor.UndoManager.redo();
   document.getElementById('designer-remove').onclick = () => editor.getSelected()?.remove();
+  const textPanel = document.getElementById('designer-text-panel');
+  const textInput = document.getElementById('designer-text');
+  editor.on('component:selected', component => {
+    textPanel.hidden = component.get('type') !== 'text' || component.find('[data-stock-field]').length > 0;
+    if (!textPanel.hidden) textInput.value = component.getEl()?.textContent || '';
+  });
+  editor.on('component:deselected', () => {textPanel.hidden = true;});
+  document.getElementById('designer-apply-text').onclick = () => {
+    const component = editor.getSelected();
+    if (!component || textPanel.hidden) return;
+    const encoded = document.createElement('div');encoded.textContent = textInput.value;
+    component.components(encoded.innerHTML);
+    status.textContent = 'Text updated — unsaved changes';
+  };
   const columnSelect = document.getElementById('designer-column');
   Object.entries(config.lineFields).forEach(([key,label]) => columnSelect.add(new Option(label,key)));
   document.getElementById('designer-add-column').onclick = () => {
@@ -108,10 +151,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const index = cell.index();
     table.find('tr').forEach(row => row.components().at(index)?.remove());
   };
-  document.getElementById('designer-logo').onchange = () => {dirty = true;reviewed.checked = false;status.textContent = 'Logo selected — preview before saving';};
+  document.getElementById('designer-logo').onchange = event => {
+    const file = event.target.files[0];
+    if (logoUrl.startsWith('blob:')) URL.revokeObjectURL(logoUrl);
+    logoUrl = file ? URL.createObjectURL(file) : (config.logo || '');
+    editor.getWrapper().findType('stock-logo').forEach(component => component.getView().render());
+    revision += 1;dirty = true;reviewed.checked = false;status.textContent = 'Logo selected — preview before saving';
+  };
   window.addEventListener('beforeunload', event => {if(dirty) {event.preventDefault();event.returnValue = '';}});
   async function send(action) {
     if (busy) return;
+    if (!margin.reportValidity()) return;
     busy = true; status.textContent = action === 'save' ? 'Saving and validating PDF…' : 'Rendering preview…';
     // Commit the rich-text DOM before exporting; blur synchronization is async.
     try {if (textView?.el?.isConnected) await textView.syncContent();}
@@ -119,14 +169,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const sentRevision = revision;
     const data = new FormData();
     data.set('csrfmiddlewaretoken',document.querySelector('#designer-toolbar [name=csrfmiddlewaretoken]').value);
-    data.set('design',JSON.stringify({html:editor.getHtml(),css:editor.getCss()}));
-    data.set('version',version);data.set('action',action);data.set('preview_confirmed',reviewed.checked);
+    data.set('design',JSON.stringify({html:editor.getHtml(),css:editor.getCss(),page:pageSettings()}));
+    data.set('version',version);data.set('action',action);data.set('preview_confirmed',reviewed.checked);data.set('activate',action === 'save' ? 'true' : 'false');
     const logo = document.getElementById('designer-logo').files[0]; if(logo) data.set('logo',logo);
     const buttons = root.querySelectorAll('button'); buttons.forEach(b => b.disabled = true);
     try {
       const response = await fetch(root.dataset.url,{method:'POST',body:data});
       if(!response.ok) {const error = await response.json();throw new Error(error.error || 'Request failed');}
-      if(action === 'save') {const result = await response.json();version = result.version;dirty = revision !== sentRevision;status.textContent = 'Saved as version ' + version + (dirty ? ' — newer edits are unsaved' : '');}
+      if(action === 'save') {const result = await response.json();version = result.version;showUsage(result.status);dirty = revision !== sentRevision;status.textContent = 'Saved as version ' + version + (dirty ? ' — newer edits are unsaved' : '');}
       else {
         const frame = document.getElementById('designer-preview-frame');
         if(action === 'pdf') {const url = URL.createObjectURL(await response.blob());frame.removeAttribute('srcdoc');frame.src = url;setTimeout(() => URL.revokeObjectURL(url),60000);}

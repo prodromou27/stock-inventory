@@ -8,27 +8,36 @@
 <div id="visual-designer" data-url="{% url 'documents:template_designer' document_type %}">
   <div class="page-header"><div><h1>{{ document_type_label }} — visual designer</h1>
     <p>Drag blocks onto the page. Double-click text to edit. Select any element to style, duplicate or delete it.</p></div>
-    <a href="{% url 'documents:template_edit' document_type %}">Publishing, branding &amp; version history</a></div>
-  {% if template_obj %}<p class="messages__item messages__item--info">Opening this designer does not change your saved template. Save replaces its layout as a new version. Published templates affect newly generated documents immediately.</p>{% endif %}
+    <a href="{% url 'documents:template_edit' document_type %}">Advanced settings &amp; version history</a></div>
+  <p id="designer-usage" class="messages__item messages__item--info" role="status"></p>
+  {% if template_obj and not template_obj.layout_config.visual_design %}<p class="messages__item messages__item--warning">Your saved template was made in the older editor. The canvas below is a starter, not a conversion of that template. Saving replaces its layout; older versions remain available.</p>{% endif %}
   <form id="designer-toolbar" class="form-actions">
     {% csrf_token %}
-    <button type="button" class="btn" id="designer-blank">Blank page</button>
-    <button type="button" class="btn" id="designer-starter">Sign-off starter</button>
+    <button type="button" class="btn" id="designer-preview">Preview with sample data</button>
+    <button type="button" class="btn" id="designer-pdf">Open PDF</button>
+    <label><input type="checkbox" id="designer-reviewed"> PDF reviewed</label>
+    <button type="button" class="btn btn--primary" id="designer-save">Save &amp; use for new documents</button>
     <button type="button" class="btn" id="designer-undo">Undo</button>
     <button type="button" class="btn" id="designer-redo">Redo</button>
     <button type="button" class="btn" id="designer-remove">Delete selected</button>
-    <label>Insert inventory field <select id="designer-field"></select></label>
-    <button type="button" class="btn" id="designer-insert">Insert</button>
-    <label>Company logo <input type="file" id="designer-logo" accept="image/png,image/jpeg"></label>
-    <button type="button" class="btn" id="designer-preview">Preview</button>
-    <button type="button" class="btn" id="designer-pdf">Open PDF</button>
-    <label><input type="checkbox" id="designer-reviewed"> PDF reviewed</label>
-    <button type="button" class="btn btn--primary" id="designer-save">Save</button>
+    <button type="button" class="btn" id="designer-fullscreen">Expand workspace</button>
   </form>
   <p id="designer-status" role="status">Loading visual designer…</p>
-  <div class="designer-workspace"><aside><h2>Blocks</h2><div id="designer-blocks"></div></aside>
+  <div class="designer-workspace"><aside>
+    <details><summary>Page setup</summary>
+      <label>Paper <select id="designer-page-size"><option>A4</option><option>Letter</option></select></label>
+      <label>Orientation <select id="designer-orientation"><option value="portrait">Portrait</option><option value="landscape">Landscape</option></select></label>
+      <label>Margins (mm) <input type="number" id="designer-margin" min="5" max="40" value="20"></label>
+    </details>
+    <details><summary>Start over</summary><button type="button" class="btn" id="designer-blank">Blank page</button><button type="button" class="btn" id="designer-starter">Sign-off starter</button></details>
+    <h2>Inventory fields</h2><label>Document field <select id="designer-field"></select></label><button type="button" class="btn" id="designer-insert">Insert field</button>
+    <p class="helptext">Fields fill from the transaction. Use the asset table for repeating items.</p>
+    <label>Company logo <input type="file" id="designer-logo" accept="image/png,image/jpeg"></label>
+    <h2>Blocks</h2><div id="designer-blocks"></div></aside>
     <div id="grapes-canvas"></div>
-    <aside><h2>Selected element</h2><div id="designer-traits"></div>
+    <aside><h2>Selected element</h2>
+      <div id="designer-text-panel" hidden><label>Text <textarea id="designer-text" rows="4"></textarea></label><button type="button" class="btn btn--sm" id="designer-apply-text">Apply text</button></div>
+      <div id="designer-traits"></div>
       <details><summary>Asset table columns</summary>
         <label>Column <select id="designer-column"></select></label>
         <button type="button" class="btn btn--sm" id="designer-add-column">Add column</button>

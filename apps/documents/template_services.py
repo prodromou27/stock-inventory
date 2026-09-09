@@ -238,6 +238,7 @@ def update_template(
     template_obj = get_template(document_type)
     is_new = template_obj is None
     old_html = template_obj.html_source if template_obj else None
+    old_visual_design = template_obj.layout_config.get("visual_design") if template_obj else None
     old_logo = (
         template_obj.logo
         if template_obj and template_obj.logo and (logo is not None or remove_logo)
@@ -281,6 +282,14 @@ def update_template(
         template_obj.logo = None
     if layout_config is not None:
         template_obj.layout_config = _clean_layout_config(layout_config)
+        if (
+            old_visual_design is not None
+            and "visual_design" not in layout_config
+            and html_source == old_html
+            and template_obj.custom_html_enabled
+        ):
+            # Branding/settings-only saves must not erase the editable canvas.
+            template_obj.layout_config["visual_design"] = old_visual_design
     # Any save resets this — an Administrator must re-review the PDF
     # preview after every change, not just once ever, before Publish is
     # allowed (see the model field's docstring and template_completeness()).

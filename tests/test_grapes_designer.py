@@ -14,6 +14,80 @@ from apps.documents.template_services import template_completeness
 pytestmark = pytest.mark.django_db
 
 
+@pytest.mark.parametrize("kind", ["delivery", "assignment", "disposal"])
+def test_save_and_use_activates_for_operations(client, administrator, kind):
+    from apps.documents.pdf import active_template_for
+
+    client.force_login(administrator)
+    response = client.post(
+        reverse("documents:template_designer", args=[kind]),
+        {
+            "action": "save",
+            "activate": "true",
+            "version": "0",
+            "design": json.dumps({"html": "<h1>New operational design</h1>", "css": ""}),
+        },
+    )
+    assert response.status_code == 200
+    current = active_template_for(kind)
+    assert current is not None
+    assert "New operational design" in current.html_source
+    assert current.approved_by == administrator
+    assert current.version == 1
+
+
+def test_settings_save_preserves_editable_canvas(administrator):
+    from apps.documents.template_services import update_template
+
+    design = {"html": "<p>Saved canvas</p>", "css": ""}
+    saved = save_design(user=administrator, document_type="delivery", design=design, version=0)
+    updated = update_template(
+        user=administrator,
+        document_type="delivery",
+        html_source=saved.html_source,
+        layout_config={},
+        company_name="New name",
+    )
+    assert updated.layout_config["visual_design"] == design
+    assert (
+        DocumentTemplateVersion.objects.get(template=updated, version=2).field_snapshot[
+            "layout_config"
+        ]["visual_design"]
+        == design
+    )
+
+
+def test_page_setup_compiles():
+    source = compile_design(
+        {
+            "html": "<p>Landscape</p>",
+            "css": "",
+            "page": {
+                "size": "Letter",
+                "orientation": "landscape",
+                "margin": 12,
+            },
+        }
+    )
+    assert "size:Letter landscape;margin:12mm" in source
+
+
+@pytest.mark.parametrize(
+    "page",
+    [
+        {"margin": True},
+        {"margin": 0},
+        {"margin": 41},
+        {"size": "url(x)"},
+        {"orientation": "other"},
+        {"extra": 1},
+    ],
+)
+def test_page_setup_rejects_invalid_values(page):
+    with pytest.raises(ValidationError):
+        compile_design({"html": "", "css": "", "page": page})
+
+
 def test_local_designer_assets():
     from django.contrib.staticfiles.finders import find
 
@@ -26,17 +100,11 @@ def test_local_designer_assets():
         assert find(asset), asset
 
 
-def test_published_design_snapshot_and_restore(
-    administrator, second_administrator, unit_product, location_tree
-):
+def test_published_design_snapshot_and_restore(administrator, unit_product, location_tree):
     from datetime import date
 
     from apps.documents.services import generate_document
-    from apps.documents.template_services import (
-        publish_template,
-        restore_template_version,
-        submit_for_review,
-    )
+    from apps.documents.template_services import restore_template_version
     from apps.inventory.models import UnitAsset
     from apps.inventory.services.assignments import deliver_to_customer
     from apps.inventory.services.receipts import receive_stock
@@ -51,10 +119,9 @@ def test_published_design_snapshot_and_restore(
         design=design,
         version=0,
         preview_confirmed=True,
+        activate=True,
     )
     original_version = DocumentTemplateVersion.objects.get(template=template)
-    submit_for_review(user=administrator, document_type="delivery")
-    publish_template(user=second_administrator, document_type="delivery")
     receive_stock(
         user=administrator,
         product=unit_product,
@@ -242,6 +309,7 @@ def test_grapes_browser(live_server, administrator):
             page.screenshot(path=f".qa-screenshots/grapes-{kind}.png")
         page.set_viewport_size({"width": 1366, "height": 768})
         page.screenshot(path=".qa-screenshots/grapes-laptop.png")
+        page.get_by_text("Start over", exact=True).click()
         page.locator("#designer-blank").click()
         page.locator("#designer-save").click()
         expect(page.locator("#designer-status")).to_have_text("Saved as version 2", timeout=30000)

@@ -282,6 +282,7 @@ class VisualDocumentDesignerView(LoginRequiredMixin, RoleRequiredMixin, View):
 
     def get(self, request, document_type):
         from .designer_services import FIELDS, LINE_FIELDS
+        from .pdf import build_logo_data_uri
 
         _require_valid_document_type(document_type)
         current = get_template(document_type)
@@ -297,6 +298,8 @@ class VisualDocumentDesignerView(LoginRequiredMixin, RoleRequiredMixin, View):
                     "fields": FIELDS,
                     "lineFields": LINE_FIELDS,
                     "kind": document_type,
+                    "status": current.status if current else "default",
+                    "logo": build_logo_data_uri(current),
                 },
                 "template_obj": current,
             },
@@ -320,8 +323,11 @@ class VisualDocumentDesignerView(LoginRequiredMixin, RoleRequiredMixin, View):
                     version=int(request.POST.get("version", "0")),
                     preview_confirmed=request.POST.get("preview_confirmed") == "true",
                     logo=request.FILES.get("logo"),
+                    activate=request.POST.get("activate") == "true",
                 )
-                return JsonResponse({"version": saved.version, "message": "Template saved."})
+                return JsonResponse(
+                    {"version": saved.version, "status": saved.status, "message": "Template saved."}
+                )
             if action not in ("preview", "pdf"):
                 raise ValidationError("Unknown designer action.")
             result = preview_design(

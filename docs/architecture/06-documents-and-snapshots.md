@@ -151,6 +151,15 @@ here by extension even though §12 names inventory/audit history specifically).
 
 ## Download authorization
 
+### Visual designer activation (approved workflow refinement)
+
+The Administrator-only visual designer offers **Save & use for new documents**.
+It compiles the restricted layout, validates normal and multi-page PDF rendering,
+records an append-only version, and activates that version atomically with an audit
+event. This explicit action does not require a second Administrator. The advanced
+editor retains its existing draft/review workflow. Existing generated PDFs remain
+immutable; regeneration creates a new document using the active template.
+
 Both `GeneratedDocument` and `Attachment` downloads go through the same `core.scoping.require_location_access`
 check used everywhere else, keyed off the parent `InventoryTransaction`'s locations — there is no separate,
 divergent authorization path for file downloads (spec §11, §17 security requirement "authorization on every...

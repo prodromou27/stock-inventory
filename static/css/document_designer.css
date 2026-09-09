@@ -7,3 +7,7 @@
 #designer-toolbar{gap:8px;align-items:center}#designer-toolbar label{font-size:12px}#designer-toolbar input[type=file]{max-width:190px}
 #designer-preview-dialog{width:85vw;height:90vh;border:1px solid #ccd5d8}#designer-preview-dialog::backdrop{background:#10272a99}#designer-preview-frame{display:block;width:100%;height:90%;border:0}
 @media(max-width:1200px){.designer-workspace{grid-template-columns:145px minmax(340px,1fr) 210px}}
+.designer-workspace>aside label{display:block;margin:10px 0;font-size:12px}.designer-workspace>aside select,.designer-workspace>aside input,.designer-workspace>aside textarea{max-width:100%;width:100%}
+.designer-workspace details{margin-bottom:12px;border-bottom:1px solid #dce4e5;padding-bottom:12px}.designer-workspace summary{cursor:pointer;font-weight:600;font-size:13px}
+#designer-toolbar{position:sticky;top:64px;z-index:10;background:#fff;padding:10px;border:1px solid #dce4e5;border-radius:6px}
+.designer-expanded{position:fixed;inset:0;z-index:100;background:#f8fafb;padding:14px;overflow:auto}.designer-expanded .page-header{margin:0;padding:0;border:0}.designer-expanded .page-header p{display:none}.designer-expanded #designer-toolbar{top:0}.designer-expanded .designer-workspace{height:calc(100vh - 220px)}

@@ -196,9 +196,30 @@ class DesignerParser(HTMLParser):
             self.output.append(literal(data))
 
 
+def page_settings(design):
+    page = design.get("page", {})
+    if not isinstance(page, dict) or set(page) - {"size", "orientation", "margin"}:
+        raise ValidationError("Invalid page settings.")
+    size, orientation, margin = (
+        page.get("size", "A4"),
+        page.get("orientation", "portrait"),
+        page.get("margin", 20),
+    )
+    if size not in ("A4", "Letter") or orientation not in ("portrait", "landscape"):
+        raise ValidationError("Choose a valid page size and orientation.")
+    if isinstance(margin, bool) or not isinstance(margin, int) or not 5 <= margin <= 40:
+        raise ValidationError("Page margins must be between 5 and 40 mm.")
+    return {"size": size, "orientation": orientation, "margin": margin}
+
+
 def compile_design(design):
-    if not isinstance(design, dict) or set(design) != {"html", "css"}:
+    if (
+        not isinstance(design, dict)
+        or not {"html", "css"} <= set(design)
+        or set(design) - {"html", "css", "page"}
+    ):
         raise ValidationError("Invalid designer document.")
+    page = page_settings(design)
     html = design["html"]
     if not isinstance(html, str) or len(html) > 200000:
         raise ValidationError("Document is too large.")
@@ -210,7 +231,8 @@ def compile_design(design):
     css = clean_css(design["css"])
     return (
         '<!doctype html><html><head><meta charset="utf-8"><style>'
-        "@page{size:A4;margin:20mm}body{font-family:Arial;font-size:10pt;}"
+        f"@page{{size:{page['size']} {page['orientation']};margin:{page['margin']}mm}}"
+        "body{font-family:Arial;font-size:10pt;}"
         "table{width:100%;border-collapse:collapse}td,th{border:1px solid #555;padding:5px}"
         "thead{display:table-header-group}tr{break-inside:avoid}"
         + css
@@ -234,7 +256,9 @@ def preview_design(*, user, document_type, design, output_format, logo=None):
     )
 
 
-def save_design(*, user, document_type, design, version, preview_confirmed=False, logo=None):
+def save_design(
+    *, user, document_type, design, version, preview_confirmed=False, logo=None, activate=False
+):
     from django.db import transaction
 
     from .models import DocumentTemplate
@@ -251,7 +275,7 @@ def save_design(*, user, document_type, design, version, preview_confirmed=False
             raise ValidationError("This template changed in another tab. Reload before saving.")
         config = dict(current.layout_config) if current else {}
         config["visual_design"] = design
-        return update_template(
+        saved = update_template(
             user=user,
             document_type=document_type,
             html_source=source,
@@ -260,3 +284,35 @@ def save_design(*, user, document_type, design, version, preview_confirmed=False
             preview_confirmed=preview_confirmed,
             logo=logo,
         )
+        if activate:
+            from django.utils import timezone
+
+            from apps.audit.models import AuditEvent
+            from apps.audit.services import record_event
+
+            from .models import TemplateStatus
+
+            old_status = saved.status
+            saved.status = TemplateStatus.PUBLISHED
+            saved.approved_by = user
+            saved.approved_at = timezone.now()
+            saved.submitted_by = None
+            saved.submitted_at = None
+            saved.save(
+                update_fields=[
+                    "status",
+                    "approved_by",
+                    "approved_at",
+                    "submitted_by",
+                    "submitted_at",
+                ]
+            )
+            record_event(
+                actor=user,
+                event_type=AuditEvent.EventType.RECORD_UPDATED,
+                obj=saved,
+                summary="Activated visual document template for new documents",
+                old_values={"status": old_status},
+                new_values={"status": saved.status, "version": saved.version},
+            )
+        return saved
