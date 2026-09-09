@@ -189,6 +189,8 @@ def test_document_generation_browser(live_server, administrator, unit_product, l
         page.wait_for_url("**/documents/*/")
 
         download_link = page.get_by_role("link", name="Download PDF")
+        assert download_link.get_attribute("target") == "_blank"
+        assert download_link.get_attribute("rel") == "noopener"
         pdf_url = download_link.get_attribute("href")
         response = page.request.get(live_server.url + pdf_url)
         assert response.ok

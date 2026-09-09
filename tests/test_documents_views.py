@@ -81,6 +81,20 @@ class TestGenerateDocumentView:
 
 @pytest.mark.django_db
 class TestDocumentDownloadView:
+    def test_detail_download_opens_pdf_in_new_tab(
+        self, client, stock_manager_with_room_access, assignment_txn
+    ):
+        document = generate_document(txn=assignment_txn, user=stock_manager_with_room_access)
+        client.force_login(stock_manager_with_room_access)
+
+        response = client.get(reverse("documents:document_detail", kwargs={"pk": document.pk}))
+
+        assert response.status_code == 200
+        expected_url = reverse("documents:document_download", kwargs={"pk": document.pk})
+        assert f'href="{expected_url}"' in response.content.decode()
+        assert 'target="_blank"' in response.content.decode()
+        assert 'rel="noopener"' in response.content.decode()
+
     def test_download_returns_pdf_bytes(
         self, client, stock_manager_with_room_access, assignment_txn
     ):

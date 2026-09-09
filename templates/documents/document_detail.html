@@ -6,7 +6,10 @@
   <div class="page-header">
     <h1>Document {{ document.document_number }}</h1>
     <div class="page-header__actions">
-      <a class="btn btn--primary" href="{% url 'documents:document_download' document.pk %}">Download PDF</a>
+      <a class="btn btn--primary"
+         href="{% url 'documents:document_download' document.pk %}"
+         target="_blank"
+         rel="noopener">Download PDF</a>
       {% if user_is_administrator or "StockManager" in user_role_groups %}
         <form method="post" action="{% url 'documents:regenerate_document' document.pk %}">
           {% csrf_token %}
