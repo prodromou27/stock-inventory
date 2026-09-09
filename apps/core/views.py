@@ -112,9 +112,8 @@ def _search_results(user, query, limit):
     Every result set is built from the same scoped queryset each list view
     already uses — never a fresh unscoped query — so a Stock Manager
     searching never sees a product/asset/transaction outside their granted
-    locations. Products are catalog-global (not location-scoped, per
-    docs/architecture/01-repository-structure.md), so they're the one result
-    set without a scope filter.
+    locations. Product metadata is searched through physical assets, so the
+    results answer "which items?" rather than returning catalog definitions.
 
     Ranks by Postgres trigram similarity (apps.core.migrations.
     0002_enable_pg_trgm + the GIN trigram indexes on Brand/Product/UnitAsset)
@@ -131,12 +130,11 @@ def _search_results(user, query, limit):
     from django.db import connection
     from django.db.models import Q
 
-    from apps.catalog.models import Product
     from apps.inventory.access import scope_asset_queryset, scope_transaction_queryset
     from apps.inventory.models import InventoryTransaction, UnitAsset
 
     if not query:
-        return {"products": [], "assets": [], "transactions": []}
+        return {"assets": [], "transactions": []}
 
     # Summing three TrigramSimilarity() calls and filtering on the total
     # (the previous approach) can't use any of the GIN trigram indexes on
@@ -152,41 +150,39 @@ def _search_results(user, query, limit):
     with connection.cursor() as cursor:
         cursor.execute("SELECT set_limit(%s)", [TRIGRAM_THRESHOLD])
 
-    products = list(
-        Product.objects.select_related("brand", "product_type")
-        .filter(is_active=True)
-        .filter(
-            Q(model__trigram_similar=query)
-            | Q(sku__trigram_similar=query)
-            | Q(brand__name__trigram_similar=query)
-            | Q(brand__name__icontains=query)
-            | Q(model__icontains=query)
-            | Q(sku__icontains=query)
-            | Q(product_type__name__icontains=query)
-        )
-        .annotate(
-            similarity=TrigramSimilarity("model", query)
-            + TrigramSimilarity("sku", query)
-            + TrigramSimilarity("brand__name", query)
-        )
-        .order_by("-similarity", "brand__name", "model")[:limit]
-    )
     assets = list(
         scope_asset_queryset(
             user,
-            UnitAsset.objects.select_related("product", "product__brand", "current_location"),
+            UnitAsset.objects.select_related(
+                "product",
+                "product__brand",
+                "product__product_type",
+                "current_location",
+                "current_custody_transaction",
+            ),
         )
         .filter(
             Q(normalized_serial__trigram_similar=query.upper())
+            | Q(product__model__trigram_similar=query)
+            | Q(product__sku__trigram_similar=query)
+            | Q(product__brand__name__trigram_similar=query)
             | Q(project_reference__trigram_similar=query)
             | Q(final_customer__trigram_similar=query)
             | Q(normalized_serial__icontains=query.upper())
             | Q(name__icontains=query)
+            | Q(product__brand__name__icontains=query)
+            | Q(product__model__icontains=query)
+            | Q(product__sku__icontains=query)
+            | Q(product__product_type__name__icontains=query)
             | Q(project_reference__icontains=query)
             | Q(final_customer__icontains=query)
+            | Q(current_custody_transaction__employee_name__icontains=query)
         )
         .annotate(
             similarity=TrigramSimilarity("normalized_serial", query.upper())
+            + TrigramSimilarity("product__model", query)
+            + TrigramSimilarity("product__sku", query)
+            + TrigramSimilarity("product__brand__name", query)
             + TrigramSimilarity("project_reference", query)
             + TrigramSimilarity("final_customer", query)
         )
@@ -205,7 +201,7 @@ def _search_results(user, query, limit):
         )
         .order_by("-occurred_at", "-created_at")[:limit]
     )
-    return {"products": products, "assets": assets, "transactions": transactions}
+    return {"assets": assets, "transactions": transactions}
 
 
 class GlobalSearchView(LoginRequiredMixin, TemplateView):
@@ -238,12 +234,19 @@ class SearchSuggestView(LoginRequiredMixin, View):
 
         def rows(kind):
             for obj in results[kind]:
-                yield {"label": str(obj), "url": obj.get_absolute_url()}
+                label = str(obj)
+                if kind == "assets" and obj.current_custody_transaction_id:
+                    recipient = (
+                        obj.current_custody_transaction.employee_name
+                        or obj.current_custody_transaction.final_customer
+                    )
+                    if recipient:
+                        label = f"{label} — {recipient}"
+                yield {"label": label, "url": obj.get_absolute_url()}
 
         return JsonResponse(
             {
                 "query": query,
-                "products": list(rows("products")),
                 "assets": list(rows("assets")),
                 "transactions": list(rows("transactions")),
             }

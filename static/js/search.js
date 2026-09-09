@@ -12,7 +12,6 @@
   form.appendChild(panel);
 
   const GROUPS = [
-    ["products", "Products"],
     ["assets", "Assets"],
     ["transactions", "Transactions"],
   ];

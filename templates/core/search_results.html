@@ -10,7 +10,7 @@
 
   <form method="get" class="toolbar toolbar--filters">
     <label>Search
-      <input type="search" name="q" value="{{ query }}" placeholder="Brand, model, SKU, serial, project, customer, transaction #" autofocus>
+      <input type="search" name="q" value="{{ query }}" placeholder="Asset, employee, brand, model, serial, project, customer, transaction #" autofocus>
     </label>
     <div class="form-actions">
       <button type="submit" class="btn btn--primary">Search</button>
@@ -18,41 +18,20 @@
   </form>
 
   {% if not query %}
-    <p class="empty-state">Type a brand, model, SKU, serial number, project reference, customer, or transaction number above.</p>
+    <p class="empty-state">Type an employee, asset name, brand, model, SKU, serial number, project reference, customer, or transaction number above.</p>
   {% else %}
-    <h2>Products{% if products %} ({{ products|length }}{% if products|length == 15 %}+{% endif %}){% endif %}</h2>
-    {% if products %}
-      <div class="table-scroll">
-        <table>
-          <thead><tr><th>Brand</th><th>Model</th><th>SKU</th><th>Type</th><th>Tracking</th></tr></thead>
-          <tbody>
-            {% for product in products %}
-              <tr>
-                <td><a href="{{ product.get_absolute_url }}">{{ product.brand.name }}</a></td>
-                <td>{{ product.model }}</td>
-                <td>{{ product.sku }}</td>
-                <td>{{ product.product_type.name }}</td>
-                <td>{{ product.get_tracking_method_display }}</td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    {% else %}
-      <p class="empty-state">No matching products.</p>
-    {% endif %}
-
     <h2>Assets{% if assets %} ({{ assets|length }}{% if assets|length == 15 %}+{% endif %}){% endif %}</h2>
     {% if assets %}
       <div class="table-scroll">
         <table>
-          <thead><tr><th>Product</th><th>Serial</th><th>Status</th><th>Location</th></tr></thead>
+          <thead><tr><th>Asset</th><th>Serial</th><th>Status</th><th>Assigned to</th><th>Location</th></tr></thead>
           <tbody>
             {% for asset in assets %}
               <tr>
-                <td><a href="{{ asset.get_absolute_url }}">{{ asset.product }}</a></td>
+                <td><a href="{{ asset.get_absolute_url }}">{{ asset.name|default:asset.product }}</a></td>
                 <td>{{ asset.vendor_serial|default:"—" }}</td>
                 <td><span class="badge {{ asset.status|badge_class }}">{{ asset.get_status_display }}</span></td>
+                <td>{% if asset.current_custody_transaction %}{{ asset.current_custody_transaction.employee_name|default:asset.current_custody_transaction.final_customer|default:"—" }}{% else %}—{% endif %}</td>
                 <td>{{ asset.current_location|default:"—" }}</td>
               </tr>
             {% endfor %}
