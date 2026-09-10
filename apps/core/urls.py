@@ -13,5 +13,10 @@ urlpatterns = [
         views.DashboardPreferenceView.as_view(),
         name="dashboard_preferences",
     ),
+    path(
+        "dashboard-preferences/reset/",
+        views.DashboardPreferenceResetView.as_view(),
+        name="dashboard_preferences_reset",
+    ),
     path("", views.HomeView.as_view(), name="home"),
 ]

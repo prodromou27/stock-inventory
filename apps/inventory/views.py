@@ -63,6 +63,7 @@ from .forms import (
     AdminCorrectUnitForm,
     AdminReversalForm,
     AssignForm,
+    BulkAssetEditForm,
     DeliverForm,
     DisposeForm,
     DispositionForm,
@@ -95,6 +96,7 @@ from .models import (
     UnitStatus,
 )
 from .services.assignments import assign_to_employee, deliver_to_customer
+from .services.bulk_edit import bulk_edit_assets
 from .services.components import install_component, remove_component
 from .services.corrections import correct_balance, correct_unit_status, reverse_transaction
 from .services.disposition import dispose, mark_damaged, mark_lost, return_repaired_to_stock
@@ -108,6 +110,7 @@ from .services.grid_views import (
     pinned_grid_views,
     save_grid_preference,
     save_grid_selection,
+    selected_assets_for,
     update_saved_grid_view,
 )
 from .services.purpose import reclassify_quantity_purpose, reclassify_unit_purpose
@@ -1179,6 +1182,58 @@ class GridSelectionView(LoginRequiredMixin, View):
         except ValidationError as exc:
             return JsonResponse({"error": "; ".join(exc.messages)}, status=400)
         return JsonResponse({"saved": True, "selected_ids": selection.selected_ids})
+
+
+class SelectedAssetListView(LoginRequiredMixin, TemplateView):
+    template_name = "inventory/selected_asset_list.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["assets"] = selected_assets_for(user=self.request.user)
+        return context
+
+
+class BulkAssetEditView(LoginRequiredMixin, RoleRequiredMixin, View):
+    allowed_roles = (ADMINISTRATOR, STOCK_MANAGER)
+    template_name = "inventory/bulk_asset_edit.html"
+
+    def get(self, request):
+        return render(
+            request,
+            self.template_name,
+            {
+                "form": BulkAssetEditForm(user=request.user),
+                "assets": selected_assets_for(user=request.user),
+            },
+        )
+
+    def post(self, request):
+        form = BulkAssetEditForm(request.POST, user=request.user)
+        assets = selected_assets_for(user=request.user)
+        if form.is_valid():
+            data = form.cleaned_data
+            updates = {
+                field: data[field]
+                for field in ("supplier", "invoice_number", "project_reference", "notes")
+                if data[f"change_{field}"]
+            }
+            try:
+                changed, _transfer = bulk_edit_assets(
+                    user=request.user,
+                    asset_ids=[asset.pk for asset in assets],
+                    occurred_at=data["occurred_at"],
+                    destination_location=(
+                        data["destination_location"] if data["change_location"] else None
+                    ),
+                    updates=updates,
+                )
+            except (PermissionDenied, ValidationError) as exc:
+                form.add_error(None, exc)
+            else:
+                save_grid_selection(user=request.user, grid_key="assets", selected_ids=[])
+                messages.success(request, f"Updated {len(changed)} selected asset(s).")
+                return redirect("inventory:asset_list")
+        return render(request, self.template_name, {"form": form, "assets": assets})
 
 
 class SavedGridViewUpdateView(LoginRequiredMixin, View):

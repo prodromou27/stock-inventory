@@ -259,11 +259,13 @@ def refresh_in_app_notifications(*, user, today=None):
         recipient=user, recipient__is_active=True, is_active=True
     ).select_related("recipient", "country")
     for subscription in subscriptions:
-        delivery, _ = NotificationDigestDelivery.objects.get_or_create(
+        delivery, created = NotificationDigestDelivery.objects.get_or_create(
             subscription=subscription,
             digest_date=today,
             defaults={"status": NotificationDigestDelivery.Status.PENDING},
         )
+        if not created and delivery.updated_at >= timezone.now() - timedelta(seconds=60):
+            continue
         _body, counts = build_digest(subscription, today=today)
         delivery.item_counts = counts
         delivery.save(update_fields=["item_counts", "updated_at"])

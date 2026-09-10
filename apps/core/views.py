@@ -9,7 +9,12 @@ from django.views import View
 from django.views.generic import TemplateView
 
 from .models import DASHBOARD_CARDS
-from .services import dashboard_card_order, hidden_dashboard_cards, save_dashboard_cards
+from .services import (
+    dashboard_card_order,
+    hidden_dashboard_cards,
+    reset_dashboard_cards,
+    save_dashboard_cards,
+)
 
 DASHBOARD_CARD_KEYS = {key for key, _ in DASHBOARD_CARDS}
 
@@ -121,6 +126,13 @@ class DashboardPreferenceView(LoginRequiredMixin, View):
         checked = set(request.POST.getlist("visible_cards")) & DASHBOARD_CARD_KEYS
         save_dashboard_cards(request.user, checked, request.POST.getlist("card_order"))
         messages.success(request, "Dashboard preferences saved.")
+        return redirect("core:home")
+
+
+class DashboardPreferenceResetView(LoginRequiredMixin, View):
+    def post(self, request):
+        reset_dashboard_cards(request.user)
+        messages.success(request, "Dashboard restored to the recommended layout.")
         return redirect("core:home")
 
 

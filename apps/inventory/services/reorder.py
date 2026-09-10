@@ -71,3 +71,25 @@ def update_location_reorder_settings(
         metadata={"product_id": str(product.pk), "location_id": str(location.pk)},
     )
     return override
+
+
+@transaction.atomic
+def reset_location_reorder_settings(*, user, override):
+    require_role(user, ADMINISTRATOR)
+    require_location_access(user, override.location)
+    snapshot = {
+        "product_id": str(override.product_id),
+        "location_id": str(override.location_id),
+        "target_stock_level": override.target_stock_level,
+        "min_reorder_quantity": override.min_reorder_quantity,
+        "preferred_supplier": override.preferred_supplier,
+    }
+    record_event(
+        actor=user,
+        event_type=AuditEvent.EventType.RECORD_UPDATED,
+        obj=override,
+        summary=f"Reset reorder override for '{override.product}' at '{override.location}'",
+        old_values=snapshot,
+        new_values={"uses_global_settings": True},
+    )
+    override.delete()

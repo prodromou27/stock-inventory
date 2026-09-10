@@ -8,6 +8,13 @@
     <div class="page-header__actions"><a class="btn" href="{% url 'reporting:reorder_suggestions' %}">View suggestions</a></div>
   </div>
 
+  <form method="get" class="toolbar">
+    <label>Product search<input type="search" name="q" value="{{ request.GET.q }}" placeholder="Brand, model, or SKU"></label>
+    <label>Location<select name="location"><option value="">All accessible locations</option>{% for location in location_choices %}<option value="{{ location.pk }}" {% if request.GET.location == location.pk|stringformat:"s" %}selected{% endif %}>{{ location }}</option>{% endfor %}</select></label>
+    <button class="btn" type="submit">Filter configuration</button>
+    {% if request.GET.q or request.GET.location %}<a class="btn btn--ghost" href="{% url 'reporting:reorder_settings' %}">Clear</a>{% endif %}
+  </form>
+
   <form method="post" class="form-card">
     {% csrf_token %}
     <input type="hidden" name="scope" value="global">
@@ -36,7 +43,7 @@
     <h2>Location overrides</h2>
     {% if location_overrides %}
       <div class="table-scroll"><table><thead><tr><th>Product</th><th>Location</th><th>Target</th><th>Minimum reorder</th><th>Preferred supplier</th><th></th></tr></thead><tbody>
-        {% for override in location_overrides %}<tr><td>{{ override.product }}</td><td>{{ override.location }}</td><td>{{ override.target_stock_level|default_if_none:"Uses global" }}</td><td>{{ override.min_reorder_quantity|default_if_none:"Uses global" }}</td><td>{{ override.preferred_supplier|default:"Uses global" }}</td><td><a class="btn btn--sm" href="?override={{ override.pk }}">Configure</a></td></tr>{% endfor %}
+        {% for override in location_overrides %}<tr><td>{{ override.product }}</td><td>{{ override.location }}</td><td>{{ override.target_stock_level|default_if_none:"Uses global" }}</td><td>{{ override.min_reorder_quantity|default_if_none:"Uses global" }}</td><td>{{ override.preferred_supplier|default:"Uses global" }}</td><td><a class="btn btn--sm" href="?override={{ override.pk }}">Configure</a> <form method="post" action="{% url 'reporting:reorder_settings_reset' override.pk %}" class="inline-form" data-confirm="Reset this location to the product-wide reorder settings?">{% csrf_token %}<button class="btn btn--sm btn--ghost" type="submit">Use global</button></form></td></tr>{% endfor %}
       </tbody></table></div>
     {% else %}<p class="empty-state">No location-specific overrides yet.</p>{% endif %}
   </div>

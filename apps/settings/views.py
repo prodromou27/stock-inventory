@@ -307,7 +307,11 @@ class NotificationRefreshView(LoginRequiredMixin, View):
         if refreshed:
             messages.success(request, "Notifications refreshed from current inventory data.")
         else:
-            messages.info(request, "No active notification subscriptions are configured for you.")
+            messages.info(
+                request,
+                "Nothing needed refreshing. Try again in a minute, or ask an Administrator "
+                "to check your subscriptions.",
+            )
         return redirect("settings:notification_list")
 
 

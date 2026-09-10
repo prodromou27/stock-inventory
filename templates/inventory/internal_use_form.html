@@ -3,7 +3,7 @@
 {% block content %}
 <div class="page-header"><div><h1>{{ page_title }}</h1>
 <p>{% if returning %}Receive removed equipment back into a stock room. Its installation history remains available. Return notes are optional.{% else %}Install Internal stock for use in-house. It will no longer count as available room stock. Record where it is installed in notes.{% endif %}</p></div></div>
-<form method="post" class="card" data-confirm="Record this internal-use movement?">
+<form method="post" class="card" data-review-submit="Record this internal-use movement?">
 {% csrf_token %}{{ form.non_field_errors }}
 {{ form.unit_asset_ids.errors }}
 {% include "inventory/_asset_picker.html" %}

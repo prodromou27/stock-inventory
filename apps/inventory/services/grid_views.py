@@ -194,7 +194,7 @@ def grid_selection_for(*, user, grid_key):
         "id", "status", "stock_purpose"
     )
     by_id = {str(asset["id"]): asset for asset in assets}
-    return [
+    rows = [
         {
             "id": asset_id,
             "status": by_id[asset_id]["status"],
@@ -203,6 +203,24 @@ def grid_selection_for(*, user, grid_key):
         for asset_id in selected
         if asset_id in by_id
     ]
+    accessible_ids = [row["id"] for row in rows]
+    if accessible_ids != selected:
+        GridSelection.objects.filter(user=user, grid_key=grid_key).update(
+            selected_ids=accessible_ids
+        )
+    return rows
+
+
+def selected_assets_for(*, user):
+    ids = [row["id"] for row in grid_selection_for(user=user, grid_key="assets")]
+    from apps.inventory.access import scope_asset_queryset
+
+    return scope_asset_queryset(
+        user,
+        UnitAsset.objects.filter(pk__in=ids).select_related(
+            "product__brand", "product__product_type", "current_location"
+        ),
+    )
 
 
 def save_grid_selection(*, user, grid_key, selected_ids):

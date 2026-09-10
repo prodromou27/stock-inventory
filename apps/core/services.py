@@ -31,3 +31,7 @@ def save_dashboard_cards(user, selected, order=None):
     DashboardPreference.objects.update_or_create(
         user=user, defaults={"hidden_cards": hidden, "card_order": order}
     )
+
+
+def reset_dashboard_cards(user):
+    DashboardPreference.objects.filter(user=user).delete()

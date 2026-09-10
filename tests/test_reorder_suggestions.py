@@ -390,6 +390,22 @@ class TestReorderSuggestionsView:
 
 @pytest.mark.django_db
 class TestReorderSettings:
+    def test_administrator_can_reset_location_override_to_global(
+        self, client, administrator, quantity_product, location_tree
+    ):
+        override = ProductLocationThreshold.objects.create(
+            product=quantity_product,
+            location=location_tree["room"],
+            target_stock_level=40,
+            created_by=administrator,
+            updated_by=administrator,
+        )
+        client.force_login(administrator)
+        response = client.post(reverse("reporting:reorder_settings_reset", args=[override.pk]))
+        assert response.status_code == 302
+        assert not ProductLocationThreshold.objects.filter(pk=override.pk).exists()
+        assert AuditEvent.objects.filter(summary__contains="Reset reorder override").exists()
+
     def test_administrator_can_create_location_override(
         self, client, administrator, quantity_product, location_tree
     ):

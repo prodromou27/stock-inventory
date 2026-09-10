@@ -14,7 +14,7 @@
     <p class="help-text">Use the arrow buttons to arrange cards. The first visible card appears first on your dashboard.</p>
     <div class="checkbox-list" id="dashboard-card-order">
       {% for card in cards %}
-        <div class="checkbox-list__item" data-card-row>
+        <div class="checkbox-list__item" data-card-row draggable="true">
           <input type="hidden" name="card_order" value="{{ card.key }}">
           <label><input type="checkbox" name="visible_cards" value="{{ card.key }}" {% if card.visible %}checked{% endif %}> {{ card.label }}</label>
           <span class="button-group">
@@ -28,6 +28,9 @@
       <button type="submit" class="btn btn--primary">Save</button>
     </div>
   </form>
+  <form method="post" action="{% url 'core:dashboard_preferences_reset' %}" data-confirm="Restore the recommended dashboard cards and order?">
+    {% csrf_token %}<button type="submit" class="btn btn--ghost">Reset to recommended layout</button>
+  </form>
   <script>
     document.getElementById("dashboard-card-order")?.addEventListener("click", (event) => {
       const button = event.target.closest("[data-move]");
@@ -38,6 +41,18 @@
       if (button.dataset.move === "up") row.parentNode.insertBefore(row, sibling);
       else row.parentNode.insertBefore(sibling, row);
       button.focus();
+    });
+    let draggedCard = null;
+    document.getElementById("dashboard-card-order")?.addEventListener("dragstart", (event) => {
+      draggedCard = event.target.closest("[data-card-row]");
+      event.dataTransfer.effectAllowed = "move";
+    });
+    document.getElementById("dashboard-card-order")?.addEventListener("dragover", (event) => {
+      const target = event.target.closest("[data-card-row]");
+      if (!draggedCard || !target || target === draggedCard) return;
+      event.preventDefault();
+      const box = target.getBoundingClientRect();
+      target.parentNode.insertBefore(draggedCard, event.clientY < box.top + box.height / 2 ? target : target.nextSibling);
     });
   </script>
 {% endblock %}

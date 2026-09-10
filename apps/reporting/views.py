@@ -23,6 +23,7 @@ from apps.core.spreadsheets import spreadsheet_safe_row
 from apps.inventory.models import UnitAsset
 from apps.inventory.services.reorder import (
     location_reorder_settings_for,
+    reset_location_reorder_settings,
     update_location_reorder_settings,
 )
 from apps.locations.models import Location, order_by_hierarchy
@@ -484,6 +485,20 @@ class ReorderSettingsView(LoginRequiredMixin, RoleRequiredMixin, View):
         products = Product.objects.filter(tracking_method=TrackingMethod.QUANTITY).select_related(
             "brand", "product_type"
         )
+        overrides = location_reorder_settings_for(user=request.user)
+        if query := request.GET.get("q", "").strip():
+            products = products.filter(
+                Q(brand__name__icontains=query)
+                | Q(model__icontains=query)
+                | Q(sku__icontains=query)
+            )
+            overrides = overrides.filter(
+                Q(product__brand__name__icontains=query)
+                | Q(product__model__icontains=query)
+                | Q(product__sku__icontains=query)
+            )
+        if location_id := request.GET.get("location", "").strip():
+            overrides = overrides.filter(location_id=location_id)
         return render(
             request,
             self.template_name,
@@ -491,9 +506,22 @@ class ReorderSettingsView(LoginRequiredMixin, RoleRequiredMixin, View):
                 "form": form,
                 "location_form": location_form,
                 "products": products,
-                "location_overrides": location_reorder_settings_for(user=request.user),
+                "location_overrides": overrides,
+                "location_choices": accessible_locations(request.user).filter(
+                    level__in=[Location.Level.STORAGE_ROOM, Location.Level.RACK_SHELF]
+                ),
             },
         )
+
+
+class ReorderSettingsResetView(LoginRequiredMixin, RoleRequiredMixin, View):
+    allowed_roles = (ADMINISTRATOR,)
+
+    def post(self, request, pk):
+        override = get_object_or_404(location_reorder_settings_for(user=request.user), pk=pk)
+        reset_location_reorder_settings(user=request.user, override=override)
+        messages.success(request, "Location override reset; global product settings now apply.")
+        return redirect("reporting:reorder_settings")
 
 
 # --- Ad-hoc report builder ("more structured reporting", user request) ---

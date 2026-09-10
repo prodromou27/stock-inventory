@@ -380,6 +380,17 @@ class TestHomeViewStats:
 
 @pytest.mark.django_db
 class TestDashboardPreferenceView:
+    def test_user_can_reset_dashboard_to_recommended_layout(self, client, administrator):
+        from apps.core.models import DashboardPreference
+
+        DashboardPreference.objects.create(
+            user=administrator, hidden_cards=[], card_order=["lost_count"]
+        )
+        client.force_login(administrator)
+        response = client.post(reverse("core:dashboard_preferences_reset"))
+        assert response.status_code == 302
+        assert not DashboardPreference.objects.filter(user=administrator).exists()
+
     def test_card_order_is_saved_and_rendered(self, client, administrator):
         client.force_login(administrator)
         order = ["delivered_count", "assets_in_stock", "assigned_count"]

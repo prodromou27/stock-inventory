@@ -1,4 +1,9 @@
 (() => {
+  const escapeHtml = (value) => {
+    const node = document.createElement("span");
+    node.textContent = String(value);
+    return node.innerHTML;
+  };
   const body = document.body;
   const toggle = document.querySelector("[data-sidebar-toggle]");
   const closeSidebar = () => {
@@ -32,6 +37,43 @@
   document.querySelectorAll("form[data-confirm]").forEach((form) => {
     form.addEventListener("submit", (event) => {
       if (!window.confirm(form.dataset.confirm)) event.preventDefault();
+    });
+  });
+
+  document.querySelectorAll("form[data-review-submit]").forEach((form) => {
+    form.addEventListener("submit", (event) => {
+      if (form.dataset.reviewConfirmed === "true") return;
+      event.preventDefault();
+      if (!form.reportValidity()) return;
+      const data = new FormData(form);
+      const selectedAssets = data.getAll("unit_asset_ids").filter(Boolean);
+      const selectedQuantities = Array.from(form.querySelectorAll('[name^="quantity_"]'))
+        .map((input) => Number(input.value || 0)).filter((value) => value > 0)
+        .reduce((total, value) => total + value, 0);
+      const details = Array.from(form.querySelectorAll("input, select, textarea"))
+        .filter((field) => field.name && field.type !== "hidden" && field.type !== "checkbox" && field.value)
+        .slice(0, 8)
+        .map((field) => {
+          const label = form.querySelector(`label[for="${field.id}"]`)?.textContent.trim() || field.name;
+          const value = field.tagName === "SELECT" ? field.selectedOptions[0]?.textContent.trim() : field.value;
+          return `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value || "")}</dd>`;
+        }).join("");
+      const dialog = document.createElement("dialog");
+      dialog.className = "confirmation-dialog";
+      dialog.innerHTML = `<form method="dialog"><h2>Review before completing</h2>
+        <p><strong>${selectedAssets.length}</strong> individual asset(s) and <strong>${selectedQuantities}</strong> counted item(s) selected.</p>
+        <dl class="review-summary">${details}</dl>
+        <p class="messages__item messages__item--warning">${escapeHtml(form.dataset.reviewSubmit)}</p>
+        <div class="form-actions"><button class="btn" value="cancel">Go back</button><button class="btn btn--primary" value="confirm">Confirm and complete</button></div></form>`;
+      document.body.appendChild(dialog);
+      dialog.addEventListener("close", () => {
+        if (dialog.returnValue === "confirm") {
+          form.dataset.reviewConfirmed = "true";
+          form.requestSubmit(event.submitter);
+        }
+        dialog.remove();
+      });
+      dialog.showModal();
     });
   });
 

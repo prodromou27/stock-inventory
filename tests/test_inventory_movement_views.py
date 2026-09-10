@@ -155,7 +155,8 @@ class TestConsequentialActionsHaveConfirmDialogs:
             "inventory:assess_return",
         ):
             response = client.get(reverse(url_name))
-            assert "data-confirm=" in response.content.decode(), url_name
+            content = response.content.decode()
+            assert "data-confirm=" in content or "data-review-submit=" in content, url_name
 
 
 @pytest.mark.django_db

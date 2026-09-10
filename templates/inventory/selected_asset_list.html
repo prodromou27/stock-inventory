@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% load ui_extras %}
+{% block title %}Selected assets — {{ site_name }}{% endblock %}
+{% block content %}
+  <div class="page-header"><div><p class="workspace-eyebrow">Persistent selection</p><h1>Selected assets</h1><p class="page-header__subtitle">This selection follows your account across pages and devices. Assets outside your current access are removed automatically.</p></div><div class="page-header__actions"><a class="btn" href="{% url 'inventory:asset_list' %}">Back to inventory</a></div></div>
+  {% if assets %}
+    <div class="card table-scroll"><table><thead><tr><th>Asset</th><th>Serial</th><th>Status</th><th>Purpose</th><th>Location</th></tr></thead><tbody>
+      {% for asset in assets %}<tr><td><a href="{{ asset.get_absolute_url }}">{{ asset.product }}</a></td><td>{{ asset.vendor_serial|default:"—" }}</td><td><span class="badge {{ asset.status|badge_class }}">{{ asset.get_status_display }}</span></td><td>{{ asset.get_stock_purpose_display }}</td><td>{{ asset.current_location|default:"—" }}</td></tr>{% endfor %}
+    </tbody></table></div>
+  {% else %}<p class="empty-state">No accessible assets are currently selected.</p>{% endif %}
+{% endblock %}

@@ -597,6 +597,47 @@ class RepairDamagedForm(forms.Form):
         return _validate_room_or_below(self.cleaned_data["location"])
 
 
+class BulkAssetEditForm(forms.Form):
+    occurred_at = forms.DateField(
+        initial=timezone.localdate,
+        widget=forms.DateInput(attrs={"type": "date"}),
+        label="Effective date",
+    )
+    change_location = forms.BooleanField(required=False, label="Change location")
+    destination_location = forms.ModelChoiceField(
+        queryset=Location.objects.none(), required=False, label="New storage room / Shelf"
+    )
+    change_supplier = forms.BooleanField(required=False, label="Update supplier")
+    supplier = forms.CharField(max_length=120, required=False)
+    change_invoice_number = forms.BooleanField(required=False, label="Update invoice number")
+    invoice_number = forms.CharField(max_length=60, required=False)
+    change_project_reference = forms.BooleanField(required=False, label="Update project reference")
+    project_reference = forms.CharField(max_length=120, required=False)
+    change_notes = forms.BooleanField(required=False, label="Replace notes")
+    notes = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 3}))
+
+    def __init__(self, *args, user, **kwargs):
+        super().__init__(*args, **kwargs)
+        _apply_scoped_room_location(self.fields["destination_location"], user)
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("change_location") and not cleaned.get("destination_location"):
+            self.add_error("destination_location", "Select the new location.")
+        if not any(
+            cleaned.get(key)
+            for key in (
+                "change_location",
+                "change_supplier",
+                "change_invoice_number",
+                "change_project_reference",
+                "change_notes",
+            )
+        ):
+            raise forms.ValidationError("Choose at least one field to update.")
+        return cleaned
+
+
 class AdminCorrectUnitForm(forms.Form):
     """Also the only path to change arrival_date after receipt — ordinary
     editing must never touch it (spec-adjacent request), so it's exposed

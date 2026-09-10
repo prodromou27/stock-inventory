@@ -6,4 +6,5 @@ app_name = "audit"
 
 urlpatterns = [
     path("", views.AuditLogListView.as_view(), name="log"),
+    path("<uuid:pk>/", views.AuditEventDetailView.as_view(), name="detail"),
 ]

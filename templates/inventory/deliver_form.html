@@ -13,7 +13,7 @@
     <p class="messages__item messages__item--error">{{ form.non_field_errors|join:" " }}</p>
   {% endif %}
 
-  <form method="post" data-confirm="Remove the selected stock for this customer delivery?">
+  <form method="post" data-review-submit="The selected stock will leave available inventory and be marked delivered.">
     {% csrf_token %}
     <input type="hidden" name="generate_document" value="1">
 

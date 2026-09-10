@@ -39,6 +39,11 @@ urlpatterns = [
     ),
     path("custom/", views.SavedReportListView.as_view(), name="saved_report_list"),
     path("reorder-settings/", views.ReorderSettingsView.as_view(), name="reorder_settings"),
+    path(
+        "reorder-settings/<uuid:pk>/reset/",
+        views.ReorderSettingsResetView.as_view(),
+        name="reorder_settings_reset",
+    ),
     path("custom/new/", views.ReportBuilderStartView.as_view(), name="builder_start"),
     path("custom/build/", views.ReportBuilderView.as_view(), name="builder"),
     path("custom/<uuid:pk>/", views.SavedReportRunView.as_view(), name="saved_report_run"),

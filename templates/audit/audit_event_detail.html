@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Audit event — {{ site_name }}{% endblock %}
+{% block content %}
+  <p><a href="{% url 'audit:log' %}">&larr; Audit log</a></p>
+  <div class="page-header"><div><p class="workspace-eyebrow">{{ event.get_event_type_display }}</p><h1>{{ event.summary|default:"Audit event" }}</h1><p class="page-header__subtitle">{{ event.occurred_at }} by {{ event.actor|default:"System" }}</p></div>{% if object_url %}<div class="page-header__actions"><a class="btn" href="{{ object_url }}">Open affected record</a></div>{% endif %}</div>
+  <div class="detail-grid">
+    <section class="card"><h2>Previous values</h2>{% if event.old_values %}<dl>{% for key, value in event.old_values.items %}<dt>{{ key }}</dt><dd>{{ value|default:"—" }}</dd>{% endfor %}</dl>{% else %}<p class="empty-state">No previous-value snapshot.</p>{% endif %}</section>
+    <section class="card"><h2>New values</h2>{% if event.new_values %}<dl>{% for key, value in event.new_values.items %}<dt>{{ key }}</dt><dd>{{ value|default:"—" }}</dd>{% endfor %}</dl>{% else %}<p class="empty-state">No new-value snapshot.</p>{% endif %}</section>
+  </div>
+  {% if event.metadata %}<section class="card"><h2>Additional context</h2><dl>{% for key, value in event.metadata.items %}<dt>{{ key }}</dt><dd>{{ value }}</dd>{% endfor %}</dl></section>{% endif %}
+{% endblock %}

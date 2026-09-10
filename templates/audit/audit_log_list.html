@@ -18,6 +18,7 @@
     </label>
     <label>Actor<input type="text" name="actor" placeholder="Username" value="{{ request.GET.actor }}"></label>
     <label>Object type<input type="text" name="object_type" value="{{ request.GET.object_type }}"></label>
+    <label>Record ID<input type="text" name="object_id" value="{{ request.GET.object_id }}"></label>
     <label>From <input type="date" name="after" value="{{ request.GET.after }}"></label>
     <label>To <input type="date" name="before" value="{{ request.GET.before }}"></label>
     <button type="submit" class="btn btn--primary">Filter</button>
@@ -41,7 +42,7 @@
             <td>{{ event.get_event_type_display }}</td>
             <td>{{ event.actor|default:"—" }}</td>
             <td>{{ event.object_type }}{% if event.object_id %} ({{ event.object_id }}){% endif %}</td>
-            <td>{{ event.summary }}</td>
+            <td><a href="{% url 'audit:detail' event.pk %}">{{ event.summary|default:"View details" }}</a></td>
           </tr>
         {% endfor %}
       </tbody>

@@ -15,6 +15,8 @@ urlpatterns = [
     path("receive/bulk/", views.ReceiveBulkView.as_view(), name="receive_bulk"),
     path("products/grid-data/", views.ProductGridDataView.as_view(), name="product_grid_data"),
     path("assets/", views.UnitAssetListView.as_view(), name="asset_list"),
+    path("assets/selected/", views.SelectedAssetListView.as_view(), name="selected_assets"),
+    path("assets/selected/edit/", views.BulkAssetEditView.as_view(), name="bulk_asset_edit"),
     path("assets/grid-data/", views.UnitAssetGridDataView.as_view(), name="asset_grid_data"),
     path(
         "assets/<uuid:pk>/grid-field/",

@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Bulk edit assets — {{ site_name }}{% endblock %}
+{% block content %}
+  <div class="page-header"><div><p class="workspace-eyebrow">Inventory maintenance</p><h1>Bulk edit selected assets</h1><p class="page-header__subtitle">Only checked fields are changed. Moving stock creates a normal ledger transfer; metadata changes are audited per asset.</p></div></div>
+  {% if assets %}
+    <div class="messages__item messages__item--info">{{ assets|length }} accessible asset(s) selected.</div>
+    <form method="post" class="form-card" data-review-submit="Apply these changes to every selected asset?">{% csrf_token %}
+      {% if form.non_field_errors %}<p class="messages__item messages__item--error">{{ form.non_field_errors|join:" " }}</p>{% endif %}
+      <div class="card">{% for field in form %}{% include "_form_field.html" with field=field %}{% endfor %}</div>
+      <div class="form-actions"><button class="btn btn--primary" type="submit">Review and update</button><a class="btn" href="{% url 'inventory:selected_assets' %}">Cancel</a></div>
+    </form>
+  {% else %}<p class="empty-state">Select assets from Inventory before opening bulk edit.</p>{% endif %}
+{% endblock %}

@@ -362,6 +362,18 @@
         exportLink.href = `${ASSET_LIST_URL}?${exportParams.toString()}`;
         exportLink.textContent = `Export selected (${ids.length})`;
         bulkActionsBar.appendChild(exportLink);
+        const reviewLink = document.createElement("a");
+        reviewLink.className = "btn btn--sm";
+        reviewLink.href = "{% url 'inventory:selected_assets' %}";
+        reviewLink.textContent = "Review selected";
+        bulkActionsBar.appendChild(reviewLink);
+        if (canEditGrid) {
+          const editLink = document.createElement("a");
+          editLink.className = "btn btn--sm";
+          editLink.href = "{% url 'inventory:bulk_asset_edit' %}";
+          editLink.textContent = "Bulk edit";
+          bulkActionsBar.appendChild(editLink);
+        }
 
         const clearButton = document.createElement("button");
         clearButton.type = "button";
