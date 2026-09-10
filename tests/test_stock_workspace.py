@@ -5,11 +5,37 @@ import pytest
 from django.core.exceptions import ValidationError
 from django.urls import reverse
 
-from apps.inventory.models import UnitAsset
+from apps.inventory.models import SavedGridView, UnitAsset
 from apps.inventory.services.assignments import deliver_to_customer
 from apps.inventory.services.receipts import receive_stock
 
 pytestmark = pytest.mark.django_db
+
+
+def test_inventory_workspace_surfaces_pinned_personal_view(client, administrator):
+    view = SavedGridView.objects.create(
+        name="Cyprus available laptops",
+        grid_key="assets",
+        state={"headerFilters": [{"field": "status", "value": "in_stock"}]},
+        is_pinned=True,
+        created_by=administrator,
+        updated_by=administrator,
+    )
+    client.force_login(administrator)
+    response = client.get(reverse("inventory:workspace"))
+    assert response.status_code == 200
+    body = response.content.decode()
+    assert "Stock workspace" in body
+    assert "Cyprus available laptops" in body
+    assert f"saved_view={view.pk}" in body
+    assert "Data Quality Centre" in body
+
+
+def test_stock_manager_workspace_hides_administrator_tools(client, stock_manager_with_room_access):
+    client.force_login(stock_manager_with_room_access)
+    body = client.get(reverse("inventory:workspace")).content.decode()
+    assert "Data Quality Centre" not in body
+    assert "Import reconciliation" not in body
 
 
 @pytest.mark.parametrize("page", ["asset_list", "balance_list"])

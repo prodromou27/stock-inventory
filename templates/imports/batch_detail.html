@@ -14,11 +14,10 @@
         &middot; Default stock purpose: {{ batch.get_default_stock_purpose_display }}
       </div>
     </div>
-    {% if batch.executed_at %}
-      <div class="page-header__actions">
+    <div class="page-header__actions">
         <a class="btn" href="{% url 'imports:results_download' batch.pk %}" data-loading-link="Preparing download…">Download results CSV</a>
-      </div>
-    {% endif %}
+        <span class="text-muted">{% if batch.executed_at %}Final row outcomes{% else %}Current create, warning, failure, and skip decisions{% endif %}</span>
+    </div>
   </div>
 
   <div class="stat-grid">

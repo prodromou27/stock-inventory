@@ -113,6 +113,9 @@ def test_stock_manager_room_filters_and_delivery(
         fields = headers.evaluate_all("els => els.map(el => el.getAttribute('tabulator-field'))")
         assert fields.index("model") < fields.index("brand")
         page.locator("#asset-grid-columns-toggle").click()
+        # Account preference writes are intentionally debounced so dragging
+        # and resizing columns does not issue one request per pixel.
+        page.wait_for_timeout(700)
         page.reload()
         expect(
             page.locator('#asset-grid-table .tabulator-col[tabulator-field="sku"]')
@@ -120,6 +123,12 @@ def test_stock_manager_room_filters_and_delivery(
         headers = page.locator("#asset-grid-table .tabulator-headers > .tabulator-col")
         fields = headers.evaluate_all("els => els.map(el => el.getAttribute('tabulator-field'))")
         assert fields.index("model") < fields.index("brand")
+        rows.locator('input[type="checkbox"]').check()
+        expect(page.locator("#asset-grid-selection-count")).to_contain_text("1")
+        page.reload()
+        expect(page.locator("#asset-grid-selection-count")).to_contain_text("1")
+        page.get_by_role("button", name="Clear selection").click()
+        expect(page.locator("#asset-grid-bulk-actions")).to_be_hidden()
         rows.locator('[tabulator-field="model"] a').click()
         page.get_by_role("link", name="Edit asset", exact=True).click()
         page.get_by_label("Asset name", exact=True).fill("Reception firewall")

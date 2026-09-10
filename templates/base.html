@@ -61,7 +61,7 @@
       <nav class="sidebar__nav">
         <div class="sidebar__group">
           <a class="sidebar__link {% nav_active 'home' %}" href="{% url 'core:home' %}"><svg class="sidebar__icon" aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#dashboard"></use></svg>Dashboard</a>
-          <a class="sidebar__link {% nav_active 'product_list' 'product_detail' 'product_create' 'product_update' 'quick_add' 'product_grid' 'asset_list' 'asset_detail' 'asset_correct' 'balance_list' 'balance_detail' 'balance_correct' %}" href="{% url 'inventory:asset_list' %}"><svg class="sidebar__icon" aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#asset"></use></svg>Inventory</a>
+          <a class="sidebar__link {% nav_active 'workspace' 'product_list' 'product_detail' 'product_create' 'product_update' 'quick_add' 'product_grid' 'asset_list' 'asset_detail' 'asset_correct' 'balance_list' 'balance_detail' 'balance_correct' %}" href="{% url 'inventory:workspace' %}"><svg class="sidebar__icon" aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#asset"></use></svg>Inventory</a>
           {% if user_is_administrator or "StockManager" in user_role_groups %}
             <a class="sidebar__link {% nav_active 'movements_hub' 'receive_stock' 'quick_receive' 'transfer' 'reserve' 'reservation_list' 'reservation_detail' 'release_reservation' 'assign' 'deliver' 'assess_return' 'mark_damaged' 'repair_damaged' 'mark_lost' 'dispose' %}" href="{% url 'inventory:movements_hub' %}"><svg class="sidebar__icon" aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#move"></use></svg>Operations</a>
           {% endif %}

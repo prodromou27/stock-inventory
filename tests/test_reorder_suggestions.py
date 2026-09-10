@@ -385,3 +385,31 @@ class TestReorderSuggestionsView:
         response = client.get(reverse("reporting:reorder_suggestions"))
         assert response.status_code == 200
         assert response.context["rows"] == []
+
+
+@pytest.mark.django_db
+class TestReorderSettings:
+    def test_administrator_can_update_counted_stock_settings(
+        self, client, administrator, quantity_product
+    ):
+        client.force_login(administrator)
+        response = client.post(
+            reverse("reporting:reorder_settings"),
+            {
+                "product": quantity_product.pk,
+                "low_stock_threshold": 8,
+                "target_stock_level": 30,
+                "min_reorder_quantity": 5,
+                "preferred_supplier": "Supply Co",
+            },
+        )
+        assert response.status_code == 302
+        quantity_product.refresh_from_db()
+        assert quantity_product.low_stock_threshold == 8
+        assert quantity_product.target_stock_level == 30
+        assert quantity_product.min_reorder_quantity == 5
+        assert quantity_product.preferred_supplier == "Supply Co"
+
+    def test_stock_manager_cannot_open_reorder_configuration(self, client, stock_manager):
+        client.force_login(stock_manager)
+        assert client.get(reverse("reporting:reorder_settings")).status_code == 403

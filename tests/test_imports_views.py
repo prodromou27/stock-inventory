@@ -95,6 +95,20 @@ class TestUploadAndPreview:
         assert timezone.localdate().isoformat() in body
         assert "defaulted to today" in body
 
+    def test_reconciliation_csv_is_available_before_execution(
+        self, client, administrator, location_tree
+    ):
+        client.force_login(administrator)
+        batch, _ = services.create_batch_from_upload(
+            uploaded_file=_csv_upload([_base_row(LOCATION="Room A")]),
+            user=administrator,
+        )
+        detail = client.get(batch.get_absolute_url())
+        assert "Current create, warning, failure, and skip decisions" in detail.content.decode()
+        response = client.get(reverse("imports:results_download", args=[batch.pk]))
+        assert response.status_code == 200
+        assert "SNVIEW001" in response.content.decode()
+
 
 @pytest.mark.django_db
 class TestExecuteAndDownloads:

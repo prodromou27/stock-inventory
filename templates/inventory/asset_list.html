@@ -55,6 +55,7 @@
         <button type="button" class="btn" id="asset-grid-save-view">Save view</button>
         <button type="button" class="btn btn--ghost" id="asset-grid-rename-view" hidden aria-label="Rename selected saved view">Rename</button>
         <button type="button" class="btn btn--ghost" id="asset-grid-default-view" hidden aria-label="Set selected saved view as default">Set as default</button>
+        <button type="button" class="btn btn--ghost" id="asset-grid-pin-view" hidden>Pin to workspace</button>
         <button type="button" class="btn btn--ghost" id="asset-grid-delete-view" hidden aria-label="Delete selected saved view">Delete</button>
       </span>
       </div></details>
@@ -224,8 +225,9 @@
         dataUrl: "{% url 'inventory:asset_grid_data' %}",
         searchInputSelector: "#asset-grid-search",
         densityToggleSelector: "#asset-grid-density",
-        storageKey: "asset-grid",
+        storageKey: "asset-grid-{{ request.user.pk }}",
         persistColumns: true,
+        persistSelection: true,
         pageSize: 50,
         initialSort: [{ field: "arrival_date", dir: "desc" }],
         editableFields: canEditGrid ? EDITABLE_FIELDS : [],
@@ -360,6 +362,13 @@
         exportLink.textContent = `Export selected (${ids.length})`;
         bulkActionsBar.appendChild(exportLink);
 
+        const clearButton = document.createElement("button");
+        clearButton.type = "button";
+        clearButton.className = "btn btn--sm btn--ghost";
+        clearButton.textContent = "Clear selection";
+        clearButton.addEventListener("click", () => table.clearPersistentSelection?.());
+        bulkActionsBar.appendChild(clearButton);
+
         if (!canEditGrid) {
           bulkActionsBar.hidden = false;
           return;
@@ -374,6 +383,7 @@
           ids.forEach((id) => params.append("unit_asset_ids", id));
           link.href = `${ACTION_URLS[action]}?${params.toString()}`;
           link.textContent = ACTION_LABELS[action];
+          link.addEventListener("click", () => table.clearPersistentSelection?.());
           bulkActionsBar.appendChild(link);
         });
         bulkActionsBar.hidden = false;
@@ -435,12 +445,14 @@
         saveButtonSelector: "#asset-grid-save-view",
         renameButtonSelector: "#asset-grid-rename-view",
         defaultButtonSelector: "#asset-grid-default-view",
+        pinButtonSelector: "#asset-grid-pin-view",
         deleteButtonSelector: "#asset-grid-delete-view",
         listUrl: "{% url 'inventory:saved_grid_view_list_create' grid_key='assets' %}",
         updateUrlTemplate: "{% url 'inventory:saved_grid_view_update' pk='00000000-0000-0000-0000-000000000000' %}".replace("00000000-0000-0000-0000-000000000000", "__ID__"),
         deleteUrlTemplate: "{% url 'inventory:saved_grid_view_delete' pk='00000000-0000-0000-0000-000000000000' %}".replace("00000000-0000-0000-0000-000000000000", "__ID__"),
         canShare: {% if user_is_administrator %}true{% else %}false{% endif %},
         applyDefaultOnLoad: true,
+        table,
         onCapture: () =>
           G.captureGridState(table, document.getElementById("asset-grid-table"), document.getElementById("asset-grid-search"), captureExtraFilters),
         onApply: (state) => {

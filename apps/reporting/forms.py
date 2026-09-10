@@ -1,5 +1,7 @@
 from django import forms
 
+from apps.catalog.models import Product, TrackingMethod
+
 from .models import ReportBaseModel
 from .report_builder import (
     ALLOWED_FILTER_OPS,
@@ -85,3 +87,17 @@ class ReportFilterRowForm(forms.Form):
 ReportFilterFormSet = forms.formset_factory(
     ReportFilterRowForm, extra=1, max_num=20, validate_max=True
 )
+
+
+class ReorderSettingsForm(forms.Form):
+    product = forms.ModelChoiceField(queryset=Product.objects.none())
+    low_stock_threshold = forms.IntegerField(min_value=0, required=False)
+    target_stock_level = forms.IntegerField(min_value=0, required=False)
+    min_reorder_quantity = forms.IntegerField(min_value=0, required=False)
+    preferred_supplier = forms.CharField(max_length=120, required=False)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["product"].queryset = Product.objects.filter(
+            tracking_method=TrackingMethod.QUANTITY, is_active=True
+        ).select_related("brand", "product_type")

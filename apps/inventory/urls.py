@@ -6,6 +6,7 @@ from .internal_use_ui import InternalUseView
 app_name = "inventory"
 
 urlpatterns = [
+    path("", views.InventoryWorkspaceView.as_view(), name="workspace"),
     path("put-in-use/", InternalUseView.as_view(), name="put_in_use"),
     path("remove-from-use/", InternalUseView.as_view(returning=True), name="remove_from_use"),
     path("movements/", views.MovementsHubView.as_view(), name="movements_hub"),

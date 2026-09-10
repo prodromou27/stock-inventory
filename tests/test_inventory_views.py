@@ -494,6 +494,7 @@ class TestUnitAssetListAndDetail:
     def test_detail_history_names_employee_and_return_origin(
         self, client, stock_manager_with_room_access, unit_product, location_tree
     ):
+        from apps.documents.services import generate_document
         from apps.inventory.services.assignments import assign_to_employee
         from apps.inventory.services.returns import return_stock
 
@@ -512,6 +513,7 @@ class TestUnitAssetListAndDetail:
             occurred_at=date.today(),
             unit_asset_ids=[asset.pk],
         )
+        document = generate_document(txn=assignment, user=stock_manager_with_room_access)
         return_stock(
             user=stock_manager_with_room_access,
             original_transaction=assignment,
@@ -530,6 +532,8 @@ class TestUnitAssetListAndDetail:
         assert "History Employee" in content
         assert "Returned from employee:" in content
         assert "HISTORY-PROJECT" in content
+        assert f"Printable document {document.document_number}" in content
+        assert document.template_version in content
 
     def test_list_scoped_to_accessible_locations(
         self,

@@ -120,6 +120,9 @@
             </div>
           {% endif %}
           <div class="timeline__meta">Recorded by {{ event.recorded_by }}</div>
+          {% for document in event.transaction.generated_documents.all %}
+            <div class="timeline__meta"><a href="{{ document.get_absolute_url }}">Printable document {{ document.document_number }}</a> <span class="badge badge--neutral">{{ document.template_version }}</span></div>
+          {% endfor %}
         </div>
       </li>
     {% endfor %}

@@ -35,6 +35,7 @@
         <label class="sr-only" for="balance-grid-saved-views">Saved views</label>
         <select id="balance-grid-saved-views"><option value="">— Saved views —</option></select>
         <button type="button" class="btn" id="balance-grid-save-view">Save view</button>
+        <button type="button" class="btn btn--ghost" id="balance-grid-pin-view" hidden>Pin to workspace</button>
         <button type="button" class="btn btn--ghost" id="balance-grid-delete-view" hidden aria-label="Delete selected saved view">Delete</button>
       </span>
     </div>
@@ -135,7 +136,7 @@
         dataUrl: "{% url 'inventory:balance_grid_data' %}",
         searchInputSelector: "#balance-grid-search",
         densityToggleSelector: "#balance-grid-density",
-        storageKey: "balance-grid",
+        storageKey: "balance-grid-{{ request.user.pk }}",
         persistColumns: true,
         pageSize: 50,
         initialSort: [{ field: "brand", dir: "asc" }],
@@ -179,10 +180,13 @@
       G.initSavedViews({
         selectSelector: "#balance-grid-saved-views",
         saveButtonSelector: "#balance-grid-save-view",
+        pinButtonSelector: "#balance-grid-pin-view",
         deleteButtonSelector: "#balance-grid-delete-view",
         listUrl: "{% url 'inventory:saved_grid_view_list_create' grid_key='balances' %}",
+        updateUrlTemplate: "{% url 'inventory:saved_grid_view_update' pk='00000000-0000-0000-0000-000000000000' %}".replace("00000000-0000-0000-0000-000000000000", "__ID__"),
         deleteUrlTemplate: "{% url 'inventory:saved_grid_view_delete' pk='00000000-0000-0000-0000-000000000000' %}".replace("00000000-0000-0000-0000-000000000000", "__ID__"),
         canShare: {% if user_is_administrator %}true{% else %}false{% endif %},
+        table,
         onCapture: () =>
           G.captureGridState(table, document.getElementById("balance-grid-table"), document.getElementById("balance-grid-search")),
         onApply: (state) => {

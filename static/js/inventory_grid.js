@@ -302,6 +302,28 @@
     // the checkbox state stays correct when paging/searching back too.
     if (options.rowSelectable !== false) {
       const selectedById = new Map();
+      const selectionKey = `${options.storageKey || "grid"}:selection`;
+      if (options.persistSelection) {
+        try {
+          const remembered = JSON.parse(window.localStorage.getItem(selectionKey) || "[]");
+          if (Array.isArray(remembered)) {
+            remembered.forEach((row) => row?.id && selectedById.set(row.id, row));
+          }
+        } catch (error) {
+          /* invalid/unavailable browser storage — start with no selection */
+        }
+      }
+      const publishSelection = () => {
+        const rows = Array.from(selectedById.values());
+        if (options.persistSelection) {
+          try {
+            window.localStorage.setItem(selectionKey, JSON.stringify(rows));
+          } catch (error) {
+            /* keep this page's selection when storage is unavailable */
+          }
+        }
+        if (options.onSelectionChange) options.onSelectionChange(rows);
+      };
       let suppressRemovals = false;
       table.on("rowSelectionChanged", () => {
         table.getRows(true).forEach((row) => {
@@ -309,7 +331,7 @@
           if (row.isSelected()) selectedById.set(data.id, data);
           else if (!suppressRemovals) selectedById.delete(data.id);
         });
-        if (options.onSelectionChange) options.onSelectionChange(Array.from(selectedById.values()));
+        publishSelection();
       });
       table.on("dataLoaded", (data) => {
         suppressRemovals = true;
@@ -319,6 +341,12 @@
         const idsOnPage = data.map((row) => row.id).filter((id) => selectedById.has(id));
         if (idsOnPage.length) window.setTimeout(() => table.selectRow(idsOnPage), 0);
       });
+      table.clearPersistentSelection = () => {
+        selectedById.clear();
+        table.deselectRow();
+        publishSelection();
+      };
+      table.on("tableBuilt", publishSelection);
     }
 
     if (options.searchInputSelector) {
@@ -410,6 +438,7 @@
       columns: table.getColumnLayout(),
       sorters: table.getSorters().map((s) => ({ field: s.field, dir: s.dir })),
       density: container.classList.contains("tabulator-density-compact") ? "compact" : "comfortable",
+      pageSize: table.getPageSize(),
       search: searchInput ? searchInput.value : "",
       headerFilters: table.getHeaderFilters(),
       extra: extra ? extra() : {},
@@ -439,6 +468,9 @@
         .closest(".inventory-grid")
         ?.querySelectorAll(".grid-density-toggle [data-density]")
         .forEach((b) => b.classList.toggle("is-active", b.dataset.density === state.density));
+    }
+    if ([25, 50, 100, 200].includes(Number(state.pageSize))) {
+      table.setPageSize(Number(state.pageSize));
     }
     if (searchInput && typeof state.search === "string") {
       searchInput.value = state.search;
@@ -519,6 +551,9 @@
     const defaultButton = options.defaultButtonSelector
       ? document.querySelector(options.defaultButtonSelector)
       : null;
+    const pinButton = options.pinButtonSelector
+      ? document.querySelector(options.pinButtonSelector)
+      : null;
     if (!select) return;
 
     function updateActionButtons() {
@@ -531,6 +566,11 @@
         defaultButton.hidden = !isMine;
         defaultButton.textContent =
           option && option.dataset.default === "true" ? "Unset default" : "Set as default";
+      }
+      if (pinButton) {
+        pinButton.hidden = !isMine;
+        pinButton.textContent =
+          option && option.dataset.pinned === "true" ? "Unpin from workspace" : "Pin to workspace";
       }
     }
 
@@ -548,6 +588,7 @@
             option.dataset.state = JSON.stringify(view.state);
             option.dataset.mine = view.is_mine;
             option.dataset.default = view.is_default;
+            option.dataset.pinned = view.is_pinned;
             select.appendChild(option);
           });
           if (selectAfterId) select.value = selectAfterId;
@@ -555,11 +596,22 @@
           // never on a later refresh() (after save/rename/delete), which
           // would otherwise silently discard whatever the operator is
           // currently looking at.
-          if (options.applyDefaultOnLoad && !window.location.search && !hasAppliedInitialDefault && !selectAfterId) {
-            const defaultView = data.views.find((view) => view.is_default);
-            if (defaultView) {
-              select.value = defaultView.id;
-              options.onApply(defaultView.state);
+          if (!hasAppliedInitialDefault && !selectAfterId) {
+            const requestedId = new URLSearchParams(window.location.search).get("saved_view");
+            const requestedView = data.views.find((view) => view.id === requestedId);
+            if (requestedView) {
+              select.value = requestedView.id;
+              options.onApply(requestedView.state);
+            } else if (!window.location.search) {
+              const defaultView = options.applyDefaultOnLoad
+                ? data.views.find((view) => view.is_default)
+                : null;
+              if (defaultView) {
+                select.value = defaultView.id;
+                options.onApply(defaultView.state);
+              } else if (data.preference) {
+                options.onApply(data.preference);
+              }
             }
           }
           hasAppliedInitialDefault = true;
@@ -567,6 +619,30 @@
         });
     }
     refresh();
+
+    // Account-backed automatic preferences complement named views: the
+    // latest layout/filter/sort/density follows the operator to another
+    // browser, while explicit URL filters and named defaults retain
+    // priority on initial load.
+    let preferenceTimer = null;
+    const persistPreference = () => {
+      if (!hasAppliedInitialDefault) return;
+      window.clearTimeout(preferenceTimer);
+      preferenceTimer = window.setTimeout(() => {
+        fetch(options.listUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-CSRFToken": getCsrfToken() },
+          body: JSON.stringify({ automatic: true, state: options.onCapture() }),
+        }).catch(() => {});
+      }, 500);
+    };
+    if (options.table) {
+      options.table.on("columnVisibilityChanged", persistPreference);
+      options.table.on("columnMoved", persistPreference);
+      options.table.on("columnResized", persistPreference);
+      options.table.on("dataLoaded", persistPreference);
+      options.table.on("pageSizeChanged", persistPreference);
+    }
 
     select.addEventListener("change", () => {
       const option = select.selectedOptions[0];
@@ -628,6 +704,24 @@
           .then((r) => r.json().then((body) => ({ ok: r.ok, body })))
           .then(({ ok, body }) => {
             if (!ok) throw new Error(body.error || "Couldn't update default view");
+            refresh(option.value);
+          })
+          .catch((error) => window.alert(error.message));
+      });
+    }
+
+    if (pinButton && options.updateUrlTemplate) {
+      pinButton.addEventListener("click", () => {
+        const option = select.selectedOptions[0];
+        if (!option || !option.value || option.dataset.mine !== "true") return;
+        fetch(options.updateUrlTemplate.replace("__ID__", option.value), {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-CSRFToken": getCsrfToken() },
+          body: JSON.stringify({ is_pinned: option.dataset.pinned !== "true" }),
+        })
+          .then((r) => r.json().then((body) => ({ ok: r.ok, body })))
+          .then(({ ok, body }) => {
+            if (!ok) throw new Error(body.error || "Couldn't update workspace shortcut");
             refresh(option.value);
           })
           .catch((error) => window.alert(error.message));

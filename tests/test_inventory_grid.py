@@ -7,7 +7,7 @@ from django.contrib.auth.models import Group
 from django.urls import reverse
 
 from apps.audit.models import AuditEvent
-from apps.inventory.models import SavedGridView, UnitAsset
+from apps.inventory.models import GridPreference, SavedGridView, UnitAsset
 from apps.inventory.services.receipts import receive_stock
 
 
@@ -376,6 +376,39 @@ class TestSavedGridViewAPI:
         listing = client.get(self._list_create_url()).json()
         assert any(v["name"] == "My view" and v["is_mine"] for v in listing["views"])
 
+    def test_automatic_preference_is_upserted_and_returned(self, client, administrator):
+        client.force_login(administrator)
+        url = self._list_create_url()
+        first = {"columns": [{"field": "serial", "visible": False}], "pageSize": 100}
+        response = client.post(
+            url,
+            data=json.dumps({"automatic": True, "state": first}),
+            content_type="application/json",
+        )
+        assert response.status_code == 200
+        assert client.get(url).json()["preference"] == first
+
+        second = {"density": "compact"}
+        client.post(
+            url,
+            data=json.dumps({"automatic": True, "state": second}),
+            content_type="application/json",
+        )
+        assert GridPreference.objects.filter(user=administrator, grid_key="assets").count() == 1
+        assert client.get(url).json()["preference"] == second
+
+    def test_automatic_preferences_are_private_per_user(
+        self, client, administrator, stock_manager_with_room_access
+    ):
+        client.force_login(administrator)
+        client.post(
+            self._list_create_url(),
+            data=json.dumps({"automatic": True, "state": {"density": "compact"}}),
+            content_type="application/json",
+        )
+        client.force_login(stock_manager_with_room_access)
+        assert client.get(self._list_create_url()).json()["preference"] is None
+
     def test_non_admin_cannot_share(self, client, stock_manager_with_room_access):
         client.force_login(stock_manager_with_room_access)
         response = client.post(
@@ -557,6 +590,25 @@ class TestSavedGridViewUpdateAPI:
         )
         view.refresh_from_db()
         assert view.is_default is False
+
+    def test_owner_can_pin_view_to_workspace(self, client, administrator):
+        view = SavedGridView.objects.create(
+            name="Available laptops",
+            grid_key="assets",
+            state={"headerFilters": [{"field": "status", "value": "in_stock"}]},
+            created_by=administrator,
+            updated_by=administrator,
+        )
+        client.force_login(administrator)
+        response = client.post(
+            self._update_url(view.pk),
+            data=json.dumps({"is_pinned": True}),
+            content_type="application/json",
+        )
+        assert response.status_code == 200
+        assert response.json()["is_pinned"] is True
+        view.refresh_from_db()
+        assert view.is_pinned is True
 
     def test_setting_default_unsets_the_previous_one(self, client, administrator):
         first = SavedGridView.objects.create(

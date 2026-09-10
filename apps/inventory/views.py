@@ -14,7 +14,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views import View
-from django.views.generic import DetailView, ListView
+from django.views.generic import DetailView, ListView, TemplateView
 
 from apps.audit.models import AuditEvent
 from apps.audit.services import record_event
@@ -101,8 +101,11 @@ from .services.disposition import dispose, mark_damaged, mark_lost, return_repai
 from .services.grid_views import (
     create_saved_grid_view,
     delete_saved_grid_view,
+    grid_preference_for,
     inventory_location_choices,
     list_saved_grid_views,
+    pinned_grid_views,
+    save_grid_preference,
     update_saved_grid_view,
 )
 from .services.purpose import reclassify_quantity_purpose, reclassify_unit_purpose
@@ -123,6 +126,30 @@ from .services.returns import (
 from .services.transfers import bulk_transfer
 
 logger = logging.getLogger(__name__)
+
+
+class InventoryWorkspaceView(LoginRequiredMixin, TemplateView):
+    """One operational doorway into the underlying unit/count tracking views."""
+
+    template_name = "inventory/workspace.html"
+
+    def get_context_data(self, **kwargs):
+        from apps.reporting.queries import dashboard_summary
+
+        context = super().get_context_data(**kwargs)
+        context["stats"] = dashboard_summary(self.request.user)
+        route_by_grid = {
+            "assets": "inventory:asset_list",
+            "balances": "inventory:balance_list",
+            "products": "catalog:product_list",
+        }
+        shortcuts = list(pinned_grid_views(user=self.request.user))
+        for shortcut in shortcuts:
+            shortcut.workspace_url = (
+                f"{reverse(route_by_grid[shortcut.grid_key])}?saved_view={shortcut.pk}"
+            )
+        context["pinned_views"] = shortcuts
+        return context
 
 
 def _recent_transactions_for_hub(user, limit=8):
@@ -1070,6 +1097,10 @@ class SavedGridViewListCreateView(LoginRequiredMixin, View):
     """
 
     def get(self, request, grid_key):
+        try:
+            preference = grid_preference_for(user=request.user, grid_key=grid_key)
+        except ValidationError as exc:
+            return JsonResponse({"error": "; ".join(exc.messages)}, status=400)
         views = list_saved_grid_views(user=request.user, grid_key=grid_key)
         return JsonResponse(
             {
@@ -1080,10 +1111,12 @@ class SavedGridViewListCreateView(LoginRequiredMixin, View):
                         "state": view.state,
                         "is_shared": view.is_shared,
                         "is_default": view.is_default,
+                        "is_pinned": view.is_pinned,
                         "is_mine": view.created_by_id == request.user.id,
                     }
                     for view in views
-                ]
+                ],
+                "preference": preference,
             }
         )
 
@@ -1094,6 +1127,13 @@ class SavedGridViewListCreateView(LoginRequiredMixin, View):
             return JsonResponse({"error": "Invalid request body."}, status=400)
 
         try:
+            if payload.get("automatic") is True:
+                preference = save_grid_preference(
+                    user=request.user,
+                    grid_key=grid_key,
+                    state=payload.get("state") or {},
+                )
+                return JsonResponse({"saved": True, "updated_at": preference.updated_at})
             view = create_saved_grid_view(
                 user=request.user,
                 name=payload.get("name", ""),
@@ -1137,6 +1177,7 @@ class SavedGridViewUpdateView(LoginRequiredMixin, View):
                 state=payload.get("state"),
                 is_shared=payload.get("is_shared"),
                 is_default=payload.get("is_default"),
+                is_pinned=payload.get("is_pinned"),
             )
         except PermissionDenied as exc:
             return JsonResponse({"error": str(exc)}, status=403)
@@ -1150,6 +1191,7 @@ class SavedGridViewUpdateView(LoginRequiredMixin, View):
                 "state": view.state,
                 "is_shared": view.is_shared,
                 "is_default": view.is_default,
+                "is_pinned": view.is_pinned,
             }
         )
 
@@ -1423,7 +1465,7 @@ class UnitAssetDetailView(LoginRequiredMixin, DetailView):
             "from_location",
             "to_location",
             "recorded_by",
-        )
+        ).prefetch_related("transaction__generated_documents")
         context["quick_actions"] = _quick_actions_for(self.object)
         context["assigned_to"] = _assigned_to_block(self.object.current_custody_transaction)
         context["other_stock_purpose"] = (

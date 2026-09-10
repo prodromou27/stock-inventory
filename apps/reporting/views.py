@@ -15,6 +15,9 @@ from django.utils.text import slugify
 from django.views import View
 from django.views.generic import ListView
 
+from apps.catalog.models import Product, TrackingMethod
+from apps.catalog.services import update_reorder_settings
+from apps.core.authorization import ADMINISTRATOR, RoleRequiredMixin
 from apps.core.csv_export import CSVExportMixin
 from apps.core.spreadsheets import spreadsheet_safe_row
 from apps.inventory.models import UnitAsset
@@ -22,7 +25,12 @@ from apps.locations.models import Location, order_by_hierarchy
 from apps.locations.scoping import accessible_locations
 
 from . import queries
-from .forms import ReportBaseModelForm, ReportBuilderForm, ReportFilterFormSet
+from .forms import (
+    ReorderSettingsForm,
+    ReportBaseModelForm,
+    ReportBuilderForm,
+    ReportFilterFormSet,
+)
 from .models import ReportBaseModel, SavedReport
 from .report_builder import (
     REPORTABLE_FIELDS,
@@ -401,6 +409,45 @@ class ReorderSuggestionsView(LoginRequiredMixin, View):
                 )
             )
         return response
+
+
+class ReorderSettingsView(LoginRequiredMixin, RoleRequiredMixin, View):
+    allowed_roles = (ADMINISTRATOR,)
+    template_name = "reporting/reorder_settings.html"
+
+    def get(self, request):
+        initial = {}
+        if product_id := request.GET.get("product"):
+            product = get_object_or_404(
+                Product, pk=product_id, tracking_method=TrackingMethod.QUANTITY
+            )
+            initial = {
+                "product": product,
+                "low_stock_threshold": product.low_stock_threshold,
+                "target_stock_level": product.target_stock_level,
+                "min_reorder_quantity": product.min_reorder_quantity,
+                "preferred_supplier": product.preferred_supplier,
+            }
+        return self._render(request, ReorderSettingsForm(initial=initial))
+
+    def post(self, request):
+        form = ReorderSettingsForm(request.POST)
+        if form.is_valid():
+            try:
+                update_reorder_settings(user=request.user, **form.cleaned_data)
+            except ValidationError as exc:
+                form.add_error(None, exc)
+            else:
+                messages.success(request, "Reorder settings saved.")
+                url = reverse("reporting:reorder_settings")
+                return redirect(f"{url}?product={form.cleaned_data['product'].pk}")
+        return self._render(request, form)
+
+    def _render(self, request, form):
+        products = Product.objects.filter(tracking_method=TrackingMethod.QUANTITY).select_related(
+            "brand", "product_type"
+        )
+        return render(request, self.template_name, {"form": form, "products": products})
 
 
 # --- Ad-hoc report builder ("more structured reporting", user request) ---

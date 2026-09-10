@@ -6,6 +6,7 @@ from django.urls import reverse
 from apps.core.models import (
     AppendOnlyModel,
     AppendOnlyQuerySet,
+    TimestampedModel,
     UserStampedModel,
     UUIDPrimaryKeyModel,
 )
@@ -610,6 +611,10 @@ class SavedGridView(UUIDPrimaryKeyModel, UserStampedModel):
     grid_key = models.CharField(max_length=20)
     state = models.JSONField(default=dict, blank=True)
     is_shared = models.BooleanField(default=False)
+    is_pinned = models.BooleanField(
+        default=False,
+        help_text="Show this personal view as a shortcut in the stock workspace.",
+    )
     is_default = models.BooleanField(
         default=False,
         help_text="Applied automatically when this grid loads, instead of the grid's own "
@@ -628,6 +633,31 @@ class SavedGridView(UUIDPrimaryKeyModel, UserStampedModel):
 
     def __str__(self):
         return self.name
+
+
+class GridPreference(UUIDPrimaryKeyModel, TimestampedModel):
+    """The most recent grid presentation state for one user and grid.
+
+    Unlike a named SavedGridView this is updated automatically. It remains
+    presentation-only: applying it always feeds the normal scoped grid data
+    endpoint and therefore cannot broaden inventory access.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="grid_preferences"
+    )
+    grid_key = models.CharField(max_length=20)
+    state = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "grid_key"], name="gridpreference_unique_user_grid"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.user} — {self.grid_key}"
 
 
 class ProductLocationThreshold(UUIDPrimaryKeyModel, UserStampedModel):

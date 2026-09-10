@@ -6,7 +6,7 @@ from django.db.models import Q
 
 from apps.core.authorization import is_administrator
 
-from ..models import SavedGridView
+from ..models import GridPreference, SavedGridView
 
 # Hard cap on the JSON blob's size — this is UI presentation state (column
 # widths/order/visibility, filter values, sort, density), not user content;
@@ -77,6 +77,13 @@ def list_saved_grid_views(*, user, grid_key):
     )
 
 
+def pinned_grid_views(*, user):
+    """Personal workspace shortcuts; shared views must be pinned by each user."""
+    return SavedGridView.objects.filter(created_by=user, is_pinned=True).order_by(
+        "grid_key", "name"
+    )
+
+
 def _validate_state(state):
     if not isinstance(state, dict):
         raise ValidationError("Invalid view state.")
@@ -114,7 +121,9 @@ def create_saved_grid_view(*, user, name, grid_key, state, is_shared=False, is_d
     return view
 
 
-def update_saved_grid_view(*, view, user, name=None, state=None, is_shared=None, is_default=None):
+def update_saved_grid_view(
+    *, view, user, name=None, state=None, is_shared=None, is_default=None, is_pinned=None
+):
     """Real rename/update, not delete-and-recreate — keeps the row's id (and
     therefore anyone else's reference to a *shared* view) stable across a
     rename, unlike the create-only flow this replaces for that case.
@@ -132,6 +141,12 @@ def update_saved_grid_view(*, view, user, name=None, state=None, is_shared=None,
         view.state = state
     if is_shared is not None:
         view.is_shared = bool(is_shared) and is_administrator(user)
+    if is_pinned is not None:
+        # Pins are personal shortcuts. Administrators may maintain a shared
+        # view, but they cannot pin it onto somebody else's workspace.
+        if view.created_by_id != user.id:
+            raise PermissionDenied("You can only pin your own saved views.")
+        view.is_pinned = bool(is_pinned)
 
     with transaction.atomic():
         if is_default is True:
@@ -143,6 +158,25 @@ def update_saved_grid_view(*, view, user, name=None, state=None, is_shared=None,
         view.full_clean()
         view.save()
     return view
+
+
+def grid_preference_for(*, user, grid_key):
+    if grid_key not in VALID_GRID_KEYS:
+        raise ValidationError("Unknown grid.")
+    preference = GridPreference.objects.filter(user=user, grid_key=grid_key).first()
+    return preference.state if preference else None
+
+
+def save_grid_preference(*, user, grid_key, state):
+    if grid_key not in VALID_GRID_KEYS:
+        raise ValidationError("Unknown grid.")
+    _validate_state(state)
+    preference, _ = GridPreference.objects.update_or_create(
+        user=user,
+        grid_key=grid_key,
+        defaults={"state": state},
+    )
+    return preference
 
 
 def _clear_existing_default(*, user, grid_key, exclude=None):

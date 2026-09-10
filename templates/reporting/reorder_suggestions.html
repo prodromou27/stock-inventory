@@ -14,6 +14,7 @@
       </div>
     </div>
     <div class="page-header__actions">
+      {% if user_is_administrator %}<a class="btn" href="{% url 'reporting:reorder_settings' %}">Configure reorder settings</a>{% endif %}
       <a class="btn" href="?{{ request.GET.urlencode }}{% if request.GET %}&{% else %}?{% endif %}format=csv" data-loading-link="Preparing export…">Export CSV</a>
     </div>
   </div>

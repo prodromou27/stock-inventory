@@ -472,3 +472,56 @@ def update_product(
         },
     )
     return product
+
+
+@transaction.atomic
+def update_reorder_settings(
+    *,
+    product,
+    user,
+    low_stock_threshold,
+    target_stock_level,
+    min_reorder_quantity,
+    preferred_supplier,
+):
+    """Focused administrator workflow for counted-stock planning settings."""
+    require_role(user, ADMINISTRATOR)
+    if product.tracking_method != TrackingMethod.QUANTITY:
+        raise ValidationError("Reorder settings apply only to counted-stock products.")
+    old_values = {
+        "low_stock_threshold": product.low_stock_threshold,
+        "target_stock_level": product.target_stock_level,
+        "min_reorder_quantity": product.min_reorder_quantity,
+        "preferred_supplier": product.preferred_supplier,
+    }
+    product.low_stock_threshold = low_stock_threshold
+    product.target_stock_level = target_stock_level
+    product.min_reorder_quantity = min_reorder_quantity
+    product.preferred_supplier = preferred_supplier.strip()
+    product.updated_by = user
+    product.full_clean(exclude=["normalized_model", "normalized_sku"])
+    product.save(
+        update_fields=[
+            "low_stock_threshold",
+            "target_stock_level",
+            "min_reorder_quantity",
+            "preferred_supplier",
+            "updated_by",
+            "updated_at",
+        ]
+    )
+    new_values = {
+        "low_stock_threshold": product.low_stock_threshold,
+        "target_stock_level": product.target_stock_level,
+        "min_reorder_quantity": product.min_reorder_quantity,
+        "preferred_supplier": product.preferred_supplier,
+    }
+    record_event(
+        actor=user,
+        event_type=AuditEvent.EventType.RECORD_UPDATED,
+        obj=product,
+        summary=f"Updated reorder settings for '{product}'",
+        old_values=old_values,
+        new_values=new_values,
+    )
+    return product
