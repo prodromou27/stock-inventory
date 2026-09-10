@@ -307,16 +307,19 @@ class LowStockView(LoginRequiredMixin, ListView):
     paginate_by = 50
 
     def get_queryset(self):
-        location = None
+        self.location = None
         location_id = self.request.GET.get("location")
         if location_id:
-            location = Location.objects.filter(pk=location_id).first()
-        return queries.low_stock_balances(self.request.user, location=location)
+            self.location = Location.objects.filter(pk=location_id).first()
+        return queries.low_stock_balances(self.request.user, location=self.location)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["locations"] = order_by_hierarchy(accessible_locations(self.request.user))
         context["filters"] = self.request.GET
+        context["has_configured_thresholds"] = queries.has_configured_low_stock(
+            self.request.user, location=self.location
+        )
         return context
 
 

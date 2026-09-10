@@ -7,13 +7,13 @@
      wanted (a reservation being converted, or a product-scoped quick
      action), so that flow isn't hidden behind an extra click. #}
   <details class="card" id="balance-picker-details">
-    <summary><h2 class="hub-panel__subheading" style="display: inline;">Select quantity stock (optional)</h2></summary>
+    <summary><h2 class="hub-panel__subheading" style="display: inline;">Select counted stock (optional)</h2></summary>
     <div class="inventory-grid is-hidden">
       <div class="grid-toolbar">
-        <input type="search" class="grid-toolbar__search" id="balance-picker-search" placeholder="Search product, location…" aria-label="Search quantity stock">
+        <input type="search" class="grid-toolbar__search" id="balance-picker-search" placeholder="Search product, location…" aria-label="Search counted stock">
         <span id="balance-picker-selection-count" class="grid-selection-count" hidden></span>
       </div>
-      <div id="balance-picker-grid" aria-label="Select quantity stock"></div>
+      <div id="balance-picker-grid" aria-label="Select counted stock"></div>
       <div id="balance-picker-hidden-input"></div>
     </div>
 
@@ -165,5 +165,5 @@
     </script>
   </details>
 {% else %}
-  <p class="text-muted">No available quantity stock found in your authorized scope.</p>
+  <p class="text-muted">No available counted stock found in your authorized scope.</p>
 {% endif %}

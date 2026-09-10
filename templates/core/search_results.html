@@ -24,11 +24,12 @@
     {% if assets %}
       <div class="table-scroll">
         <table>
-          <thead><tr><th>Asset</th><th>Serial</th><th>Status</th><th>Assigned to</th><th>Location</th></tr></thead>
+          <thead><tr><th>Asset</th><th>Matched by</th><th>Serial</th><th>Status</th><th>Assigned to</th><th>Location</th></tr></thead>
           <tbody>
             {% for asset in assets %}
               <tr>
                 <td><a href="{{ asset.get_absolute_url }}">{{ asset.name|default:asset.product }}</a></td>
+                <td><span class="badge badge--neutral">{{ asset.search_match_reason }}</span></td>
                 <td>{{ asset.vendor_serial|default:"—" }}</td>
                 <td><span class="badge {{ asset.status|badge_class }}">{{ asset.get_status_display }}</span></td>
                 <td>{% if asset.current_custody_transaction %}{{ asset.current_custody_transaction.employee_name|default:asset.current_custody_transaction.final_customer|default:"—" }}{% else %}—{% endif %}</td>
@@ -61,6 +62,14 @@
       </div>
     {% else %}
       <p class="empty-state">No matching transactions in your authorized scope.</p>
+    {% endif %}
+
+    {% if has_previous or has_next %}
+      <nav class="pagination" aria-label="Search result pages">
+        {% if has_previous %}<a href="?q={{ query|urlencode }}&amp;page={{ search_page|add:"-1" }}">Previous</a>{% endif %}
+        <span>Page {{ search_page }}</span>
+        {% if has_next %}<a href="?q={{ query|urlencode }}&amp;page={{ search_page|add:"1" }}">Next</a>{% endif %}
+      </nav>
     {% endif %}
   {% endif %}
 {% endblock %}

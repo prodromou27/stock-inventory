@@ -46,7 +46,7 @@ from .models import (
     LogoPosition,
     PageMargin,
 )
-from .pdf import render_pdf, render_styleable_source, sample_document_context
+from .pdf import active_template_for, render_pdf, render_styleable_source, sample_document_context
 from .services import delete_attachment, generate_document, regenerate_document, upload_attachment
 from .template_services import (
     apply_starter_template,
@@ -99,11 +99,27 @@ class RegenerateDocumentView(LoginRequiredMixin, RoleRequiredMixin, View):
 class DocumentDetailView(LoginRequiredMixin, View):
     def get(self, request, pk):
         document = get_object_or_404(
-            GeneratedDocument.objects.select_related("transaction", "generated_by", "supersedes"),
+            GeneratedDocument.objects.select_related(
+                "transaction", "generated_by", "supersedes", "template", "template__approved_by"
+            ),
             pk=pk,
         )
         require_transaction_access(request.user, document.transaction)
-        return render(request, "documents/document_detail.html", {"document": document})
+        active_template = active_template_for(document.document_type)
+        uses_current_template = (
+            active_template is not None
+            and document.template_id == active_template.pk
+            and document.template_version == f"v{active_template.version}"
+        ) or (active_template is None and document.template_id is None)
+        return render(
+            request,
+            "documents/document_detail.html",
+            {
+                "document": document,
+                "active_template": active_template,
+                "uses_current_template": uses_current_template,
+            },
+        )
 
 
 class DocumentDownloadView(LoginRequiredMixin, View):

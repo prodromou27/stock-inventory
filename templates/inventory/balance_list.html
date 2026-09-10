@@ -5,7 +5,7 @@
 
 {% block content %}
   <div class="page-header">
-    <div><p class="workspace-eyebrow">Inventory</p><h1>Quantity stock</h1>
+    <div><p class="workspace-eyebrow">Inventory</p><h1>Counted stock</h1>
     <p class="page-header__subtitle">Items counted together by location. Available stock excludes reserved quantities.</p></div>
     <div class="page-header__actions">
       <a class="btn" href="?{{ request.GET.urlencode }}&format=csv" data-loading-link="Preparing export…">Export CSV</a>
@@ -17,7 +17,7 @@
 
   {{ stock_purposes|json_script:"balance-stock-purpose-choices" }}
   {{ room_filter_choices|json_script:"room-filter-choices" }}
-  <p class="help-text">Quantity stock means items counted together, such as 50 pens or 20 cables, rather than tracked individually. Receive a quantity-tracked product to populate this page. Items tracked individually remain under Individual items, even when their serial number is blank.</p>
+  <p class="help-text">Counted stock means items managed as a number per location, such as 50 pens or 20 cables. Individually tracked equipment remains under Individual items, even when its serial number is blank.</p>
 
   <div class="inventory-grid is-hidden">
     <div class="grid-toolbar">
@@ -108,7 +108,15 @@
         </nav>
       {% endif %}
     {% else %}
-      <p class="empty-state">No quantity stock matches your filters and access. Individually tracked items appear under Individual items instead.</p>
+      <div class="empty-state">
+        {% if filters.q or filters.location or filters.brand or filters.model or filters.sku or filters.type or filters.stock_purpose %}
+          <p>No counted stock matches the current search or filters.</p>
+          <a class="btn btn--sm" href="{% url 'inventory:balance_list' %}">Clear filters</a>
+        {% else %}
+          <p>No counted stock has been received in your authorized locations. Products tracked individually appear under Individual items.</p>
+          {% if user_is_administrator or "StockManager" in user_role_groups %}<a class="btn btn--sm btn--primary" href="{% url 'inventory:receive_stock' %}">Receive counted stock</a>{% endif %}
+        {% endif %}
+      </div>
     {% endif %}
   </div>
 {% endblock %}
@@ -131,7 +139,7 @@
         pageSize: 50,
         initialSort: [{ field: "brand", dir: "asc" }],
         rowSelectable: false,
-        placeholder: "No quantity stock matches your filters and access. Check Individual items for separately tracked stock.",
+        placeholder: "No counted stock matches your filters. Check Individual items for separately tracked equipment.",
         columns: [
           { title: "Type", field: "product_type", headerFilter: "input", width: 130 },
           { title: "Brand", field: "brand", headerFilter: "input", width: 140 },

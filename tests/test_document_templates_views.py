@@ -60,6 +60,22 @@ class TestPermissions:
 
 @pytest.mark.django_db
 class TestHub:
+    def test_hub_shows_active_version_and_activator(self, client, administrator):
+        from apps.documents.designer_services import save_design
+
+        save_design(
+            user=administrator,
+            document_type="delivery",
+            design={"html": "<p>Active design</p>", "css": ""},
+            version=0,
+            activate=True,
+        )
+        client.force_login(administrator)
+        content = client.get(reverse("documents:template_hub")).content.decode()
+        assert "Custom — Published" in content
+        assert "v1" in content
+        assert f"by {administrator.get_username()}" in content
+
     def test_administrator_can_view_hub(self, client, administrator):
         client.force_login(administrator)
         response = client.get(reverse("documents:template_hub"))

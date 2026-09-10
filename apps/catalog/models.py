@@ -61,7 +61,7 @@ class ItemCategory(models.TextChoices):
     """
 
     SERIALIZED_ASSET = "serialized_asset", "Serialized Asset"
-    QUANTITY_STOCK = "quantity_stock", "Quantity Stock"
+    QUANTITY_STOCK = "quantity_stock", "Counted Stock"
     CONSUMABLE = "consumable", "Consumable"
     REUSABLE_ACCESSORY = "reusable_accessory", "Reusable Accessory"
     COMPONENT = "component", "Component"

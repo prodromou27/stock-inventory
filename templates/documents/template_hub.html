@@ -21,7 +21,7 @@
 
   <table>
     <thead>
-      <tr><th>Type</th><th>Status</th><th>Last updated</th><th></th></tr>
+      <tr><th>Type</th><th>Status</th><th>Version</th><th>Activated</th><th>Last updated</th><th></th></tr>
     </thead>
     <tbody>
       {% for row in rows %}
@@ -39,6 +39,13 @@
             {% else %}
               <span class="badge badge--neutral">Packaged default</span>
             {% endif %}
+          </td>
+          <td>{% if row.template_obj %}v{{ row.template_obj.version }}{% else %}form_v1{% endif %}</td>
+          <td>
+            {% if row.template_obj.status == "published" %}
+              {{ row.template_obj.approved_at|date:"Y-m-d H:i"|default:"—" }}
+              by {{ row.template_obj.approved_by.get_username|default:"—" }}
+            {% else %}—{% endif %}
           </td>
           <td>{{ row.template_obj.updated_at|default:"—" }}</td>
           <td>

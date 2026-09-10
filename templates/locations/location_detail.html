@@ -28,7 +28,7 @@
 
   <div class="form-actions">
     <a class="btn btn--primary" href="{% url 'inventory:asset_list' %}?location={{ location.pk }}">View individual items</a>
-    <a class="btn" href="{% url 'inventory:balance_list' %}?location={{ location.pk }}">View quantity stock</a>
+    <a class="btn" href="{% url 'inventory:balance_list' %}?location={{ location.pk }}">View counted stock</a>
   </div>
   <p>Includes stock in all rooms and shelves/racks beneath this location, within your access permissions.</p>
 

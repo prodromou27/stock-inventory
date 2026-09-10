@@ -105,7 +105,28 @@ SUGGEST_RESULT_LIMIT = 5
 TRIGRAM_THRESHOLD = 0.15
 
 
-def _search_results(user, query, limit):
+def _asset_match_reason(asset, query):
+    if asset.matched_employee:
+        return f"Employee: {asset.matched_employee}"
+    if asset.matched_customer:
+        return f"Customer: {asset.matched_customer}"
+    query = query.casefold()
+    checks = (
+        (asset.vendor_serial, "Serial number"),
+        (asset.name, "Asset name"),
+        (asset.product.brand.name, "Brand"),
+        (asset.product.model, "Model"),
+        (asset.product.sku, "SKU"),
+        (asset.product.product_type.name, "Product type"),
+        (asset.project_reference, "Project reference"),
+        (asset.final_customer, "Customer"),
+    )
+    return next(
+        (label for value, label in checks if query in (value or "").casefold()), "Product details"
+    )
+
+
+def _search_results(user, query, limit, offset=0):
     """Shared by GlobalSearchView (the full results page) and
     SearchSuggestView (the topbar's live-preview dropdown) — same querysets,
     same scoping, same ranking, just a different result cap and presentation.
@@ -128,7 +149,7 @@ def _search_results(user, query, limit):
     # dashboard_summary import is local — apps.core stays dependency-free.
     from django.contrib.postgres.search import TrigramSimilarity
     from django.db import connection
-    from django.db.models import Exists, OuterRef, Q
+    from django.db.models import Exists, OuterRef, Q, Subquery
 
     from apps.inventory.access import scope_asset_queryset, scope_transaction_queryset
     from apps.inventory.models import InventoryTransaction, InventoryTransactionLine, UnitAsset
@@ -150,13 +171,22 @@ def _search_results(user, query, limit):
     with connection.cursor() as cursor:
         cursor.execute("SELECT set_limit(%s)", [TRIGRAM_THRESHOLD])
 
-    recipient_history_match = InventoryTransactionLine.objects.filter(
-        unit_asset_id=OuterRef("pk")
-    ).filter(
+    recipient_history = InventoryTransactionLine.objects.filter(unit_asset_id=OuterRef("pk"))
+    recipient_history_match = recipient_history.filter(
         Q(transaction__employee_name__icontains=query)
         | Q(transaction__final_customer__icontains=query)
     )
-    assets = list(
+    matching_employee = (
+        recipient_history.exclude(transaction__employee_name="")
+        .filter(transaction__employee_name__icontains=query)
+        .order_by("-transaction__occurred_at", "-transaction__created_at")
+    )
+    matching_customer = (
+        recipient_history.exclude(transaction__final_customer="")
+        .filter(transaction__final_customer__icontains=query)
+        .order_by("-transaction__occurred_at", "-transaction__created_at")
+    )
+    asset_queryset = (
         scope_asset_queryset(
             user,
             UnitAsset.objects.select_related(
@@ -167,7 +197,11 @@ def _search_results(user, query, limit):
                 "current_custody_transaction",
             ),
         )
-        .annotate(_recipient_history_match=Exists(recipient_history_match))
+        .annotate(
+            _recipient_history_match=Exists(recipient_history_match),
+            matched_employee=Subquery(matching_employee.values("transaction__employee_name")[:1]),
+            matched_customer=Subquery(matching_customer.values("transaction__final_customer")[:1]),
+        )
         .filter(
             Q(normalized_serial__trigram_similar=query.upper())
             | Q(product__model__trigram_similar=query)
@@ -194,9 +228,12 @@ def _search_results(user, query, limit):
             + TrigramSimilarity("project_reference", query)
             + TrigramSimilarity("final_customer", query)
         )
-        .order_by("-similarity", "-created_at")[:limit]
+        .order_by("-similarity", "-created_at")
     )
-    transactions = list(
+    assets = list(asset_queryset[offset : offset + limit])
+    for asset in assets:
+        asset.search_match_reason = _asset_match_reason(asset, query)
+    transaction_queryset = (
         scope_transaction_queryset(
             user,
             InventoryTransaction.objects.select_related("performed_by"),
@@ -207,8 +244,9 @@ def _search_results(user, query, limit):
             | Q(final_customer__icontains=query)
             | Q(employee_name__icontains=query)
         )
-        .order_by("-occurred_at", "-created_at")[:limit]
+        .order_by("-occurred_at", "-created_at")
     )
+    transactions = list(transaction_queryset[offset : offset + limit])
     return {"assets": assets, "transactions": transactions}
 
 
@@ -223,8 +261,20 @@ class GlobalSearchView(LoginRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         query = self.request.GET.get("q", "").strip()
+        try:
+            page_number = max(1, int(self.request.GET.get("page", "1")))
+        except ValueError:
+            page_number = 1
+        offset = (page_number - 1) * SEARCH_RESULT_LIMIT
         context["query"] = query
-        context.update(_search_results(self.request.user, query, SEARCH_RESULT_LIMIT))
+        results = _search_results(self.request.user, query, SEARCH_RESULT_LIMIT + 1, offset)
+        context["has_next"] = any(
+            len(results[key]) > SEARCH_RESULT_LIMIT for key in ("assets", "transactions")
+        )
+        context["has_previous"] = page_number > 1
+        context["search_page"] = page_number
+        context["assets"] = results["assets"][:SEARCH_RESULT_LIMIT]
+        context["transactions"] = results["transactions"][:SEARCH_RESULT_LIMIT]
         return context
 
 
@@ -243,13 +293,8 @@ class SearchSuggestView(LoginRequiredMixin, View):
         def rows(kind):
             for obj in results[kind]:
                 label = str(obj)
-                if kind == "assets" and obj.current_custody_transaction_id:
-                    recipient = (
-                        obj.current_custody_transaction.employee_name
-                        or obj.current_custody_transaction.final_customer
-                    )
-                    if recipient:
-                        label = f"{label} — {recipient}"
+                if kind == "assets":
+                    label = f"{label} — {obj.search_match_reason}"
                 yield {"label": label, "url": obj.get_absolute_url()}
 
         return JsonResponse(

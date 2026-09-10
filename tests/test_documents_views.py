@@ -95,6 +95,25 @@ class TestDocumentDownloadView:
         assert 'target="_blank"' in response.content.decode()
         assert 'rel="noopener"' in response.content.decode()
 
+    def test_detail_warns_when_pdf_uses_an_older_template(
+        self, client, administrator, assignment_txn
+    ):
+        from apps.documents.designer_services import save_design
+
+        document = generate_document(txn=assignment_txn, user=administrator)
+        save_design(
+            user=administrator,
+            document_type="assignment",
+            design={"html": "<p>Replacement</p>", "css": ""},
+            version=0,
+            activate=True,
+        )
+        client.force_login(administrator)
+        response = client.get(reverse("documents:document_detail", kwargs={"pk": document.pk}))
+        assert response.context["uses_current_template"] is False
+        assert "Template source" in response.content.decode()
+        assert "Regenerate" in response.content.decode()
+
     def test_download_returns_pdf_bytes(
         self, client, stock_manager_with_room_access, assignment_txn
     ):

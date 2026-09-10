@@ -491,6 +491,46 @@ class TestQuickReceiveView:
 
 @pytest.mark.django_db
 class TestUnitAssetListAndDetail:
+    def test_detail_history_names_employee_and_return_origin(
+        self, client, stock_manager_with_room_access, unit_product, location_tree
+    ):
+        from apps.inventory.services.assignments import assign_to_employee
+        from apps.inventory.services.returns import return_stock
+
+        receive_stock(
+            user=stock_manager_with_room_access,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="SN-CUSTODY-HISTORY",
+        )
+        asset = UnitAsset.objects.get(vendor_serial="SN-CUSTODY-HISTORY")
+        assignment = assign_to_employee(
+            user=stock_manager_with_room_access,
+            employee_name="History Employee",
+            project_reference="HISTORY-PROJECT",
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+        )
+        return_stock(
+            user=stock_manager_with_room_access,
+            original_transaction=assignment,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+        )
+        client.force_login(stock_manager_with_room_access)
+
+        content = client.get(
+            reverse("inventory:asset_detail", kwargs={"pk": asset.pk})
+        ).content.decode()
+
+        assert "Movement and custody history" in content
+        assert "Employee:" in content
+        assert "History Employee" in content
+        assert "Returned from employee:" in content
+        assert "HISTORY-PROJECT" in content
+
     def test_list_scoped_to_accessible_locations(
         self,
         client,

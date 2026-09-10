@@ -38,11 +38,31 @@
 
   <form method="post">
     {% csrf_token %}
-    {% for field in form %}
-      {% if field.name|slice:":13" != "custom_field_" %}
-        {% include "_form_field.html" with field=field %}
-      {% endif %}
-    {% endfor %}
+    <div class="card">
+      <h2>Product identity</h2>
+      {% include "_form_field.html" with field=form.brand_name %}
+      {% include "_form_field.html" with field=form.model %}
+      {% include "_form_field.html" with field=form.sku %}
+      {% include "_form_field.html" with field=form.product_type_name %}
+      {% include "_form_field.html" with field=form.category %}
+      {% include "_form_field.html" with field=form.description %}
+    </div>
+
+    <div class="card">
+      <h2>Supplier and defaults</h2>
+      {% include "_form_field.html" with field=form.supplier %}
+      {% include "_form_field.html" with field=form.default_notes %}
+      {% include "_form_field.html" with field=form.is_active %}
+    </div>
+
+    <div class="card" id="reorder-settings">
+      <h2>Low-stock and reordering</h2>
+      <p class="helptext">For items tracked as a count. Leave the threshold blank to disable low-stock alerts for this product.</p>
+      {% include "_form_field.html" with field=form.low_stock_threshold %}
+      {% include "_form_field.html" with field=form.target_stock_level %}
+      {% include "_form_field.html" with field=form.min_reorder_quantity %}
+      {% include "_form_field.html" with field=form.preferred_supplier %}
+    </div>
 
     {% if form.custom_field_definitions %}
       <h2>Custom fields</h2>
@@ -65,4 +85,20 @@
       <button type="submit" class="btn btn--primary">{% if product %}Save{% else %}Create{% endif %}</button>
     </div>
   </form>
+{% endblock %}
+
+{% block extra_scripts %}
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      const category = document.getElementById("{{ form.category.id_for_label }}");
+      const reorder = document.getElementById("reorder-settings");
+      const refresh = () => {
+        const counted = ["quantity_stock", "consumable"].includes(category.value);
+        reorder.hidden = !counted;
+        reorder.querySelectorAll("input").forEach((input) => { input.disabled = !counted; });
+      };
+      category.addEventListener("change", refresh);
+      refresh();
+    });
+  </script>
 {% endblock %}

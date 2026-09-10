@@ -182,7 +182,15 @@
         </nav>
       {% endif %}
     {% else %}
-      <p class="empty-state">No assets found in your authorized scope.</p>
+      <div class="empty-state">
+        {% if query or selected_status or filters.stock_purpose or filters.location or filters.brand or filters.model or filters.sku or filters.type or filters.project_reference or filters.final_customer or filters.supplier or filters.invoice_number or filters.duplicate_serial or filters.arrival_after or filters.arrival_before or filters.removal_after or filters.removal_before %}
+          <p>No assets match the current search or filters.</p>
+          <a class="btn btn--sm" href="{% url 'inventory:asset_list' %}">Clear filters</a>
+        {% else %}
+          <p>No individual assets have been received in your authorized locations yet.</p>
+          {% if user_is_administrator or "StockManager" in user_role_groups %}<a class="btn btn--sm btn--primary" href="{% url 'inventory:receive_stock' %}">Receive stock</a>{% endif %}
+        {% endif %}
+      </div>
     {% endif %}
   </div>
 {% endblock %}

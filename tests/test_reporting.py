@@ -421,6 +421,11 @@ class TestLowStockReport:
         client.force_login(administrator)
         response = client.get(reverse("reporting:low_stock"))
         assert len(response.context["balances"]) == 1
+        content = response.content.decode()
+        balance = response.context["balances"][0]
+        assert balance.get_absolute_url() in content
+        assert reverse("catalog:product_update", args=[quantity_product.pk]) in content
+        assert "Edit threshold" in content
 
     def test_does_not_show_product_above_threshold(
         self, client, administrator, quantity_product, location_tree

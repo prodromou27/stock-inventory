@@ -84,7 +84,7 @@
   </div>
 {% endif %}
 
-<h2>History</h2>
+<h2>Movement and custody history</h2>
 {% if history %}
   <ol class="timeline">
     {% for event in history %}
@@ -96,12 +96,22 @@
             <span class="timeline__date">{{ event.occurred_at }}</span>
           </div>
           <div class="timeline__status">
+            <strong>{{ event.transaction.get_movement_type_display }}</strong>
             {% if event.from_status %}
               <span class="badge {{ event.from_status|badge_class }}">{{ event.get_from_status_display }}</span>
               <span class="timeline__arrow" aria-hidden="true">&rarr;</span>
             {% endif %}
             <span class="badge {{ event.to_status|badge_class }}">{{ event.get_to_status_display }}</span>
           </div>
+          {% if event.transaction.employee_name %}
+            <div class="timeline__meta"><strong>Employee:</strong> {{ event.transaction.employee_name }}{% if event.transaction.project_reference %} · Project {{ event.transaction.project_reference }}{% endif %}</div>
+          {% elif event.transaction.final_customer %}
+            <div class="timeline__meta"><strong>Customer:</strong> {{ event.transaction.final_customer }}{% if event.transaction.project_reference %} · Project {{ event.transaction.project_reference }}{% endif %}</div>
+          {% elif event.transaction.related_transaction.employee_name %}
+            <div class="timeline__meta"><strong>Returned from employee:</strong> {{ event.transaction.related_transaction.employee_name }}</div>
+          {% elif event.transaction.related_transaction.final_customer %}
+            <div class="timeline__meta"><strong>Returned from customer:</strong> {{ event.transaction.related_transaction.final_customer }}</div>
+          {% endif %}
           {% if event.from_location or event.to_location %}
             <div class="timeline__location">
               <span>{{ event.from_location|default:"—" }}</span>

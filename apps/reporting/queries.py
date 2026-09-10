@@ -235,6 +235,13 @@ def low_stock_balances(user, location=None):
     return queryset.order_by("product__brand__name", "product__model")
 
 
+def has_configured_low_stock(user, location=None):
+    queryset = _scoped_balances(user).filter(product__low_stock_threshold__isnull=False)
+    if location is not None:
+        queryset = queryset.filter(location__path__descendant_or_self=location.path)
+    return queryset.exists()
+
+
 def reorder_suggestions(user, location=None):
     """Same base set as low_stock_balances() (below its configured
     threshold) — this report answers "how much," not "whether," so it only

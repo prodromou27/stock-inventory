@@ -155,6 +155,28 @@ class TestGlobalSearchView:
         asset.refresh_from_db()
         assert asset in response.context["assets"]
         assert asset.status == "returned"
+        assert response.context["assets"][0].search_match_reason == (
+            "Employee: Historical Employee Unique"
+        )
+
+    def test_full_results_are_paginated(self, client, administrator, unit_product, location_tree):
+        from apps.core.views import SEARCH_RESULT_LIMIT
+
+        for index in range(SEARCH_RESULT_LIMIT + 2):
+            receive_asset(
+                administrator,
+                unit_product,
+                location_tree["room"],
+                f"PAGED-ASSET-{index:02d}",
+            )
+        client.force_login(administrator)
+        first = client.get(reverse("core:search"), {"q": "PAGED-ASSET"})
+        second = client.get(reverse("core:search"), {"q": "PAGED-ASSET", "page": 2})
+        assert len(first.context["assets"]) == SEARCH_RESULT_LIMIT
+        assert first.context["has_next"] is True
+        assert second.context["search_page"] == 2
+        assert len(second.context["assets"]) == 2
+        assert second.context["has_previous"] is True
 
 
 @pytest.mark.django_db
@@ -179,7 +201,10 @@ class TestSearchSuggestView:
         client.force_login(administrator)
         data = client.get(reverse("core:search_suggest"), {"q": unit_product.model}).json()
         assert "products" not in data
-        assert data["assets"][0] == {"label": str(asset), "url": asset.get_absolute_url()}
+        assert data["assets"][0] == {
+            "label": f"{asset} — Model",
+            "url": asset.get_absolute_url(),
+        }
 
     def test_employee_search_suggests_assigned_asset(
         self, client, stock_manager_with_room_access, unit_product, location_tree
@@ -201,7 +226,10 @@ class TestSearchSuggestView:
         data = client.get(reverse("core:search_suggest"), {"q": "Jamie"}).json()
 
         assert data["assets"] == [
-            {"label": f"{asset} — Jamie Searchable", "url": asset.get_absolute_url()}
+            {
+                "label": f"{asset} — Employee: Jamie Searchable",
+                "url": asset.get_absolute_url(),
+            }
         ]
 
     def test_assets_scoped_to_accessible_locations(

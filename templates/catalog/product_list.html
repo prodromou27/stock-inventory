@@ -107,7 +107,15 @@
         </nav>
       {% endif %}
     {% else %}
-      <p class="empty-state">No products found.</p>
+      <div class="empty-state">
+        {% if query or show_inactive %}
+          <p>No products match the current search or filters.</p>
+          <a class="btn btn--sm" href="{% url 'catalog:product_list' %}">Clear filters</a>
+        {% else %}
+          <p>No products have been created yet. Create the catalog definition before receiving stock.</p>
+          {% if user_is_administrator or "StockManager" in user_role_groups %}<a class="btn btn--sm btn--primary" href="{% url 'catalog:product_create' %}">Create product</a>{% endif %}
+        {% endif %}
+      </div>
     {% endif %}
   </div>
 {% endblock %}

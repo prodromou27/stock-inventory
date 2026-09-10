@@ -28,7 +28,7 @@
   {% if balances %}
     <table>
       <thead>
-        <tr><th>Product</th><th>Location</th><th>Stock purpose</th><th>Available</th><th>Threshold</th></tr>
+        <tr><th>Product</th><th>Location</th><th>Stock purpose</th><th>Available</th><th>Threshold</th><th>Actions</th></tr>
       </thead>
       <tbody>
         {% for balance in balances %}
@@ -38,6 +38,12 @@
             <td>{{ balance.get_stock_purpose_display }}</td>
             <td>{{ balance.available_quantity }}</td>
             <td>{{ balance.product.low_stock_threshold }}</td>
+            <td>
+              <a class="btn btn--sm" href="{{ balance.get_absolute_url }}">View stock</a>
+              {% if user_is_administrator or "StockManager" in user_role_groups %}
+                <a class="btn btn--sm btn--ghost" href="{% url 'catalog:product_update' balance.product.pk %}#reorder-settings">Edit threshold</a>
+              {% endif %}
+            </td>
           </tr>
         {% endfor %}
       </tbody>
@@ -50,6 +56,13 @@
       </nav>
     {% endif %}
   {% else %}
-    <p class="empty-state">Nothing below its configured threshold right now (or no product has a threshold configured).</p>
+    <div class="empty-state">
+      {% if has_configured_thresholds %}
+        <p>No alerts: every configured counted-stock balance is currently above its threshold.</p>
+      {% else %}
+        <p>No thresholds are configured for counted stock in this scope.</p>
+        {% if user_is_administrator or "StockManager" in user_role_groups %}<a class="btn btn--sm" href="{% url 'catalog:product_list' %}">Choose a product to configure</a>{% endif %}
+      {% endif %}
+    </div>
   {% endif %}
 {% endblock %}

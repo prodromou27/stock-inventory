@@ -25,12 +25,25 @@
       <dt>Transaction</dt><dd><a href="{{ document.transaction.get_absolute_url }}">{{ document.transaction.transaction_number }}</a></dd>
       <dt>Generated</dt><dd>{{ document.generated_by }} on {{ document.generated_at }}</dd>
       <dt>Template version</dt><dd>{{ document.template_version }}</dd>
+      <dt>Template source</dt>
+      <dd>
+        {% if document.template %}
+          Custom {{ document.template.get_document_type_display }} template
+          {% if document.template.approved_at %}— activated {{ document.template.approved_at|date:"Y-m-d H:i" }} by {{ document.template.approved_by.get_username|default:"—" }}{% endif %}
+        {% else %}
+          Packaged default
+        {% endif %}
+      </dd>
       {% if document.supersedes %}
         <dt>Supersedes</dt><dd><a href="{{ document.supersedes.get_absolute_url }}">{{ document.supersedes.document_number }}</a></dd>
       {% endif %}
     </dl>
   </div>
-  <p class="text-muted">This PDF is a historical snapshot. Saving a template does not change it. Regenerate creates a new copy using the currently active template and preserves this original.</p>
+  {% if uses_current_template %}
+    <p class="messages__item messages__item--info">This PDF uses the currently active template. It remains an immutable historical snapshot.</p>
+  {% else %}
+    <p class="messages__item messages__item--warning">This historical PDF uses an older template. Regenerate creates a new copy using {% if active_template %}active version v{{ active_template.version }}{% else %}the packaged default{% endif %} and preserves this original.</p>
+  {% endif %}
 
   {% if document.superseded_by.all %}
     <p class="messages__item messages__item--warning">

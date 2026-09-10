@@ -1418,7 +1418,11 @@ class UnitAssetDetailView(LoginRequiredMixin, DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["history"] = self.object.status_history.select_related(
-            "transaction", "from_location", "to_location", "recorded_by"
+            "transaction",
+            "transaction__related_transaction",
+            "from_location",
+            "to_location",
+            "recorded_by",
         )
         context["quick_actions"] = _quick_actions_for(self.object)
         context["assigned_to"] = _assigned_to_block(self.object.current_custody_transaction)
