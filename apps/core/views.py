@@ -128,10 +128,10 @@ def _search_results(user, query, limit):
     # dashboard_summary import is local — apps.core stays dependency-free.
     from django.contrib.postgres.search import TrigramSimilarity
     from django.db import connection
-    from django.db.models import Q
+    from django.db.models import Exists, OuterRef, Q
 
     from apps.inventory.access import scope_asset_queryset, scope_transaction_queryset
-    from apps.inventory.models import InventoryTransaction, UnitAsset
+    from apps.inventory.models import InventoryTransaction, InventoryTransactionLine, UnitAsset
 
     if not query:
         return {"assets": [], "transactions": []}
@@ -150,6 +150,12 @@ def _search_results(user, query, limit):
     with connection.cursor() as cursor:
         cursor.execute("SELECT set_limit(%s)", [TRIGRAM_THRESHOLD])
 
+    recipient_history_match = InventoryTransactionLine.objects.filter(
+        unit_asset_id=OuterRef("pk")
+    ).filter(
+        Q(transaction__employee_name__icontains=query)
+        | Q(transaction__final_customer__icontains=query)
+    )
     assets = list(
         scope_asset_queryset(
             user,
@@ -161,6 +167,7 @@ def _search_results(user, query, limit):
                 "current_custody_transaction",
             ),
         )
+        .annotate(_recipient_history_match=Exists(recipient_history_match))
         .filter(
             Q(normalized_serial__trigram_similar=query.upper())
             | Q(product__model__trigram_similar=query)
@@ -177,6 +184,7 @@ def _search_results(user, query, limit):
             | Q(project_reference__icontains=query)
             | Q(final_customer__icontains=query)
             | Q(current_custody_transaction__employee_name__icontains=query)
+            | Q(_recipient_history_match=True)
         )
         .annotate(
             similarity=TrigramSimilarity("normalized_serial", query.upper())

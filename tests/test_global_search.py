@@ -4,8 +4,9 @@ import pytest
 from django.urls import reverse
 
 from apps.inventory.models import UnitAsset
-from apps.inventory.services.assignments import assign_to_employee
+from apps.inventory.services.assignments import assign_to_employee, deliver_to_customer
 from apps.inventory.services.receipts import receive_stock
+from apps.inventory.services.returns import return_stock
 
 
 def receive_asset(user, product, room, serial):
@@ -102,6 +103,58 @@ class TestGlobalSearchView:
         assert asset in response.context["assets"]
         assert "Assigned to" in response.content.decode()
         assert "Alexandra Unique Recipient" in response.content.decode()
+
+    def test_finds_delivered_asset_by_customer_name(
+        self, client, stock_manager_with_room_access, unit_product, location_tree
+    ):
+        asset = receive_asset(
+            stock_manager_with_room_access,
+            unit_product,
+            location_tree["room"],
+            "SN-CUSTOMER-SEARCH",
+        )
+        deliver_to_customer(
+            user=stock_manager_with_room_access,
+            final_customer="Northwind Unique Customer",
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+        )
+        client.force_login(stock_manager_with_room_access)
+
+        response = client.get(reverse("core:search"), {"q": "Northwind Unique"})
+
+        assert asset in response.context["assets"]
+        assert "Northwind Unique Customer" in response.content.decode()
+
+    def test_recipient_search_includes_asset_after_it_is_returned(
+        self, client, stock_manager_with_room_access, unit_product, location_tree
+    ):
+        asset = receive_asset(
+            stock_manager_with_room_access,
+            unit_product,
+            location_tree["room"],
+            "SN-HISTORICAL-RECIPIENT",
+        )
+        assignment = assign_to_employee(
+            user=stock_manager_with_room_access,
+            employee_name="Historical Employee Unique",
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+        )
+        return_stock(
+            user=stock_manager_with_room_access,
+            original_transaction=assignment,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+        )
+        client.force_login(stock_manager_with_room_access)
+
+        response = client.get(reverse("core:search"), {"q": "Historical Employee"})
+
+        asset.refresh_from_db()
+        assert asset in response.context["assets"]
+        assert asset.status == "returned"
 
 
 @pytest.mark.django_db
