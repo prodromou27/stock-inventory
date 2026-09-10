@@ -105,11 +105,21 @@ def test_stock_manager_room_filters_and_delivery(
             "summary"
         ).click()
         page.locator("#asset-grid-columns-toggle").click()
+        page.locator("#asset-grid-columns-panel").get_by_role(
+            "checkbox", name="SKU", exact=True
+        ).uncheck()
         page.get_by_role("button", name="Move Brand right", exact=True).click()
         headers = page.locator("#asset-grid-table .tabulator-headers > .tabulator-col")
         fields = headers.evaluate_all("els => els.map(el => el.getAttribute('tabulator-field'))")
         assert fields.index("model") < fields.index("brand")
         page.locator("#asset-grid-columns-toggle").click()
+        page.reload()
+        expect(
+            page.locator('#asset-grid-table .tabulator-col[tabulator-field="sku"]')
+        ).to_be_hidden()
+        headers = page.locator("#asset-grid-table .tabulator-headers > .tabulator-col")
+        fields = headers.evaluate_all("els => els.map(el => el.getAttribute('tabulator-field'))")
+        assert fields.index("model") < fields.index("brand")
         rows.locator('[tabulator-field="model"] a').click()
         page.get_by_role("link", name="Edit asset", exact=True).click()
         page.get_by_label("Asset name", exact=True).fill("Reception firewall")

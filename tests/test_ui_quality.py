@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from django.contrib.staticfiles import finders
 from django.urls import reverse
@@ -39,3 +41,18 @@ def test_asset_filter_ui_uses_one_form_and_offers_clear_action(client, administr
     assert html.count('class="toolbar toolbar--filters"') == 1
     assert "Active filters" in html
     assert "Clear all" in html
+
+
+@pytest.mark.django_db
+def test_inventory_grids_enable_automatic_column_persistence(client, administrator):
+    client.force_login(administrator)
+    for route in ("inventory:asset_list", "inventory:balance_list", "catalog:product_list"):
+        response = client.get(reverse(route))
+        assert response.status_code == 200
+        assert "persistColumns: true" in response.content.decode()
+
+    script = Path(finders.find("js/inventory_grid.js")).read_text(encoding="utf-8")
+    assert ":columns`" in script
+    assert 'table.on("columnVisibilityChanged", persist)' in script
+    assert 'table.on("columnMoved", persist)' in script
+    assert 'table.on("columnResized", persist)' in script

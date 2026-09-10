@@ -207,6 +207,10 @@
       columnDefaults: { headerFilterLiveFilter: true, tooltip: true },
     });
 
+    if (options.persistColumns) {
+      initColumnPersistence(table, options.storageKey || "grid");
+    }
+
     table.on("tableBuildError", (error) => {
       showError(container, error);
     });
@@ -455,6 +459,43 @@
       }
     }
     if (applyExtra) applyExtra(state.extra || {});
+  }
+
+  /**
+   * Keeps an operator's ordinary column choices between visits without
+   * requiring them to create a named saved view. Named/default views still
+   * use applyGridState() and therefore deliberately replace this layout;
+   * the resulting choice then becomes the operator's latest local layout.
+   */
+  function initColumnPersistence(table, storageKey) {
+    const key = `${storageKey}:columns`;
+    let restoring = false;
+
+    table.on("tableBuilt", () => {
+      try {
+        const layout = JSON.parse(window.localStorage.getItem(key) || "null");
+        if (!Array.isArray(layout)) return;
+        restoring = true;
+        table.setColumnLayout(layout);
+      } catch (error) {
+        // Corrupt or obsolete browser state must never prevent the grid
+        // loading. A later valid column change replaces it automatically.
+      } finally {
+        restoring = false;
+      }
+    });
+
+    const persist = () => {
+      if (restoring) return;
+      try {
+        window.localStorage.setItem(key, JSON.stringify(table.getColumnLayout()));
+      } catch (error) {
+        /* private browsing / storage disabled — use this visit's layout */
+      }
+    };
+    table.on("columnVisibilityChanged", persist);
+    table.on("columnMoved", persist);
+    table.on("columnResized", persist);
   }
 
   /**
@@ -710,7 +751,7 @@
     function renderColumns() {
       panel.replaceChildren();
       const hint = document.createElement("p");
-      hint.textContent = "Drag headers or use arrows to arrange columns. Save view to keep your layout; administrators can share it.";
+      hint.textContent = "Column choices are saved automatically on this device. Save a named view to keep filters too or share it.";
       panel.appendChild(hint);
       const columns = options.table.getColumns().filter((column) => column.getField() && !column.getDefinition().frozen);
       columns.forEach((column, index) => {
