@@ -660,6 +660,26 @@ class GridPreference(UUIDPrimaryKeyModel, TimestampedModel):
         return f"{self.user} — {self.grid_key}"
 
 
+class GridSelection(UUIDPrimaryKeyModel, TimestampedModel):
+    """A user's selected asset ids, shared across browsers and devices."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="grid_selections"
+    )
+    grid_key = models.CharField(max_length=20)
+    selected_ids = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "grid_key"], name="gridselection_unique_user_grid"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.user} - {self.grid_key} selection"
+
+
 class ProductLocationThreshold(UUIDPrimaryKeyModel, UserStampedModel):
     """A per-location override of Product's global reorder fields (target
     stock level/min reorder quantity/preferred supplier) — sparse config

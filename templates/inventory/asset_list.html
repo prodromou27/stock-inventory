@@ -228,6 +228,7 @@
         storageKey: "asset-grid-{{ request.user.pk }}",
         persistColumns: true,
         persistSelection: true,
+        selectionUrl: "{% url 'inventory:grid_selection' 'assets' %}",
         pageSize: 50,
         initialSort: [{ field: "arrival_date", dir: "desc" }],
         editableFields: canEditGrid ? EDITABLE_FIELDS : [],

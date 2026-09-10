@@ -4,11 +4,12 @@ from django.db import connection
 from django.db.utils import OperationalError
 from django.http import JsonResponse
 from django.shortcuts import redirect, render
+from django.urls import reverse
 from django.views import View
 from django.views.generic import TemplateView
 
 from .models import DASHBOARD_CARDS
-from .services import hidden_dashboard_cards, save_dashboard_cards
+from .services import dashboard_card_order, hidden_dashboard_cards, save_dashboard_cards
 
 DASHBOARD_CARD_KEYS = {key for key, _ in DASHBOARD_CARDS}
 
@@ -60,9 +61,34 @@ class HomeView(LoginRequiredMixin, TemplateView):
             .select_related("parent")
             .order_by("name")
         )
-        context["visible_dashboard_cards"] = [
-            key for key, _ in DASHBOARD_CARDS if key not in hidden
+        labels = dict(DASHBOARD_CARDS)
+        urls = {
+            "assets_in_stock": f"{reverse('inventory:asset_list')}?status=in_stock",
+            "quantity_on_hand": reverse("inventory:balance_list"),
+            "internal_stock_count": f"{reverse('inventory:asset_list')}?stock_purpose=internal",
+            "customer_stock_count": f"{reverse('inventory:asset_list')}?stock_purpose=customer",
+            "low_stock_count": reverse("reporting:low_stock"),
+            "active_reservations": reverse("reporting:reserved_stock"),
+            "assigned_count": f"{reverse('inventory:asset_list')}?status=assigned",
+            "delivered_count": f"{reverse('inventory:asset_list')}?status=delivered",
+            "damaged_count": reverse("reporting:damaged_assets"),
+            "lost_count": reverse("reporting:lost_assets"),
+            "disposed_count": reverse("reporting:disposed_items"),
+            "recent_transactions": reverse("inventory:transaction_list"),
+        }
+        alert_keys = {"low_stock_count", "damaged_count", "lost_count"}
+        context["dashboard_cards"] = [
+            {
+                "key": key,
+                "label": labels[key],
+                "value": context["stats"][key],
+                "url": urls[key],
+                "alert": key in alert_keys and bool(context["stats"][key]),
+            }
+            for key in dashboard_card_order(self.request.user)
+            if key not in hidden
         ]
+        context["visible_dashboard_cards"] = [card["key"] for card in context["dashboard_cards"]]
         return context
 
 
@@ -79,20 +105,21 @@ class DashboardPreferenceView(LoginRequiredMixin, View):
 
     def get(self, request):
         hidden = hidden_dashboard_cards(request.user)
+        labels = dict(DASHBOARD_CARDS)
         return render(
             request,
             self.template_name,
             {
                 "cards": [
-                    {"key": key, "label": label, "visible": key not in hidden}
-                    for key, label in DASHBOARD_CARDS
+                    {"key": key, "label": labels[key], "visible": key not in hidden}
+                    for key in dashboard_card_order(request.user)
                 ]
             },
         )
 
     def post(self, request):
         checked = set(request.POST.getlist("visible_cards")) & DASHBOARD_CARD_KEYS
-        save_dashboard_cards(request.user, checked)
+        save_dashboard_cards(request.user, checked, request.POST.getlist("card_order"))
         messages.success(request, "Dashboard preferences saved.")
         return redirect("core:home")
 

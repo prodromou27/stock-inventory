@@ -13,7 +13,11 @@ from apps.settings.models import (
     NotificationDigestDelivery,
     SystemSettings,
 )
-from apps.settings.notifications import build_digest, save_notification_subscription
+from apps.settings.notifications import (
+    build_digest,
+    refresh_in_app_notifications,
+    save_notification_subscription,
+)
 
 
 def _configure_mail(settings, administrator):
@@ -43,6 +47,25 @@ def _subscription(administrator, country, **overrides):
 
 @pytest.mark.django_db
 class TestNotificationSubscriptions:
+    def test_manual_refresh_creates_bell_alert_without_sending_digest(
+        self, administrator, location_tree, quantity_product
+    ):
+        _subscription(administrator, location_tree["country"])
+        from apps.inventory.services.receipts import receive_stock
+
+        receive_stock(
+            user=administrator,
+            product=quantity_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            quantity=1,
+        )
+        assert refresh_in_app_notifications(user=administrator) == 1
+        delivery = NotificationDigestDelivery.objects.get()
+        assert delivery.status == NotificationDigestDelivery.Status.PENDING
+        assert delivery.sent_at is None
+        assert Notification.objects.filter(recipient=administrator, category="low_stock").exists()
+
     def test_administrator_can_create_subscription_with_audit_event(
         self, administrator, location_tree
     ):

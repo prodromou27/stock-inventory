@@ -299,6 +299,18 @@ class NotificationListView(LoginRequiredMixin, View):
         return render(request, self.template_name, {"notifications": notifications})
 
 
+class NotificationRefreshView(LoginRequiredMixin, View):
+    def post(self, request):
+        from .notifications import refresh_in_app_notifications
+
+        refreshed = refresh_in_app_notifications(user=request.user)
+        if refreshed:
+            messages.success(request, "Notifications refreshed from current inventory data.")
+        else:
+            messages.info(request, "No active notification subscriptions are configured for you.")
+        return redirect("settings:notification_list")
+
+
 class NotificationOpenView(LoginRequiredMixin, View):
     """Marks one notification read, then sends the user on to whatever page
     it's actually about — a single click does both, no separate "mark read"

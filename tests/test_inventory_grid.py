@@ -7,12 +7,57 @@ from django.contrib.auth.models import Group
 from django.urls import reverse
 
 from apps.audit.models import AuditEvent
-from apps.inventory.models import GridPreference, SavedGridView, UnitAsset
+from apps.inventory.models import GridPreference, GridSelection, SavedGridView, UnitAsset
 from apps.inventory.services.receipts import receive_stock
 
 
 @pytest.mark.django_db
 class TestUnitAssetGridDataView:
+    def test_asset_selection_persists_for_user_and_is_scoped(
+        self,
+        client,
+        administrator,
+        stock_manager_with_room_access,
+        unit_product,
+        location_tree,
+        other_location_tree,
+    ):
+        visible = (
+            receive_stock(
+                user=administrator,
+                product=unit_product,
+                location=location_tree["room"],
+                occurred_at=date.today(),
+                vendor_serial="SEL-VISIBLE",
+            )
+            .lines.get()
+            .unit_asset
+        )
+        hidden = (
+            receive_stock(
+                user=administrator,
+                product=unit_product,
+                location=other_location_tree["room"],
+                occurred_at=date.today(),
+                vendor_serial="SEL-HIDDEN",
+            )
+            .lines.get()
+            .unit_asset
+        )
+        client.force_login(stock_manager_with_room_access)
+        url = reverse("inventory:grid_selection", args=["assets"])
+        response = client.post(
+            url,
+            data=json.dumps({"selected_ids": [str(visible.pk), str(hidden.pk)]}),
+            content_type="application/json",
+        )
+        assert response.status_code == 200
+        assert response.json()["selected_ids"] == [str(visible.pk)]
+        assert GridSelection.objects.get(user=stock_manager_with_room_access).selected_ids == [
+            str(visible.pk)
+        ]
+        assert client.get(url).json()["selection"][0]["id"] == str(visible.pk)
+
     """apps.inventory.views.UnitAssetGridDataView — the JSON data source
     behind templates/inventory/asset_list.html's Tabulator grid."""
 

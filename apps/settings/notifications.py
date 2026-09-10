@@ -250,6 +250,28 @@ def sync_in_app_notifications(*, delivery, counts):
     delivery.notifications.exclude(category__in=current_categories).delete()
 
 
+@transaction.atomic
+def refresh_in_app_notifications(*, user, today=None):
+    """Refresh the caller's bell without sending or consuming its daily email."""
+    today = today or timezone.localdate()
+    refreshed = 0
+    subscriptions = NotificationSubscription.objects.filter(
+        recipient=user, recipient__is_active=True, is_active=True
+    ).select_related("recipient", "country")
+    for subscription in subscriptions:
+        delivery, _ = NotificationDigestDelivery.objects.get_or_create(
+            subscription=subscription,
+            digest_date=today,
+            defaults={"status": NotificationDigestDelivery.Status.PENDING},
+        )
+        _body, counts = build_digest(subscription, today=today)
+        delivery.item_counts = counts
+        delivery.save(update_fields=["item_counts", "updated_at"])
+        sync_in_app_notifications(delivery=delivery, counts=counts)
+        refreshed += 1
+    return refreshed
+
+
 def send_daily_digests(*, today=None):
     today = today or timezone.localdate()
     results = {"sent": 0, "no_content": 0, "failed": 0, "skipped": 0}
@@ -260,7 +282,7 @@ def send_daily_digests(*, today=None):
         delivery, created = NotificationDigestDelivery.objects.get_or_create(
             subscription=subscription,
             digest_date=today,
-            defaults={"status": NotificationDigestDelivery.Status.FAILED},
+            defaults={"status": NotificationDigestDelivery.Status.PENDING},
         )
         if not created and delivery.status in (
             NotificationDigestDelivery.Status.SENT,

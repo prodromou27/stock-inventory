@@ -101,3 +101,28 @@ class ReorderSettingsForm(forms.Form):
         self.fields["product"].queryset = Product.objects.filter(
             tracking_method=TrackingMethod.QUANTITY, is_active=True
         ).select_related("brand", "product_type")
+
+
+class LocationReorderSettingsForm(forms.Form):
+    product = forms.ModelChoiceField(queryset=Product.objects.none())
+    location = forms.ModelChoiceField(queryset=Product.objects.none(), label="Storage room / Shelf")
+    target_stock_level = forms.IntegerField(min_value=0, required=False)
+    min_reorder_quantity = forms.IntegerField(min_value=0, required=False)
+    preferred_supplier = forms.CharField(max_length=120, required=False)
+
+    def __init__(self, *args, user, **kwargs):
+        from apps.locations.models import ROOM_OR_BELOW_LEVELS, Location
+        from apps.locations.scoping import accessible_locations
+
+        super().__init__(*args, **kwargs)
+        self.fields["product"].queryset = Product.objects.filter(
+            tracking_method=TrackingMethod.QUANTITY, is_active=True
+        ).select_related("brand", "product_type")
+        self.fields["location"].queryset = accessible_locations(user).filter(
+            level__in=ROOM_OR_BELOW_LEVELS, is_active=True
+        )
+        self.fields["location"].label_from_instance = lambda location: (
+            f"{location.parent.name} / {location.name}"
+            if location.level == Location.Level.RACK_SHELF
+            else str(location)
+        )

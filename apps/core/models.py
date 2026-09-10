@@ -173,3 +173,8 @@ class DashboardPreference(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="dashboard_preference"
     )
     hidden_cards = models.JSONField(default=list, blank=True)
+    card_order = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Dashboard card keys in the user's preferred display order.",
+    )

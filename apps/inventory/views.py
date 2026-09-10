@@ -102,10 +102,12 @@ from .services.grid_views import (
     create_saved_grid_view,
     delete_saved_grid_view,
     grid_preference_for,
+    grid_selection_for,
     inventory_location_choices,
     list_saved_grid_views,
     pinned_grid_views,
     save_grid_preference,
+    save_grid_selection,
     update_saved_grid_view,
 )
 from .services.purpose import reclassify_quantity_purpose, reclassify_unit_purpose
@@ -1154,6 +1156,29 @@ class SavedGridViewListCreateView(LoginRequiredMixin, View):
                 "is_default": view.is_default,
             }
         )
+
+
+class GridSelectionView(LoginRequiredMixin, View):
+    def get(self, request, grid_key):
+        try:
+            rows = grid_selection_for(user=request.user, grid_key=grid_key)
+        except ValidationError as exc:
+            return JsonResponse({"error": "; ".join(exc.messages)}, status=400)
+        return JsonResponse({"selection": rows})
+
+    def post(self, request, grid_key):
+        try:
+            payload = json.loads(request.body)
+            selection = save_grid_selection(
+                user=request.user,
+                grid_key=grid_key,
+                selected_ids=payload.get("selected_ids"),
+            )
+        except (TypeError, ValueError):
+            return JsonResponse({"error": "Invalid request body."}, status=400)
+        except ValidationError as exc:
+            return JsonResponse({"error": "; ".join(exc.messages)}, status=400)
+        return JsonResponse({"saved": True, "selected_ids": selection.selected_ids})
 
 
 class SavedGridViewUpdateView(LoginRequiredMixin, View):

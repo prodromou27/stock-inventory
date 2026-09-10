@@ -313,7 +313,8 @@
           /* invalid/unavailable browser storage — start with no selection */
         }
       }
-      const publishSelection = () => {
+      let serverSaveTimer = null;
+      const publishSelection = (saveServer = true) => {
         const rows = Array.from(selectedById.values());
         if (options.persistSelection) {
           try {
@@ -323,6 +324,16 @@
           }
         }
         if (options.onSelectionChange) options.onSelectionChange(rows);
+        if (saveServer && options.selectionUrl) {
+          window.clearTimeout(serverSaveTimer);
+          serverSaveTimer = window.setTimeout(() => {
+            fetch(options.selectionUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken() },
+              body: JSON.stringify({ selected_ids: rows.map((row) => row.id) }),
+            }).catch(() => {});
+          }, 250);
+        }
       };
       let suppressRemovals = false;
       table.on("rowSelectionChanged", () => {
@@ -346,7 +357,20 @@
         table.deselectRow();
         publishSelection();
       };
-      table.on("tableBuilt", publishSelection);
+      table.on("tableBuilt", () => publishSelection(false));
+      if (options.selectionUrl) {
+        fetch(options.selectionUrl, { headers: { Accept: "application/json" } })
+          .then((response) => response.ok ? response.json() : Promise.reject())
+          .then((payload) => {
+            if (!Array.isArray(payload.selection)) return;
+            selectedById.clear();
+            payload.selection.forEach((row) => row?.id && selectedById.set(row.id, row));
+            const ids = payload.selection.map((row) => row.id);
+            if (ids.length) table.selectRow(ids);
+            publishSelection(false);
+          })
+          .catch(() => {});
+      }
     }
 
     if (options.searchInputSelector) {

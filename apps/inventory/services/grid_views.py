@@ -6,12 +6,13 @@ from django.db.models import Q
 
 from apps.core.authorization import is_administrator
 
-from ..models import GridPreference, SavedGridView
+from ..models import GridPreference, GridSelection, SavedGridView, UnitAsset
 
 # Hard cap on the JSON blob's size — this is UI presentation state (column
 # widths/order/visibility, filter values, sort, density), not user content;
 # anything larger is either abuse or a client bug, not a real saved view.
 MAX_STATE_BYTES = 20_000
+MAX_SELECTION_SIZE = 1_000
 
 
 def inventory_location_choices(user):
@@ -177,6 +178,57 @@ def save_grid_preference(*, user, grid_key, state):
         defaults={"state": state},
     )
     return preference
+
+
+def grid_selection_for(*, user, grid_key):
+    if grid_key != SavedGridView.GRID_ASSETS:
+        raise ValidationError("Persistent selection is only available for assets.")
+    selected = (
+        GridSelection.objects.filter(user=user, grid_key=grid_key)
+        .values_list("selected_ids", flat=True)
+        .first()
+    ) or []
+    from apps.inventory.access import scope_asset_queryset
+
+    assets = scope_asset_queryset(user, UnitAsset.objects.filter(pk__in=selected)).values(
+        "id", "status", "stock_purpose"
+    )
+    by_id = {str(asset["id"]): asset for asset in assets}
+    return [
+        {
+            "id": asset_id,
+            "status": by_id[asset_id]["status"],
+            "stock_purpose": by_id[asset_id]["stock_purpose"],
+        }
+        for asset_id in selected
+        if asset_id in by_id
+    ]
+
+
+def save_grid_selection(*, user, grid_key, selected_ids):
+    if grid_key != SavedGridView.GRID_ASSETS:
+        raise ValidationError("Persistent selection is only available for assets.")
+    if not isinstance(selected_ids, list) or len(selected_ids) > MAX_SELECTION_SIZE:
+        raise ValidationError(f"Select no more than {MAX_SELECTION_SIZE} assets.")
+    from uuid import UUID
+
+    try:
+        normalized = list(dict.fromkeys(str(UUID(str(value))) for value in selected_ids))
+    except (TypeError, ValueError, AttributeError) as exc:
+        raise ValidationError("Invalid asset selection.") from exc
+    from apps.inventory.access import scope_asset_queryset
+
+    accessible = {
+        str(value)
+        for value in scope_asset_queryset(
+            user, UnitAsset.objects.filter(pk__in=normalized)
+        ).values_list("pk", flat=True)
+    }
+    normalized = [value for value in normalized if value in accessible]
+    selection, _ = GridSelection.objects.update_or_create(
+        user=user, grid_key=grid_key, defaults={"selected_ids": normalized}
+    )
+    return selection
 
 
 def _clear_existing_default(*, user, grid_key, exclude=None):

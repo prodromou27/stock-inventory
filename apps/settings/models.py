@@ -138,6 +138,7 @@ class NotificationSubscription(UUIDPrimaryKeyModel, UserStampedModel):
 
 class NotificationDigestDelivery(UUIDPrimaryKeyModel, TimestampedModel):
     class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
         SENT = "sent", "Sent"
         NO_CONTENT = "no_content", "No content"
         FAILED = "failed", "Failed"

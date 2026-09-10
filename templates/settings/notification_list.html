@@ -8,6 +8,12 @@
       <h1>Notifications</h1>
       <div class="page-header__subtitle">Everything the daily digest has raised for you, most recent first.</div>
     </div>
+    <div class="page-header__actions">
+      <form method="post" action="{% url 'settings:notification_refresh' %}">
+        {% csrf_token %}
+        <button class="btn" type="submit">Refresh now</button>
+      </form>
+    </div>
   </div>
 
   <div class="card">

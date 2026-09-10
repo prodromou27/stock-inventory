@@ -21,11 +21,16 @@ from apps.core.authorization import ADMINISTRATOR, RoleRequiredMixin
 from apps.core.csv_export import CSVExportMixin
 from apps.core.spreadsheets import spreadsheet_safe_row
 from apps.inventory.models import UnitAsset
+from apps.inventory.services.reorder import (
+    location_reorder_settings_for,
+    update_location_reorder_settings,
+)
 from apps.locations.models import Location, order_by_hierarchy
 from apps.locations.scoping import accessible_locations
 
 from . import queries
 from .forms import (
+    LocationReorderSettingsForm,
     ReorderSettingsForm,
     ReportBaseModelForm,
     ReportBuilderForm,
@@ -428,10 +433,42 @@ class ReorderSettingsView(LoginRequiredMixin, RoleRequiredMixin, View):
                 "min_reorder_quantity": product.min_reorder_quantity,
                 "preferred_supplier": product.preferred_supplier,
             }
-        return self._render(request, ReorderSettingsForm(initial=initial))
+        location_initial = {}
+        if override_id := request.GET.get("override"):
+            override = get_object_or_404(
+                location_reorder_settings_for(user=request.user), pk=override_id
+            )
+            location_initial = {
+                "product": override.product,
+                "location": override.location,
+                "target_stock_level": override.target_stock_level,
+                "min_reorder_quantity": override.min_reorder_quantity,
+                "preferred_supplier": override.preferred_supplier,
+            }
+        return self._render(
+            request,
+            ReorderSettingsForm(initial=initial),
+            LocationReorderSettingsForm(user=request.user, initial=location_initial),
+        )
 
     def post(self, request):
-        form = ReorderSettingsForm(request.POST)
+        scope = request.POST.get("scope", "global")
+        form = ReorderSettingsForm(request.POST) if scope == "global" else ReorderSettingsForm()
+        location_form = (
+            LocationReorderSettingsForm(request.POST, user=request.user)
+            if scope == "location"
+            else LocationReorderSettingsForm(user=request.user)
+        )
+        if scope == "location" and location_form.is_valid():
+            try:
+                update_location_reorder_settings(user=request.user, **location_form.cleaned_data)
+            except (PermissionDenied, ValidationError) as exc:
+                location_form.add_error(None, exc)
+            else:
+                messages.success(request, "Location reorder override saved.")
+                return redirect("reporting:reorder_settings")
+        elif scope == "location":
+            return self._render(request, form, location_form)
         if form.is_valid():
             try:
                 update_reorder_settings(user=request.user, **form.cleaned_data)
@@ -441,13 +478,22 @@ class ReorderSettingsView(LoginRequiredMixin, RoleRequiredMixin, View):
                 messages.success(request, "Reorder settings saved.")
                 url = reverse("reporting:reorder_settings")
                 return redirect(f"{url}?product={form.cleaned_data['product'].pk}")
-        return self._render(request, form)
+        return self._render(request, form, location_form)
 
-    def _render(self, request, form):
+    def _render(self, request, form, location_form):
         products = Product.objects.filter(tracking_method=TrackingMethod.QUANTITY).select_related(
             "brand", "product_type"
         )
-        return render(request, self.template_name, {"form": form, "products": products})
+        return render(
+            request,
+            self.template_name,
+            {
+                "form": form,
+                "location_form": location_form,
+                "products": products,
+                "location_overrides": location_reorder_settings_for(user=request.user),
+            },
+        )
 
 
 # --- Ad-hoc report builder ("more structured reporting", user request) ---

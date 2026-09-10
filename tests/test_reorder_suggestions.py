@@ -4,6 +4,7 @@ import pytest
 from django.core.exceptions import ValidationError
 from django.urls import reverse
 
+from apps.audit.models import AuditEvent
 from apps.catalog.models import ItemCategory
 from apps.catalog.services import create_product, update_product
 from apps.inventory.models import ProductLocationThreshold
@@ -389,6 +390,30 @@ class TestReorderSuggestionsView:
 
 @pytest.mark.django_db
 class TestReorderSettings:
+    def test_administrator_can_create_location_override(
+        self, client, administrator, quantity_product, location_tree
+    ):
+        client.force_login(administrator)
+        response = client.post(
+            reverse("reporting:reorder_settings"),
+            {
+                "scope": "location",
+                "product": quantity_product.pk,
+                "location": location_tree["room"].pk,
+                "target_stock_level": 40,
+                "min_reorder_quantity": 6,
+                "preferred_supplier": "Local Supply",
+            },
+        )
+        assert response.status_code == 302
+        override = ProductLocationThreshold.objects.get(
+            product=quantity_product, location=location_tree["room"]
+        )
+        assert override.target_stock_level == 40
+        assert override.min_reorder_quantity == 6
+        assert override.preferred_supplier == "Local Supply"
+        assert AuditEvent.objects.filter(object_id=str(override.pk)).exists()
+
     def test_administrator_can_update_counted_stock_settings(
         self, client, administrator, quantity_product
     ):

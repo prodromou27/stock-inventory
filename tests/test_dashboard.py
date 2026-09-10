@@ -380,6 +380,17 @@ class TestHomeViewStats:
 
 @pytest.mark.django_db
 class TestDashboardPreferenceView:
+    def test_card_order_is_saved_and_rendered(self, client, administrator):
+        client.force_login(administrator)
+        order = ["delivered_count", "assets_in_stock", "assigned_count"]
+        response = client.post(
+            reverse("core:dashboard_preferences"),
+            {"visible_cards": order, "card_order": order},
+        )
+        assert response.status_code == 302
+        dashboard = client.get(reverse("core:home"))
+        assert [card["key"] for card in dashboard.context["dashboard_cards"]] == order
+
     def test_anonymous_redirected(self, client):
         response = client.get(reverse("core:dashboard_preferences"))
         assert response.status_code == 302

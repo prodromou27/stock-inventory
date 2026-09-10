@@ -11,16 +11,33 @@
 
   <form method="post" class="card">
     {% csrf_token %}
-    <div class="checkbox-list">
+    <p class="help-text">Use the arrow buttons to arrange cards. The first visible card appears first on your dashboard.</p>
+    <div class="checkbox-list" id="dashboard-card-order">
       {% for card in cards %}
-        <label class="checkbox-list__item">
-          <input type="checkbox" name="visible_cards" value="{{ card.key }}" {% if card.visible %}checked{% endif %}>
-          {{ card.label }}
-        </label>
+        <div class="checkbox-list__item" data-card-row>
+          <input type="hidden" name="card_order" value="{{ card.key }}">
+          <label><input type="checkbox" name="visible_cards" value="{{ card.key }}" {% if card.visible %}checked{% endif %}> {{ card.label }}</label>
+          <span class="button-group">
+            <button type="button" class="btn btn--sm btn--ghost" data-move="up" aria-label="Move {{ card.label }} up">&uarr;</button>
+            <button type="button" class="btn btn--sm btn--ghost" data-move="down" aria-label="Move {{ card.label }} down">&darr;</button>
+          </span>
+        </div>
       {% endfor %}
     </div>
     <div class="form-actions">
       <button type="submit" class="btn btn--primary">Save</button>
     </div>
   </form>
+  <script>
+    document.getElementById("dashboard-card-order")?.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-move]");
+      if (!button) return;
+      const row = button.closest("[data-card-row]");
+      const sibling = button.dataset.move === "up" ? row.previousElementSibling : row.nextElementSibling;
+      if (!sibling) return;
+      if (button.dataset.move === "up") row.parentNode.insertBefore(row, sibling);
+      else row.parentNode.insertBefore(sibling, row);
+      button.focus();
+    });
+  </script>
 {% endblock %}
