@@ -16,6 +16,11 @@ urlpatterns = [
         name="generate_document",
     ),
     path(
+        "transactions/<uuid:pk>/queue/",
+        views.QueueDocumentView.as_view(),
+        name="queue_document",
+    ),
+    path(
         "transactions/<uuid:pk>/attach/",
         views.AttachmentUploadView.as_view(),
         name="attachment_upload",

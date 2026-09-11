@@ -15,6 +15,14 @@
       <span class="action-card__title">Dashboard</span>
       <span class="action-card__desc">Choose which stat cards show up on your own dashboard.</span>
     </a>
+    <a class="action-card" href="{% url 'core:job_list' %}">
+      <span class="action-card__title">Background jobs</span>
+      <span class="action-card__desc">Track long-running reports, imports, documents, exports, and notification refreshes.</span>
+    </a>
+    <a class="action-card" href="{% url 'settings:notification_preferences' %}">
+      <span class="action-card__title">My notifications</span>
+      <span class="action-card__desc">Choose optional alert categories for your assigned countries.</span>
+    </a>
     <a class="action-card" href="{% url 'locations:list' %}">
       <span class="action-card__title">Locations</span>
       <span class="action-card__desc">

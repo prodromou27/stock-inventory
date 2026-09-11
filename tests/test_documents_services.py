@@ -113,6 +113,8 @@ class TestGenerateDocument:
         content = document.pdf_file.open("rb").read()
         assert content[:4] == b"%PDF"
         assert len(content) > 100
+        assert document.size_bytes == len(content)
+        assert len(document.sha256) == 64
 
     def test_generates_a_pdf_with_a_published_structured_template(
         self, administrator, second_administrator, assignment_txn

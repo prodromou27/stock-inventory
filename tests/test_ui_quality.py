@@ -20,7 +20,19 @@ def test_authenticated_shell_has_accessible_navigation_and_local_assets(client, 
     assert 'href="/static/css/app.css"' in html
     assert 'src="/static/js/app.js"' in html
     assert 'class="user-menu"' in html
+    assert 'class="skip-link"' in html
+    assert 'id="main-content" tabindex="-1"' in html
+    assert reverse("core:job_list") in html
     assert "https://" not in html and "http://" not in html
+
+
+def test_ui_script_completes_keyboard_and_form_error_semantics():
+    script = Path(finders.find("js/app.js")).read_text(encoding="utf-8")
+    css = Path(finders.find("css/app.css")).read_text(encoding="utf-8")
+    assert 'setAttribute("aria-current", "page")' in script
+    assert 'setAttribute("aria-invalid", "true")' in script
+    assert 'event.key !== "Escape"' in script
+    assert "prefers-reduced-motion" in css
 
 
 @pytest.mark.django_db

@@ -1,7 +1,7 @@
 from datetime import date, timedelta
 
 import pytest
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.management import call_command
 from django.urls import reverse
 
@@ -16,6 +16,7 @@ from apps.settings.models import (
 from apps.settings.notifications import (
     build_digest,
     refresh_in_app_notifications,
+    save_my_notification_preferences,
     save_notification_subscription,
 )
 
@@ -47,6 +48,63 @@ def _subscription(administrator, country, **overrides):
 
 @pytest.mark.django_db
 class TestNotificationSubscriptions:
+    def test_user_can_disable_an_optional_category(self, administrator, location_tree):
+        subscription = _subscription(administrator, location_tree["country"])
+
+        save_my_notification_preferences(
+            user=administrator,
+            subscription=subscription,
+            user_notify_low_stock=False,
+            user_notify_overdue_assignments=True,
+            user_notify_import_export_failures=True,
+            user_notify_data_quality=True,
+        )
+
+        subscription.refresh_from_db()
+        assert subscription.category_enabled("low_stock") is False
+        assert AuditEvent.objects.filter(
+            object_id=str(subscription.pk), summary__contains="personal notification"
+        ).exists()
+
+    def test_mandatory_category_cannot_be_effectively_disabled(self, administrator, location_tree):
+        subscription = _subscription(
+            administrator, location_tree["country"], mandatory_low_stock=True
+        )
+        save_my_notification_preferences(
+            user=administrator,
+            subscription=subscription,
+            user_notify_low_stock=False,
+            user_notify_overdue_assignments=True,
+            user_notify_import_export_failures=True,
+            user_notify_data_quality=True,
+        )
+
+        subscription.refresh_from_db()
+        assert subscription.user_notify_low_stock is True
+        assert subscription.category_enabled("low_stock") is True
+
+    def test_user_cannot_edit_another_users_preferences(
+        self, administrator, stock_manager, location_tree
+    ):
+        subscription = _subscription(administrator, location_tree["country"])
+        with pytest.raises(PermissionDenied):
+            save_my_notification_preferences(
+                user=stock_manager,
+                subscription=subscription,
+                user_notify_low_stock=False,
+            )
+
+    def test_preferences_view_only_accepts_own_subscription(
+        self, client, administrator, stock_manager, location_tree
+    ):
+        subscription = _subscription(administrator, location_tree["country"])
+        client.force_login(stock_manager)
+        response = client.post(
+            reverse("settings:notification_preferences"),
+            {"subscription_id": subscription.pk},
+        )
+        assert response.status_code == 404
+
     def test_manual_refresh_creates_bell_alert_without_sending_digest(
         self, administrator, location_tree, quantity_product
     ):

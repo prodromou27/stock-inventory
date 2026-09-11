@@ -22,6 +22,12 @@
       </p>
     </div>
     <div class="card">
+      <h2>Immutable document storage</h2>
+      <p style="margin:0;"><strong>{{ document_storage_bytes|filesizeformat }}</strong> across {{ measured_documents }} measured PDF(s).</p>
+      {% if legacy_document_count %}<p class="helptext">{{ legacy_document_count }} legacy PDF(s) predate size tracking.</p>{% endif %}
+      <p class="helptext">New PDFs optimize embedded images at generation. Historical snapshots are never rewritten or deleted.</p>
+    </div>
+    <div class="card">
       <h2>Storage integrity</h2>
       {% if latest_integrity_run %}
         <p style="margin:0;">

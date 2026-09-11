@@ -123,6 +123,21 @@ class NotificationSubscription(UUIDPrimaryKeyModel, UserStampedModel):
     notify_overdue_assignments = models.BooleanField(default=True)
     notify_import_export_failures = models.BooleanField(default=True)
     notify_data_quality = models.BooleanField(default=True)
+    mandatory_low_stock = models.BooleanField(default=False)
+    mandatory_overdue_assignments = models.BooleanField(default=False)
+    mandatory_import_export_failures = models.BooleanField(default=False)
+    mandatory_data_quality = models.BooleanField(default=False)
+    user_notify_low_stock = models.BooleanField(default=True)
+    user_notify_overdue_assignments = models.BooleanField(default=True)
+    user_notify_import_export_failures = models.BooleanField(default=True)
+    user_notify_data_quality = models.BooleanField(default=True)
+
+    def category_enabled(self, category):
+        """Effective preference: Administrator scope plus user choice/mandatory override."""
+        admin_enabled = getattr(self, f"notify_{category}")
+        mandatory = getattr(self, f"mandatory_{category}")
+        user_enabled = getattr(self, f"user_notify_{category}")
+        return admin_enabled and (mandatory or user_enabled)
 
     class Meta:
         ordering = ["country__name", "recipient__username"]

@@ -104,11 +104,30 @@ class NotificationSubscriptionForm(forms.ModelForm):
             "notify_overdue_assignments",
             "notify_import_export_failures",
             "notify_data_quality",
+            "mandatory_low_stock",
+            "mandatory_overdue_assignments",
+            "mandatory_import_export_failures",
+            "mandatory_data_quality",
         ]
         labels = {
             "notify_import_export_failures": "Import and export failures",
             "notify_data_quality": "Unresolved high-severity data-quality findings",
         }
+
+    def clean(self):
+        cleaned = super().clean()
+        for category in (
+            "low_stock",
+            "overdue_assignments",
+            "import_export_failures",
+            "data_quality",
+        ):
+            if cleaned.get(f"mandatory_{category}") and not cleaned.get(f"notify_{category}"):
+                self.add_error(
+                    f"mandatory_{category}",
+                    "A mandatory alert must also be enabled for this subscription.",
+                )
+        return cleaned
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -132,3 +151,37 @@ class NotificationSubscriptionForm(forms.ModelForm):
         if not recipient.email:
             raise forms.ValidationError("The recipient must have an email address.")
         return recipient
+
+
+class MyNotificationPreferenceForm(forms.ModelForm):
+    class Meta:
+        model = NotificationSubscription
+        fields = [
+            "user_notify_low_stock",
+            "user_notify_overdue_assignments",
+            "user_notify_import_export_failures",
+            "user_notify_data_quality",
+        ]
+        labels = {
+            "user_notify_low_stock": "Low-stock and reorder alerts",
+            "user_notify_overdue_assignments": "Overdue temporary assignments",
+            "user_notify_import_export_failures": "Import and export failures",
+            "user_notify_data_quality": "High-severity data-quality findings",
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for category in (
+            "low_stock",
+            "overdue_assignments",
+            "import_export_failures",
+            "data_quality",
+        ):
+            field = self.fields[f"user_notify_{category}"]
+            if not getattr(self.instance, f"notify_{category}"):
+                field.disabled = True
+                field.help_text = "This category is not enabled by an Administrator."
+            elif getattr(self.instance, f"mandatory_{category}"):
+                field.disabled = True
+                self.initial[f"user_notify_{category}"] = True
+                field.help_text = "Required by an Administrator for this country."

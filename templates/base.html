@@ -119,6 +119,8 @@
         <details class="user-menu">
           <summary><span class="user-avatar">{{ user.get_username|slice:":1"|upper }}</span><span class="user-menu__identity"><strong>{{ user.get_username }}</strong>{% if user_role_groups %}<small>{{ user_role_groups|join:", " }}</small>{% endif %}</span><svg aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#chevron"></use></svg></summary>
           <div class="user-menu__panel">
+            <a href="{% url 'core:job_list' %}">Background jobs</a>
+            <a href="{% url 'settings:notification_preferences' %}">Notification preferences</a>
             <a href="{% url 'password_change' %}">Change password</a>
             <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button type="submit">Log out</button></form>
           </div>

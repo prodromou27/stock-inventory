@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Notification preferences — {{ site_name }}{% endblock %}
+{% block content %}
+  <p><a href="{% url 'settings:notification_list' %}">&larr; Notifications</a></p>
+  <div class="page-header"><div><h1>My notification preferences</h1><div class="page-header__subtitle">Choose optional categories. Administrators control country access and may require essential alerts.</div></div></div>
+  {% if preference_rows %}
+    {% for subscription, form in preference_rows %}
+      <form method="post" class="card">
+        {% csrf_token %}<input type="hidden" name="subscription_id" value="{{ subscription.pk }}">
+        <h2>{{ subscription.country }}</h2>
+        {% for field in form %}{% include "_form_field.html" with field=field %}{% endfor %}
+        <div class="form-actions"><button type="submit" class="btn btn--primary">Save preferences</button></div>
+      </form>
+    {% endfor %}
+  {% else %}<p class="empty-state">You have no active country subscriptions. Ask an Administrator to configure one.</p>{% endif %}
+{% endblock %}

@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% load ui_extras %}
+{% block title %}Background job — {{ site_name }}{% endblock %}
+{% block content %}
+  <p><a href="{% url 'core:job_list' %}">&larr; Background jobs</a></p>
+  <div class="page-header"><div><h1>{{ job.get_task_type_display }}</h1><div class="page-header__subtitle">Requested {{ job.created_at }} by {{ job.requested_by }}</div></div></div>
+  <div class="card" aria-live="polite" {% if job.status == "queued" or job.status == "running" %}data-job-refresh{% endif %}>
+    <p><span class="badge {{ job.status|badge_class }}">{{ job.get_status_display }}</span></p>
+    <label for="job-progress">Progress: {{ job.progress_percent }}%</label>
+    <progress id="job-progress" value="{{ job.progress_percent }}" max="100">{{ job.progress_percent }}%</progress>
+    {% if job.status_message %}<p>{{ job.status_message }}</p>{% endif %}
+    {% if job.error_message %}<p class="messages__item messages__item--error" role="alert">{{ job.error_message }}</p>{% endif %}
+    <div class="form-actions">
+      {% if job.output_file and not job.output_deleted_at %}<a class="btn btn--primary" href="{% url 'core:job_download' job.pk %}">Download {{ job.output_filename }}</a>{% endif %}
+      {% if job.result_url %}<a class="btn" href="{{ job.result_url }}">Open result</a>{% endif %}
+    </div>
+    {% if job.output_expires_at and not job.output_deleted_at %}<p class="helptext">Temporary download expires after {{ job.output_expires_at }}. The job record remains.</p>{% endif %}
+    {% if job.output_deleted_at %}<p class="helptext">The temporary output was removed on {{ job.output_deleted_at }}; the job history was retained.</p>{% endif %}
+  </div>
+{% endblock %}

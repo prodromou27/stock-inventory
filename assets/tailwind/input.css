@@ -35,6 +35,12 @@
 @media (max-width: 1100px) {
   .template-editor-layout { grid-template-columns: minmax(18rem, 22rem) minmax(0, 1fr); }
 }
+
+progress {
+  width: min(28rem, 100%);
+  min-height: 0.75rem;
+  accent-color: var(--color-primary);
+}
 @media (max-width: 800px) {
   .template-editor-layout { grid-template-columns: minmax(0, 1fr); }
   #template-style-form { max-height: none; overflow: visible; }

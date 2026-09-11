@@ -58,6 +58,14 @@ class TestCheckDocumentIntegrity:
         run = check_document_integrity()
         assert run.missing_document_ids == [str(document.pk)]
 
+    def test_tampered_pdf_with_valid_header_is_flagged(self, administrator, assignment_txn):
+        document = generate_document(txn=assignment_txn, user=administrator)
+        with document.pdf_file.storage.open(document.pdf_file.name, "wb") as f:
+            f.write(b"%PDF tampered but still has a valid-looking header")
+
+        run = check_document_integrity()
+        assert run.missing_document_ids == [str(document.pk)]
+
     def test_each_invocation_creates_a_new_run_row(self, administrator, assignment_txn):
         generate_document(txn=assignment_txn, user=administrator)
         check_document_integrity()

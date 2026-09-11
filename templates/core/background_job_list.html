@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% load ui_extras %}
+{% block title %}Background jobs — {{ site_name }}{% endblock %}
+{% block content %}
+  <div class="page-header">
+    <div><h1>Background jobs</h1><div class="page-header__subtitle">Long-running reports, imports, documents, exports, and notification refreshes.</div></div>
+  </div>
+  <div class="card">
+    {% if jobs %}
+      <div class="table-scroll" tabindex="0" aria-label="Background job history">
+        <table>
+          <caption class="sr-only">Background job history</caption>
+          <thead><tr><th scope="col">Requested</th><th scope="col">Task</th><th scope="col">By</th><th scope="col">Status</th><th scope="col">Progress</th><th scope="col"></th></tr></thead>
+          <tbody>{% for job in jobs %}<tr>
+            <td>{{ job.created_at|date:"Y-m-d H:i" }}</td><td>{{ job.get_task_type_display }}</td><td>{{ job.requested_by }}</td>
+            <td><span class="badge {{ job.status|badge_class }}">{{ job.get_status_display }}</span></td>
+            <td><progress value="{{ job.progress_percent }}" max="100" aria-label="{{ job.progress_percent }} percent complete">{{ job.progress_percent }}%</progress></td>
+            <td><a class="btn btn--sm" href="{% url 'core:job_detail' job.pk %}">View</a></td>
+          </tr>{% endfor %}</tbody>
+        </table>
+      </div>
+      {% include "_pagination.html" %}
+    {% else %}<p class="empty-state">No background work has been requested yet.</p>{% endif %}
+  </div>
+{% endblock %}

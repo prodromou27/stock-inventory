@@ -232,6 +232,23 @@ class ImportExecuteView(LoginRequiredMixin, RoleRequiredMixin, View):
             )
             return redirect(batch.get_absolute_url())
 
+        if request.POST.get("background") == "1":
+            from apps.core.jobs import enqueue_import
+
+            try:
+                job, created = enqueue_import(
+                    user=request.user,
+                    batch=batch,
+                    confirm_repeat=request.POST.get("confirm_repeat_upload") == "true",
+                )
+            except ValidationError as exc:
+                messages.error(request, "; ".join(exc.messages))
+                return redirect(batch.get_absolute_url())
+            messages.success(
+                request, "Import queued." if created else "This import is already queued."
+            )
+            return redirect("core:job_detail", pk=job.pk)
+
         try:
             batch = execute_batch(batch=batch, user=request.user)
         except ValidationError as exc:

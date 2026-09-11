@@ -51,6 +51,7 @@
     <form method="post" action="{% url 'imports:execute' batch.pk %}" class="card"
           {% if is_repeat_of_completed %}data-confirm="A completed import with the same file contents already exists. Execute anyway?"{% endif %}>
       {% csrf_token %}
+      <input type="hidden" name="background" value="1">
       <p>
         Execution imports eligible pending/warning rows with a resolved room and valid status details.
         Issued items will not remain available stock. Ambiguous statuses need review, and duplicate serials
@@ -66,7 +67,7 @@
           I confirm this is intentional.
         </label>
       {% endif %}
-      <button type="submit" class="btn btn--primary">Execute import</button>
+      <button type="submit" class="btn btn--primary" data-loading-label="Queueing…">Execute in background</button>
     </form>
   {% endif %}
 

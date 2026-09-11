@@ -9,9 +9,11 @@
       <div class="page-header__subtitle">Everything the daily digest has raised for you, most recent first.</div>
     </div>
     <div class="page-header__actions">
+      <a class="btn" href="{% url 'settings:notification_preferences' %}">My preferences</a>
       <form method="post" action="{% url 'settings:notification_refresh' %}">
         {% csrf_token %}
-        <button class="btn" type="submit">Refresh now</button>
+        <input type="hidden" name="background" value="1">
+        <button class="btn" type="submit" data-loading-label="Queueing…">Refresh in background</button>
       </form>
     </div>
   </div>
@@ -20,7 +22,8 @@
     {% if notifications %}
       <div class="table-scroll">
         <table>
-          <thead><tr><th>Status</th><th>Category</th><th>Summary</th><th>Date</th><th></th></tr></thead>
+          <caption class="sr-only">Your notification history</caption>
+          <thead><tr><th scope="col">Status</th><th scope="col">Category</th><th scope="col">Summary</th><th scope="col">Date</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
           <tbody>
             {% for notification in notifications %}
               <tr>

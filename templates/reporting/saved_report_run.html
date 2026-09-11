@@ -7,9 +7,9 @@
   <div class="page-header">
     <h1>{{ report.name }}</h1>
     <div class="page-header__actions">
-      <a class="btn" href="?format=csv" data-loading-link="Preparing export…">Export CSV</a>
-      <a class="btn" href="?format=xlsx" data-loading-link="Preparing export…">Export Excel</a>
-      <a class="btn" href="?format=pdf" target="_blank" rel="noopener">Print PDF</a>
+      <form method="post" action="{% url 'reporting:saved_report_export' report.pk %}" class="inline-form">{% csrf_token %}<input type="hidden" name="format" value="csv"><button class="btn" type="submit" data-loading-label="Queueing…">Export CSV</button></form>
+      <form method="post" action="{% url 'reporting:saved_report_export' report.pk %}" class="inline-form">{% csrf_token %}<input type="hidden" name="format" value="xlsx"><button class="btn" type="submit" data-loading-label="Queueing…">Export Excel</button></form>
+      <form method="post" action="{% url 'reporting:saved_report_export' report.pk %}" class="inline-form">{% csrf_token %}<input type="hidden" name="format" value="pdf"><button class="btn" type="submit" data-loading-label="Queueing…">Prepare PDF</button></form>
       {% if can_delete %}
         <form method="post" action="{% url 'reporting:saved_report_delete' report.pk %}" class="inline-form"
               data-confirm="Delete this report?">

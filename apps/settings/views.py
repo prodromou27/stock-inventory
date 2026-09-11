@@ -301,6 +301,19 @@ class NotificationListView(LoginRequiredMixin, View):
 
 class NotificationRefreshView(LoginRequiredMixin, View):
     def post(self, request):
+        if request.POST.get("background") == "1":
+            from apps.core.jobs import enqueue_notification_refresh
+
+            job, created = enqueue_notification_refresh(user=request.user)
+            messages.success(
+                request,
+                (
+                    "Notification refresh queued."
+                    if created
+                    else "A notification refresh is already queued."
+                ),
+            )
+            return redirect("core:job_detail", pk=job.pk)
         from .notifications import refresh_in_app_notifications
 
         refreshed = refresh_in_app_notifications(user=request.user)
@@ -313,6 +326,47 @@ class NotificationRefreshView(LoginRequiredMixin, View):
                 "to check your subscriptions.",
             )
         return redirect("settings:notification_list")
+
+
+class MyNotificationPreferencesView(LoginRequiredMixin, View):
+    template_name = "settings/my_notification_preferences.html"
+
+    def _subscriptions(self, user):
+        return NotificationSubscription.objects.filter(
+            recipient=user, is_active=True
+        ).select_related("country")
+
+    def get(self, request):
+        from .forms import MyNotificationPreferenceForm
+
+        rows = [
+            (subscription, MyNotificationPreferenceForm(instance=subscription))
+            for subscription in self._subscriptions(request.user)
+        ]
+        return render(request, self.template_name, {"preference_rows": rows})
+
+    def post(self, request):
+        from .forms import MyNotificationPreferenceForm
+        from .notifications import save_my_notification_preferences
+
+        subscription = get_object_or_404(
+            self._subscriptions(request.user), pk=request.POST.get("subscription_id")
+        )
+        form = MyNotificationPreferenceForm(request.POST, instance=subscription)
+        if form.is_valid():
+            save_my_notification_preferences(
+                user=request.user, subscription=subscription, **form.cleaned_data
+            )
+            messages.success(request, f"Notification preferences saved for {subscription.country}.")
+            return redirect("settings:notification_preferences")
+        rows = [
+            (
+                item,
+                form if item.pk == subscription.pk else MyNotificationPreferenceForm(instance=item),
+            )
+            for item in self._subscriptions(request.user)
+        ]
+        return render(request, self.template_name, {"preference_rows": rows})
 
 
 class NotificationOpenView(LoginRequiredMixin, View):

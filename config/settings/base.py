@@ -138,6 +138,12 @@ STORAGES = {
 # served directly via MEDIA_URL — downloads always go through an authorized view.
 MEDIA_ROOT = BASE_DIR / "media"
 
+# Generated PDFs are immutable audit snapshots, so storage reduction happens
+# at first render rather than by recompressing/deleting historical files.
+DOCUMENT_PDF_JPEG_QUALITY = env_int("DOCUMENT_PDF_JPEG_QUALITY", default=82)
+DOCUMENT_PDF_IMAGE_DPI = env_int("DOCUMENT_PDF_IMAGE_DPI", default=150)
+BACKGROUND_JOB_OUTPUT_RETENTION_DAYS = env_int("BACKGROUND_JOB_OUTPUT_RETENTION_DAYS", default=7)
+
 # Where apps.settings.services.update_certificate writes an uploaded TLS
 # cert/key — must match deploy/docker-compose.prod.yml's `web` service mount
 # (read-write there; `proxy` mounts the same host directory read-only).

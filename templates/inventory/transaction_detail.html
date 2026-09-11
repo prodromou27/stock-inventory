@@ -104,6 +104,10 @@
           {% if transaction.movement_type == "disposal" %}Generate disposal certificate{% else %}Generate printable document{% endif %}
         </button>
       </form>
+      <form method="post" action="{% url 'documents:queue_document' transaction.pk %}" class="inline-form">
+        {% csrf_token %}
+        <button type="submit" class="btn btn--sm" data-loading-label="Queueing…">Generate in background</button>
+      </form>
     {% endif %}
   {% endif %}
 

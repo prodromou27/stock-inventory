@@ -22,6 +22,11 @@ urlpatterns = [
     ),
     path("my-notifications/", views.NotificationListView.as_view(), name="notification_list"),
     path(
+        "my-notifications/preferences/",
+        views.MyNotificationPreferencesView.as_view(),
+        name="notification_preferences",
+    ),
+    path(
         "my-notifications/refresh/",
         views.NotificationRefreshView.as_view(),
         name="notification_refresh",

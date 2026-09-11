@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import time
 
@@ -158,6 +159,8 @@ def generate_document(*, txn, user, supersedes=None):
                     f"v{template_obj.version}" if template_obj else CURRENT_TEMPLATE_VERSION
                 ),
                 context_snapshot=context,
+                size_bytes=len(pdf_bytes),
+                sha256=hashlib.sha256(pdf_bytes).hexdigest(),
                 generated_by=user,
                 supersedes=supersedes,
             )

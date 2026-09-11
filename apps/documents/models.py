@@ -158,6 +158,18 @@ class GeneratedDocument(UUIDPrimaryKeyModel, AppendOnlyModel):
     )
     context_snapshot = models.JSONField()
     pdf_file = models.FileField(upload_to=_document_upload_path)
+    size_bytes = models.PositiveBigIntegerField(
+        null=True,
+        blank=True,
+        editable=False,
+        help_text="Stored PDF size captured at generation time; null for legacy snapshots.",
+    )
+    sha256 = models.CharField(
+        max_length=64,
+        blank=True,
+        editable=False,
+        help_text="Content digest captured before the immutable PDF snapshot is stored.",
+    )
     generated_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="generated_documents"
     )

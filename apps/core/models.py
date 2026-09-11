@@ -1,5 +1,6 @@
 """Shared abstract base models, per docs/architecture/01-repository-structure.md."""
 
+import os
 import uuid
 
 from django.conf import settings
@@ -178,3 +179,67 @@ class DashboardPreference(models.Model):
         blank=True,
         help_text="Dashboard card keys in the user's preferred display order.",
     )
+
+
+def _background_job_output_path(instance, filename):
+    extension = os.path.splitext(filename)[1].lower()
+    return f"background_jobs/{instance.id}{extension}"
+
+
+class BackgroundJob(UUIDPrimaryKeyModel, TimestampedModel):
+    """Durable work item claimed by ``process_background_jobs`` workers.
+
+    Unlike the inventory/document ledgers this is operational state: workers
+    deliberately update progress and status.  Payloads contain identifiers and
+    fixed options only; the worker re-runs authorization with ``requested_by``
+    before touching domain data.
+    """
+
+    class Status(models.TextChoices):
+        QUEUED = "queued", "Queued"
+        RUNNING = "running", "Running"
+        SUCCEEDED = "succeeded", "Succeeded"
+        FAILED = "failed", "Failed"
+
+    class TaskType(models.TextChoices):
+        DOCUMENT = "document", "Generate document"
+        IMPORT = "import", "Execute import"
+        REPORT = "report", "Export custom report"
+        INVENTORY_EXPORT = "inventory_export", "Export full inventory"
+        NOTIFICATIONS = "notifications", "Refresh notifications"
+
+    task_type = models.CharField(max_length=24, choices=TaskType.choices)
+    status = models.CharField(max_length=12, choices=Status.choices, default=Status.QUEUED)
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="background_jobs"
+    )
+    payload = models.JSONField(default=dict)
+    progress_percent = models.PositiveSmallIntegerField(default=0)
+    status_message = models.CharField(max_length=255, blank=True)
+    error_message = models.TextField(blank=True)
+    result_url = models.CharField(max_length=500, blank=True)
+    output_file = models.FileField(upload_to=_background_job_output_path, blank=True)
+    output_content_type = models.CharField(max_length=100, blank=True)
+    output_filename = models.CharField(max_length=255, blank=True)
+    output_size_bytes = models.PositiveBigIntegerField(null=True, blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    output_expires_at = models.DateTimeField(null=True, blank=True)
+    output_deleted_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["status", "created_at"], name="bgjob_status_created_idx"),
+            models.Index(fields=["requested_by", "-created_at"], name="bgjob_user_created_idx"),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["requested_by", "task_type", "payload"],
+                condition=models.Q(status__in=("queued", "running")),
+                name="bgjob_unique_active_request",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.get_task_type_display()} ({self.get_status_display()})"

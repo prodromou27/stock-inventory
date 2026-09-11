@@ -282,6 +282,17 @@ def active_template_for(document_type):
 _DATA_URI_ONLY_FETCHER = URLFetcher(allowed_protocols=["data"])
 
 
+def _pdf_options():
+    """Losslessly preserve text/vector content while reducing embedded image bloat."""
+    from django.conf import settings
+
+    return {
+        "optimize_images": True,
+        "jpeg_quality": settings.DOCUMENT_PDF_JPEG_QUALITY,
+        "dpi": settings.DOCUMENT_PDF_IMAGE_DPI,
+    }
+
+
 def render_pdf_from_source(html_source, context):
     """Renders arbitrary Django-template-syntax HTML (an Administrator's
     saved or in-progress override) against `context` and returns PDF bytes.
@@ -294,7 +305,7 @@ def render_pdf_from_source(html_source, context):
     _DATA_URI_ONLY_FETCHER above.
     """
     html_string = Template(html_source).render(Context(context))
-    return HTML(string=html_string, url_fetcher=_DATA_URI_ONLY_FETCHER).write_pdf()
+    return HTML(string=html_string, url_fetcher=_DATA_URI_ONLY_FETCHER).write_pdf(**_pdf_options())
 
 
 def sanitize_css_content_text(value):
@@ -386,4 +397,4 @@ def render_pdf(context, *, document_type, template_obj=None, country=None):
     if template_obj is not None:
         return render_pdf_from_source(template_obj.html_source, context)
     html_string = render_to_string(f"documents/pdf/{CURRENT_TEMPLATE_VERSION}.html", context)
-    return HTML(string=html_string, url_fetcher=_DATA_URI_ONLY_FETCHER).write_pdf()
+    return HTML(string=html_string, url_fetcher=_DATA_URI_ONLY_FETCHER).write_pdf(**_pdf_options())

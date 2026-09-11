@@ -53,6 +53,10 @@ def save_notification_subscription(*, user, subscription=None, **values):
                     "notify_overdue_assignments",
                     "notify_import_export_failures",
                     "notify_data_quality",
+                    "mandatory_low_stock",
+                    "mandatory_overdue_assignments",
+                    "mandatory_import_export_failures",
+                    "mandatory_data_quality",
                 )
             },
         }
@@ -81,9 +85,45 @@ def save_notification_subscription(*, user, subscription=None, **values):
                     "notify_overdue_assignments",
                     "notify_import_export_failures",
                     "notify_data_quality",
+                    "mandatory_low_stock",
+                    "mandatory_overdue_assignments",
+                    "mandatory_import_export_failures",
+                    "mandatory_data_quality",
                 )
             },
         },
+    )
+    return subscription
+
+
+@transaction.atomic
+def save_my_notification_preferences(*, user, subscription, **values):
+    if subscription.recipient_id != user.id:
+        raise PermissionDenied("You can only change your own notification preferences.")
+    allowed = {
+        "user_notify_low_stock",
+        "user_notify_overdue_assignments",
+        "user_notify_import_export_failures",
+        "user_notify_data_quality",
+    }
+    old_values = {field: getattr(subscription, field) for field in allowed}
+    for field in allowed:
+        category = field.removeprefix("user_notify_")
+        if (
+            field in values
+            and getattr(subscription, f"notify_{category}")
+            and not getattr(subscription, f"mandatory_{category}")
+        ):
+            setattr(subscription, field, bool(values[field]))
+    subscription.updated_by = user
+    subscription.save(update_fields=[*allowed, "updated_by", "updated_at"])
+    record_event(
+        actor=user,
+        event_type=AuditEvent.EventType.RECORD_UPDATED,
+        obj=subscription,
+        summary=f"Updated personal notification preferences for {subscription.country}",
+        old_values=old_values,
+        new_values={field: getattr(subscription, field) for field in allowed},
     )
     return subscription
 
@@ -114,7 +154,7 @@ def build_digest(subscription, *, today=None):
     sections = []
     counts = {}
 
-    if subscription.notify_low_stock:
+    if subscription.category_enabled("low_stock"):
         rows = list(low_stock_balances(subscription.recipient, location=subscription.country))
         counts["low_stock"] = len(rows)
         if rows:
@@ -125,7 +165,7 @@ def build_digest(subscription, *, today=None):
             ]
             sections.append(("Low stock", lines, len(rows)))
 
-    if subscription.notify_overdue_assignments:
+    if subscription.category_enabled("overdue_assignments"):
         rows = _overdue_assignments(subscription, today)
         counts["overdue_assignments"] = len(rows)
         if rows:
@@ -136,7 +176,7 @@ def build_digest(subscription, *, today=None):
             ]
             sections.append(("Overdue temporary assignments", lines, len(rows)))
 
-    if subscription.notify_import_export_failures:
+    if subscription.category_enabled("import_export_failures"):
         imports = list(
             ImportBatch.objects.filter(
                 status__in=(ImportBatchStatus.FAILED, ImportBatchStatus.PARTIALLY_COMPLETED),
@@ -160,7 +200,7 @@ def build_digest(subscription, *, today=None):
                 ("Import/export failures in the last 24 hours", lines[:50], failure_count)
             )
 
-    if subscription.notify_data_quality:
+    if subscription.category_enabled("data_quality"):
         findings = list(
             DataQualityFinding.objects.filter(
                 status=DataQualityStatus.OPEN,
@@ -251,7 +291,7 @@ def sync_in_app_notifications(*, delivery, counts):
 
 
 @transaction.atomic
-def refresh_in_app_notifications(*, user, today=None):
+def refresh_in_app_notifications(*, user, today=None, force=False):
     """Refresh the caller's bell without sending or consuming its daily email."""
     today = today or timezone.localdate()
     refreshed = 0
@@ -264,7 +304,11 @@ def refresh_in_app_notifications(*, user, today=None):
             digest_date=today,
             defaults={"status": NotificationDigestDelivery.Status.PENDING},
         )
-        if not created and delivery.updated_at >= timezone.now() - timedelta(seconds=60):
+        if (
+            not force
+            and not created
+            and delivery.updated_at >= timezone.now() - timedelta(seconds=60)
+        ):
             continue
         _body, counts = build_digest(subscription, today=today)
         delivery.item_counts = counts

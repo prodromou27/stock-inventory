@@ -50,6 +50,25 @@ services:
     # Not published to the host — only `proxy` reaches it, over the compose
     # network, on the plain-HTTP port gunicorn listens on.
 
+  worker:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.prod
+    entrypoint: []
+    command: ["python", "manage.py", "process_background_jobs", "--watch"]
+    restart: unless-stopped
+    volumes:
+      - media_data:/app/media
+      - ./certs:/app/deploy/certs
+    env_file:
+      - ../.env.production
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.production
+      POSTGRES_HOST: db
+    depends_on:
+      web:
+        condition: service_healthy
+
   proxy:
     image: nginx:1.27-alpine
     restart: unless-stopped

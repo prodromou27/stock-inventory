@@ -48,6 +48,11 @@ urlpatterns = [
     path("custom/build/", views.ReportBuilderView.as_view(), name="builder"),
     path("custom/<uuid:pk>/", views.SavedReportRunView.as_view(), name="saved_report_run"),
     path(
+        "custom/<uuid:pk>/export/",
+        views.SavedReportExportQueueView.as_view(),
+        name="saved_report_export",
+    ),
+    path(
         "custom/<uuid:pk>/delete/",
         views.SavedReportDeleteView.as_view(),
         name="saved_report_delete",

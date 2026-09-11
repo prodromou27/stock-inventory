@@ -39,6 +39,7 @@
 
   <form method="post" action="{% url 'exports:run_now' %}">
     {% csrf_token %}
-    <button type="submit" class="btn">Run export now</button>
+    <input type="hidden" name="background" value="1">
+    <button type="submit" class="btn" data-loading-label="Queueing…">Run export in background</button>
   </form>
 {% endblock %}

@@ -53,6 +53,15 @@ class RunExportNowView(LoginRequiredMixin, RoleRequiredMixin, View):
     allowed_roles = (ADMINISTRATOR,)
 
     def post(self, request):
+        if request.POST.get("background") == "1":
+            from apps.core.jobs import enqueue_inventory_export
+
+            job, created = enqueue_inventory_export(user=request.user)
+            messages.success(
+                request,
+                "Inventory export queued." if created else "An inventory export is already queued.",
+            )
+            return redirect("core:job_detail", pk=job.pk)
         try:
             path = run_export(user=request.user)
         except ValidationError as exc:

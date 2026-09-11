@@ -60,7 +60,9 @@
         }).join("");
       const dialog = document.createElement("dialog");
       dialog.className = "confirmation-dialog";
-      dialog.innerHTML = `<form method="dialog"><h2>Review before completing</h2>
+      const titleId = `confirmation-title-${Date.now()}`;
+      dialog.setAttribute("aria-labelledby", titleId);
+      dialog.innerHTML = `<form method="dialog"><h2 id="${titleId}">Review before completing</h2>
         <p><strong>${selectedAssets.length}</strong> individual asset(s) and <strong>${selectedQuantities}</strong> counted item(s) selected.</p>
         <dl class="review-summary">${details}</dl>
         <p class="messages__item messages__item--warning">${escapeHtml(form.dataset.reviewSubmit)}</p>
@@ -74,7 +76,41 @@
         dialog.remove();
       });
       dialog.showModal();
+      dialog.querySelector('[value="cancel"]')?.focus();
     });
+  });
+
+  // Complete the server-rendered form semantics without changing Django's
+  // widgets: help/errors are announced and invalid fields are identifiable.
+  document.querySelectorAll("[data-form-field]").forEach((wrapper) => {
+    const field = wrapper.querySelector("input:not([type=hidden]), select, textarea");
+    if (!field?.id) return;
+    const describedBy = [];
+    if (wrapper.querySelector(`#${CSS.escape(field.id)}-help`)) describedBy.push(`${field.id}-help`);
+    if (wrapper.querySelector(`#${CSS.escape(field.id)}-errors`)) {
+      describedBy.push(`${field.id}-errors`);
+      field.setAttribute("aria-invalid", "true");
+    }
+    if (describedBy.length) field.setAttribute("aria-describedby", describedBy.join(" "));
+  });
+
+  document.querySelectorAll(".sidebar__link.active").forEach((link) =>
+    link.setAttribute("aria-current", "page")
+  );
+  document.querySelectorAll("table").forEach((table) => {
+    table.querySelectorAll("thead th").forEach((heading) => heading.setAttribute("scope", "col"));
+    if (!table.querySelector("caption") && !table.hasAttribute("aria-label")) {
+      const caption = document.createElement("caption");
+      caption.className = "sr-only";
+      caption.textContent = document.querySelector("h1")?.textContent?.trim() || "Data table";
+      table.prepend(caption);
+    }
+  });
+
+  // Disclosure menus otherwise remain open after keyboard focus moves away.
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    document.querySelectorAll("details[open]").forEach((details) => details.removeAttribute("open"));
   });
 
   // Drag/drop file upload with a live image preview — the file input itself
@@ -157,4 +193,8 @@
       }, 4000);
     });
   });
+
+  if (document.querySelector("[data-job-refresh]")) {
+    setTimeout(() => window.location.reload(), 3000);
+  }
 })();

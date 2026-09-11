@@ -730,6 +730,28 @@ class SavedReportRunView(LoginRequiredMixin, View):
         return response
 
 
+class SavedReportExportQueueView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        from apps.core.jobs import enqueue_report
+
+        report = get_object_or_404(SavedReport, pk=pk)
+        try:
+            job, created = enqueue_report(
+                user=request.user,
+                report=report,
+                export_format=request.POST.get("format", ""),
+            )
+        except (PermissionDenied, ValidationError) as exc:
+            detail = "; ".join(exc.messages) if hasattr(exc, "messages") else str(exc)
+            messages.error(request, detail)
+            return redirect("reporting:saved_report_run", pk=report.pk)
+        messages.success(
+            request,
+            "Report export queued." if created else "That report export is already queued.",
+        )
+        return redirect("core:job_detail", pk=job.pk)
+
+
 class SavedReportDeleteView(LoginRequiredMixin, View):
     def post(self, request, pk):
         report = get_object_or_404(SavedReport, pk=pk)

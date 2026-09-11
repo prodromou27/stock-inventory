@@ -151,6 +151,19 @@ an operational/storage decision, not one this file should presume). Retention de
 
 ## Scheduled Excel export
 
+The Compose stack includes a separate database-backed `worker` service. It
+processes long-running imports, generated documents, custom-report downloads,
+manual full exports, and notification refreshes without tying up a web worker.
+Jobs and failures remain visible under **Background jobs**. Temporary custom
+report downloads expire after `BACKGROUND_JOB_OUTPUT_RETENTION_DAYS` (7 by
+default); the job record remains. The worker performs this cleanup hourly.
+
+Generated transaction PDFs are different: they are immutable audit snapshots
+and are never expired. New PDFs optimize embedded images at first render using
+`DOCUMENT_PDF_JPEG_QUALITY` and `DOCUMENT_PDF_IMAGE_DPI`; **PDF health** shows
+their measured storage footprint. Database/media backups remain the retention
+authority for those historical documents.
+
 Separate from the database backup above: an Administrator can configure a local or network path (**Export
 Settings** in the app nav, Administrator-only) that a full Excel snapshot of unit assets and stock balances gets
 written to on a nightly or weekly schedule — a human-readable safety net a non-technical user can inspect directly,

@@ -4,6 +4,7 @@ import logging
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import ValidationError
+from django.db.models import Sum
 from django.http import (
     FileResponse,
     Http404,
@@ -78,6 +79,27 @@ class GenerateDocumentView(LoginRequiredMixin, RoleRequiredMixin, View):
 
         messages.success(request, f"Generated document {document.document_number}.")
         return redirect(document.get_absolute_url())
+
+
+class QueueDocumentView(LoginRequiredMixin, RoleRequiredMixin, View):
+    allowed_roles = (ADMINISTRATOR, STOCK_MANAGER)
+
+    def post(self, request, pk):
+        from apps.core.jobs import enqueue_document
+        from apps.inventory.access import scope_transaction_queryset
+
+        txn = get_object_or_404(
+            scope_transaction_queryset(request.user, InventoryTransaction.objects.all()), pk=pk
+        )
+        try:
+            job, created = enqueue_document(user=request.user, txn=txn)
+        except ValidationError as exc:
+            messages.error(request, "; ".join(exc.messages))
+            return redirect(txn.get_absolute_url())
+        messages.success(
+            request, "Document queued." if created else "This document is already queued."
+        )
+        return redirect("core:job_detail", pk=job.pk)
 
 
 class RegenerateDocumentView(LoginRequiredMixin, RoleRequiredMixin, View):
@@ -696,6 +718,9 @@ class PdfHealthDiagnosticsView(LoginRequiredMixin, RoleRequiredMixin, View):
         )[: self.LOG_LIMIT]
         recent_failures = DocumentRenderLog.objects.filter(success=False).count()
         recent_total = DocumentRenderLog.objects.count()
+        storage = GeneratedDocument.objects.aggregate(total_bytes=Sum("size_bytes"))
+        measured_documents = GeneratedDocument.objects.filter(size_bytes__isnull=False).count()
+        document_count = GeneratedDocument.objects.count()
         latest_integrity_run = DocumentIntegrityCheckRun.objects.first()
         missing_documents = (
             GeneratedDocument.objects.filter(
@@ -711,6 +736,10 @@ class PdfHealthDiagnosticsView(LoginRequiredMixin, RoleRequiredMixin, View):
                 "logs": logs,
                 "recent_failures": recent_failures,
                 "recent_total": recent_total,
+                "document_storage_bytes": storage["total_bytes"] or 0,
+                "measured_documents": measured_documents,
+                "document_count": document_count,
+                "legacy_document_count": document_count - measured_documents,
                 "latest_integrity_run": latest_integrity_run,
                 "missing_documents": missing_documents,
             },
