@@ -20,7 +20,7 @@ from apps.inventory.models import InventoryTransaction, MovementType
 from apps.inventory.services.returns import outstanding_quantity_lines
 from apps.locations.models import LocationLevel
 from apps.locations.scoping import require_location_access
-from apps.reporting.queries import low_stock_balances
+from apps.reporting.queries import low_stock_items
 
 from .models import Notification, NotificationDigestDelivery, NotificationSubscription
 from .services import send_configured_email
@@ -155,12 +155,12 @@ def build_digest(subscription, *, today=None):
     counts = {}
 
     if subscription.category_enabled("low_stock"):
-        rows = list(low_stock_balances(subscription.recipient, location=subscription.country))
+        rows = low_stock_items(subscription.recipient, location=subscription.country)
         counts["low_stock"] = len(rows)
         if rows:
             lines = [
                 f"- {row.product}: {row.available} available at {row.location} "
-                f"(threshold {row.product.low_stock_threshold})"
+                f"(threshold {row.threshold})"
                 for row in rows[:50]
             ]
             sections.append(("Low stock", lines, len(rows)))

@@ -39,7 +39,7 @@
       <span class="action-card__body"><span class="action-card__title">In use internally</span><span class="action-card__desc">Installed infrastructure and internal operational equipment.</span></span>
     </a>
     <a class="action-card{% if stats.low_stock_count %} action-card--alert{% endif %}" href="{% url 'reporting:low_stock' %}">
-      <span class="action-card__body"><span class="action-card__title">Low stock</span><span class="action-card__desc">{{ stats.low_stock_count }} configured balance{{ stats.low_stock_count|pluralize }} need attention.</span></span>
+      <span class="action-card__body"><span class="action-card__title">Low stock</span><span class="action-card__desc">{{ stats.low_stock_count }} configured stock alert{{ stats.low_stock_count|pluralize }} need attention.</span></span>
     </a>
   </div>
 

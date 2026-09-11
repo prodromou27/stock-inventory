@@ -5,11 +5,15 @@ docs/architecture/04-permission-matrix.md ("reports honor user storage
 permissions" the same way list screens do).
 """
 
+from dataclasses import dataclass
 from datetime import timedelta
 
-from django.db.models import Count, F, OuterRef, Subquery, Sum
+from django.db.models import Count, F, OuterRef, Q, Subquery, Sum, UUIDField
+from django.db.models.functions import Coalesce
+from django.urls import reverse
 from django.utils import timezone
 
+from apps.catalog.models import Product, TrackingMethod
 from apps.inventory.access import (
     scope_asset_queryset,
     scope_asset_status_history_queryset,
@@ -29,10 +33,47 @@ from apps.inventory.models import (
     UnitAsset,
     UnitStatus,
 )
-from apps.locations.scoping import scope_queryset
+from apps.locations.models import Location
+from apps.locations.scoping import accessible_locations, country_for_location, scope_queryset
 
 _ASSET_RELATED = ("product", "product__brand", "product__product_type", "current_location")
 _BALANCE_RELATED = ("product", "product__brand", "product__product_type", "location")
+_REUSABLE_UNIT_STATUSES = (UnitStatus.IN_STOCK, UnitStatus.RETURNED)
+
+
+@dataclass(frozen=True)
+class LowStockItem:
+    """One normalized alert row for either inventory tracking method."""
+
+    product: object
+    location: object
+    available_quantity: int
+    threshold: int
+    tracking_method: str
+    balance: object = None
+
+    @property
+    def available(self):
+        return self.available_quantity
+
+    @property
+    def detail_url(self):
+        if self.balance is not None:
+            return self.balance.get_absolute_url()
+        return (
+            f"{reverse('inventory:asset_list')}?product={self.product.pk}"
+            f"&location={self.location.pk}&in_storage=1"
+        )
+
+    def get_absolute_url(self):
+        """Compatibility with balance-like report rows and existing callers."""
+        return self.detail_url
+
+    @property
+    def stock_kind(self):
+        if self.balance is not None:
+            return self.balance.get_stock_purpose_display()
+        return "Individual assets"
 
 
 def _scoped_assets(user, **status_filter):
@@ -216,30 +257,180 @@ def movement_history(user, unit_asset=None):
     return queryset.order_by("-occurred_at")
 
 
+def _quantity_balances_with_threshold(user, location=None):
+    threshold_override = scope_queryset(
+        user, ProductLocationThreshold.objects.all(), location_field="location"
+    ).filter(product_id=OuterRef("product_id"), location_id=OuterRef("location_id"))
+    threshold_override = threshold_override.values("low_stock_threshold")[:1]
+    queryset = (
+        _scoped_balances(user)
+        .annotate(
+            configured_threshold=Coalesce(
+                Subquery(threshold_override), F("product__low_stock_threshold")
+            ),
+            available=StockBalance.AVAILABLE_QUANTITY_EXPRESSION,
+        )
+        .filter(configured_threshold__isnull=False, product__is_active=True)
+    )
+    if location is not None:
+        queryset = queryset.filter(location__path__descendant_or_self=location.path)
+    return queryset
+
+
 def low_stock_balances(user, location=None):
-    """Disabled unless configured (spec §16) — only products with a
-    low_stock_threshold set are considered at all. `location` (any level,
+    """Disabled unless configured (spec §16) — only balances with a product
+    default or exact-location threshold are considered. `location` (any level,
     including a Country) optionally restricts to that location and its
     descendants — apps.reporting.views.LowStockView's country/location
     filter, same ltree descendant-or-self match every other location filter
     in this app uses (apps.inventory.filters._filter_by_location).
     """
-    queryset = (
-        _scoped_balances(user)
-        .filter(product__low_stock_threshold__isnull=False)
-        .annotate(available=StockBalance.AVAILABLE_QUANTITY_EXPRESSION)
-        .filter(available__lte=F("product__low_stock_threshold"))
+    return (
+        _quantity_balances_with_threshold(user, location=location)
+        .filter(available__lte=F("configured_threshold"))
+        .order_by("product__brand__name", "product__model")
     )
-    if location is not None:
-        queryset = queryset.filter(location__path__descendant_or_self=location.path)
-    return queryset.order_by("product__brand__name", "product__model")
+
+
+def _unit_stock_items(user, location=None, *, only_low):
+    """Configured unit-stock rows, grouped by Country rather than room.
+
+    All scoped assets establish the product/Country association, including
+    issued assets whose last storage location is used after current_location
+    becomes NULL. That keeps a zero-available alert alive after the last unit
+    is issued. An explicit Country override also establishes an association
+    before the first receipt.
+    """
+    scoped_locations = list(accessible_locations(user).select_related("parent", "parent__parent"))
+    country_by_location_id = {item.pk: country_for_location(item) for item in scoped_locations}
+    countries = {
+        country.pk: country for country in country_by_location_id.values() if country is not None
+    }
+    selected_country = country_by_location_id.get(location.pk) if location is not None else None
+    if location is not None and selected_country is None:
+        return []
+
+    overrides = list(
+        scope_queryset(user, ProductLocationThreshold.objects.all(), location_field="location")
+        .filter(
+            product__tracking_method=TrackingMethod.UNIT,
+            product__is_active=True,
+            location_id__in=countries,
+            location__level=Location.Level.COUNTRY,
+        )
+        .select_related("product__brand", "product__product_type", "location")
+    )
+    override_by_pair = {(item.product_id, item.location_id): item for item in overrides}
+    configured_product_ids = set(
+        Product.objects.filter(
+            tracking_method=TrackingMethod.UNIT,
+            is_active=True,
+            low_stock_threshold__isnull=False,
+        ).values_list("pk", flat=True)
+    )
+    configured_product_ids.update(
+        item.product_id for item in overrides if item.low_stock_threshold is not None
+    )
+    if not configured_product_ids:
+        return []
+
+    last_from_location = (
+        InventoryTransactionLine.objects.filter(
+            unit_asset_id=OuterRef("pk"), from_location__isnull=False
+        )
+        .order_by("-transaction__created_at", "-line_number")
+        .values("from_location_id")[:1]
+    )
+    aggregates = (
+        _scoped_assets(user)
+        .filter(product_id__in=configured_product_ids, product__is_active=True)
+        .annotate(
+            alert_location_id=Coalesce(
+                "current_location_id", Subquery(last_from_location), output_field=UUIDField()
+            )
+        )
+        .values("product_id", "alert_location_id")
+        .annotate(available_quantity=Count("id", filter=Q(status__in=_REUSABLE_UNIT_STATUSES)))
+    )
+
+    available_by_pair = {}
+    associated_pairs = set()
+    for aggregate in aggregates:
+        country = country_by_location_id.get(aggregate["alert_location_id"])
+        if country is None or (selected_country and country.pk != selected_country.pk):
+            continue
+        pair = (aggregate["product_id"], country.pk)
+        associated_pairs.add(pair)
+        available_by_pair[pair] = available_by_pair.get(pair, 0) + aggregate["available_quantity"]
+
+    for override in overrides:
+        if override.low_stock_threshold is None:
+            continue
+        if selected_country and override.location_id != selected_country.pk:
+            continue
+        associated_pairs.add((override.product_id, override.location_id))
+
+    products = {
+        product.pk: product
+        for product in Product.objects.filter(
+            pk__in={pair[0] for pair in associated_pairs}, is_active=True
+        )
+        .select_related("brand", "product_type")
+        .order_by("brand__name", "model")
+    }
+    rows = []
+    for product_id, country_id in associated_pairs:
+        product = products.get(product_id)
+        country = countries.get(country_id)
+        if product is None or country is None:
+            continue
+        override = override_by_pair.get((product_id, country_id))
+        threshold = (
+            override.low_stock_threshold
+            if override is not None and override.low_stock_threshold is not None
+            else product.low_stock_threshold
+        )
+        if threshold is None:
+            continue
+        available = available_by_pair.get((product_id, country_id), 0)
+        if only_low and available > threshold:
+            continue
+        rows.append(
+            LowStockItem(
+                product=product,
+                location=country,
+                available_quantity=available,
+                threshold=threshold,
+                tracking_method=TrackingMethod.UNIT,
+            )
+        )
+    return sorted(
+        rows, key=lambda row: (row.product.brand.name, row.product.model, row.location.name)
+    )
+
+
+def low_stock_items(user, location=None):
+    quantity_rows = [
+        LowStockItem(
+            product=balance.product,
+            location=balance.location,
+            available_quantity=balance.available_quantity,
+            threshold=balance.configured_threshold,
+            tracking_method=TrackingMethod.QUANTITY,
+            balance=balance,
+        )
+        for balance in low_stock_balances(user, location=location)
+    ]
+    return sorted(
+        quantity_rows + _unit_stock_items(user, location=location, only_low=True),
+        key=lambda row: (row.product.brand.name, row.product.model, row.location.name),
+    )
 
 
 def has_configured_low_stock(user, location=None):
-    queryset = _scoped_balances(user).filter(product__low_stock_threshold__isnull=False)
-    if location is not None:
-        queryset = queryset.filter(location__path__descendant_or_self=location.path)
-    return queryset.exists()
+    return _quantity_balances_with_threshold(user, location=location).exists() or bool(
+        _unit_stock_items(user, location=location, only_low=False)
+    )
 
 
 def reorder_suggestions(user, location=None):
@@ -267,12 +458,11 @@ def reorder_suggestions(user, location=None):
             last_invoice_number=Subquery(last_receipt.values("invoice_number_snapshot")[:1]),
         )
     )
-    if not balances:
-        return []
-
     overrides = {
         (t.product_id, t.location_id): t
-        for t in ProductLocationThreshold.objects.filter(
+        for t in scope_queryset(
+            user, ProductLocationThreshold.objects.all(), location_field="location"
+        ).filter(
             product_id__in={b.product_id for b in balances},
             location_id__in={b.location_id for b in balances},
         )
@@ -301,6 +491,7 @@ def reorder_suggestions(user, location=None):
                 "product": balance.product,
                 "location": balance.location,
                 "available_quantity": available,
+                "low_stock_threshold": balance.configured_threshold,
                 "target_stock_level": target,
                 "min_reorder_quantity": min_reorder,
                 "preferred_supplier": supplier,
@@ -309,8 +500,60 @@ def reorder_suggestions(user, location=None):
                 "last_receipt_date": balance.last_receipt_date,
                 "last_receipt_quantity": balance.last_receipt_quantity,
                 "last_invoice_number": balance.last_invoice_number or "",
+                "detail_url": balance.get_absolute_url(),
             }
         )
+
+    unit_items = _unit_stock_items(user, location=location, only_low=True)
+    unit_overrides = {
+        (override.product_id, override.location_id): override
+        for override in scope_queryset(
+            user, ProductLocationThreshold.objects.all(), location_field="location"
+        ).filter(
+            product_id__in={item.product.pk for item in unit_items},
+            location_id__in={item.location.pk for item in unit_items},
+        )
+    }
+    for item in unit_items:
+        override = unit_overrides.get((item.product.pk, item.location.pk))
+        target = item.product.target_stock_level
+        min_reorder = item.product.min_reorder_quantity
+        supplier = item.product.preferred_supplier
+        if override is not None:
+            if override.target_stock_level is not None:
+                target = override.target_stock_level
+            if override.min_reorder_quantity is not None:
+                min_reorder = override.min_reorder_quantity
+            if override.preferred_supplier:
+                supplier = override.preferred_supplier
+        suggested_quantity = (
+            None if target is None else max(target - item.available_quantity, min_reorder or 0)
+        )
+        rows.append(
+            {
+                "balance": None,
+                "product": item.product,
+                "location": item.location,
+                "available_quantity": item.available_quantity,
+                "low_stock_threshold": item.threshold,
+                "target_stock_level": target,
+                "min_reorder_quantity": min_reorder,
+                "preferred_supplier": supplier,
+                "suggested_quantity": suggested_quantity,
+                "configuration_required": target is None,
+                "last_receipt_date": None,
+                "last_receipt_quantity": None,
+                "last_invoice_number": "",
+                "detail_url": item.detail_url,
+            }
+        )
+    rows.sort(
+        key=lambda row: (
+            row["product"].brand.name,
+            row["product"].model,
+            row["location"].name,
+        )
+    )
     return rows
 
 
@@ -329,7 +572,7 @@ def dashboard_summary(user):
     return {
         "assets_in_stock": _scoped_assets(user, status=UnitStatus.IN_STOCK).count(),
         "quantity_on_hand": on_hand_total,
-        "low_stock_count": low_stock_balances(user).count(),
+        "low_stock_count": len(low_stock_items(user)),
         "internal_stock_count": scoped_assets.filter(stock_purpose=StockPurpose.INTERNAL).count(),
         "customer_stock_count": scoped_assets.filter(stock_purpose=StockPurpose.CUSTOMER).count(),
         "active_reservations": scope_queryset(

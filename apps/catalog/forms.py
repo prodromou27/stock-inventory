@@ -1,13 +1,7 @@
 from django import forms
 from django.forms import formset_factory
 
-from .models import (
-    CATEGORY_TRACKING_METHOD,
-    ItemCategory,
-    ProductCustomFieldDefinition,
-    ProductCustomFieldType,
-    TrackingMethod,
-)
+from .models import ItemCategory, ProductCustomFieldDefinition, ProductCustomFieldType
 
 CUSTOM_FIELD_PREFIX = "custom_field_"
 
@@ -62,7 +56,13 @@ class ProductForm(forms.Form):
     )
     supplier = forms.CharField(max_length=120, required=False)
     default_notes = forms.CharField(required=False, widget=forms.Textarea)
-    low_stock_threshold = forms.IntegerField(required=False, min_value=0)
+    low_stock_threshold = forms.IntegerField(
+        required=False,
+        min_value=0,
+        label="Low-stock alert at",
+        help_text="Alert when available stock in a country reaches this number. Leave blank "
+        "to disable alerts.",
+    )
     target_stock_level = forms.IntegerField(
         required=False,
         min_value=0,
@@ -83,16 +83,6 @@ class ProductForm(forms.Form):
         )
         for definition in self.custom_field_definitions:
             self.fields[custom_field_key(definition.pk)] = _custom_field_form_field(definition)
-
-    def clean(self):
-        cleaned = super().clean()
-        category = cleaned.get("category")
-        if category and CATEGORY_TRACKING_METHOD.get(category) != TrackingMethod.QUANTITY:
-            cleaned["low_stock_threshold"] = None
-            cleaned["target_stock_level"] = None
-            cleaned["min_reorder_quantity"] = None
-            cleaned["preferred_supplier"] = ""
-        return cleaned
 
     def get_custom_field_values(self):
         return {

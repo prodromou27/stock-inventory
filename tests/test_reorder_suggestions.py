@@ -8,7 +8,9 @@ from apps.audit.models import AuditEvent
 from apps.catalog.models import ItemCategory
 from apps.catalog.services import create_product, update_product
 from apps.inventory.models import ProductLocationThreshold
+from apps.inventory.services.assignments import assign_to_employee
 from apps.inventory.services.receipts import receive_stock
+from apps.inventory.services.returns import return_stock
 from apps.reporting.queries import reorder_suggestions
 
 
@@ -27,8 +29,83 @@ def _configure_reorder(product, administrator, **kwargs):
 
 @pytest.mark.django_db
 class TestReorderSuggestionsQuery:
+    def test_unit_assets_are_counted_per_country(
+        self, administrator, unit_product, location_tree, other_location_tree
+    ):
+        _configure_reorder(
+            unit_product,
+            administrator,
+            low_stock_threshold=2,
+            target_stock_level=10,
+        )
+        for index in range(3):
+            receive_stock(
+                user=administrator,
+                product=unit_product,
+                location=location_tree["room"],
+                occurred_at=date.today(),
+                vendor_serial=f"PRIMARY-{index}",
+            )
+        for index in range(2):
+            receive_stock(
+                user=administrator,
+                product=unit_product,
+                location=other_location_tree["room"],
+                occurred_at=date.today(),
+                vendor_serial=f"SECONDARY-{index}",
+            )
+
+        rows = reorder_suggestions(administrator)
+
+        assert len(rows) == 1
+        assert rows[0]["location"] == other_location_tree["country"]
+        assert rows[0]["available_quantity"] == 2
+        assert rows[0]["suggested_quantity"] == 8
+
+        asset = unit_product.unit_assets.get(vendor_serial="PRIMARY-0")
+        assignment = assign_to_employee(
+            user=administrator,
+            employee_name="Issued employee",
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+        )
+        rows = reorder_suggestions(administrator)
+        assert {row["location"] for row in rows} == {
+            location_tree["country"],
+            other_location_tree["country"],
+        }
+
+        return_stock(
+            user=administrator,
+            original_transaction=assignment,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            unit_asset_ids=[asset.pk],
+        )
+        rows = reorder_suggestions(administrator)
+        assert [row["location"] for row in rows] == [other_location_tree["country"]]
+
+    def test_country_override_keeps_zero_available_unit_alert_visible(
+        self, administrator, unit_product, location_tree
+    ):
+        ProductLocationThreshold.objects.create(
+            product=unit_product,
+            location=location_tree["country"],
+            low_stock_threshold=2,
+            target_stock_level=10,
+            created_by=administrator,
+            updated_by=administrator,
+        )
+
+        rows = reorder_suggestions(administrator)
+
+        assert len(rows) == 1
+        assert rows[0]["location"] == location_tree["country"]
+        assert rows[0]["available_quantity"] == 0
+        assert rows[0]["suggested_quantity"] == 10
+
     def test_query_count_does_not_grow_per_result(
-        self, django_assert_num_queries, administrator, quantity_product, location_tree
+        self, django_assert_max_num_queries, administrator, quantity_product, location_tree
     ):
         _configure_reorder(
             quantity_product, administrator, low_stock_threshold=10, target_stock_level=20
@@ -41,7 +118,9 @@ class TestReorderSuggestionsQuery:
             quantity=3,
         )
 
-        with django_assert_num_queries(3):
+        # Combined reporting has a fixed set of country/configuration queries
+        # for unit assets in addition to the quantity-balance query.
+        with django_assert_max_num_queries(12):
             assert len(reorder_suggestions(administrator)) == 1
 
     def test_configuration_required_when_no_target_is_set(
@@ -246,21 +325,23 @@ class TestReorderSuggestionsQuery:
 
 
 @pytest.mark.django_db
-class TestProductReorderFieldsUnitTrackedGuard:
-    def test_reorder_fields_are_cleared_for_unit_tracked_products(self, administrator):
+class TestProductReorderFieldsUnitTracked:
+    def test_reorder_fields_persist_for_unit_tracked_products(self, administrator):
         product = create_product(
             user=administrator,
             brand_name="Guard",
             model="Test",
             product_type_name="Gadget",
             category=ItemCategory.SERIALIZED_ASSET,
+            low_stock_threshold=2,
             target_stock_level=10,
             min_reorder_quantity=5,
-            preferred_supplier="Should Be Cleared",
+            preferred_supplier="Asset Supplier",
         )
-        assert product.target_stock_level is None
-        assert product.min_reorder_quantity is None
-        assert product.preferred_supplier == ""
+        assert product.low_stock_threshold == 2
+        assert product.target_stock_level == 10
+        assert product.min_reorder_quantity == 5
+        assert product.preferred_supplier == "Asset Supplier"
 
     def test_reorder_fields_persist_for_quantity_tracked_products(self, administrator):
         product = create_product(
@@ -416,6 +497,7 @@ class TestReorderSettings:
                 "scope": "location",
                 "product": quantity_product.pk,
                 "location": location_tree["room"].pk,
+                "low_stock_threshold": 4,
                 "target_stock_level": 40,
                 "min_reorder_quantity": 6,
                 "preferred_supplier": "Local Supply",
@@ -426,6 +508,7 @@ class TestReorderSettings:
             product=quantity_product, location=location_tree["room"]
         )
         assert override.target_stock_level == 40
+        assert override.low_stock_threshold == 4
         assert override.min_reorder_quantity == 6
         assert override.preferred_supplier == "Local Supply"
         assert AuditEvent.objects.filter(object_id=str(override.pk)).exists()
@@ -454,3 +537,40 @@ class TestReorderSettings:
     def test_stock_manager_cannot_open_reorder_configuration(self, client, stock_manager):
         client.force_login(stock_manager)
         assert client.get(reverse("reporting:reorder_settings")).status_code == 403
+
+    def test_unit_asset_override_requires_country(
+        self, client, administrator, unit_product, location_tree
+    ):
+        client.force_login(administrator)
+        response = client.post(
+            reverse("reporting:reorder_settings"),
+            {
+                "scope": "location",
+                "product": unit_product.pk,
+                "location": location_tree["room"].pk,
+                "low_stock_threshold": 2,
+            },
+        )
+        assert response.status_code == 200
+        assert "must be configured per country" in response.content.decode()
+
+    def test_administrator_can_create_unit_asset_country_override(
+        self, client, administrator, unit_product, location_tree
+    ):
+        client.force_login(administrator)
+        response = client.post(
+            reverse("reporting:reorder_settings"),
+            {
+                "scope": "location",
+                "product": unit_product.pk,
+                "location": location_tree["country"].pk,
+                "low_stock_threshold": 2,
+                "target_stock_level": 10,
+            },
+        )
+        assert response.status_code == 302
+        override = ProductLocationThreshold.objects.get(
+            product=unit_product, location=location_tree["country"]
+        )
+        assert override.low_stock_threshold == 2
+        assert override.target_stock_level == 10

@@ -139,7 +139,10 @@
       // toggle instead of inventing new server-side filtering semantics.
       function lowStockFormatter(cell) {
         const row = cell.getData();
-        if (row.tracking_method !== "quantity" || row.low_stock_threshold == null) return "—";
+        if (row.low_stock_threshold == null) return "—";
+        if (row.tracking_method === "unit") {
+          return '<span class="badge badge--neutral">Tracked per country</span>';
+        }
         // No StockBalance row anywhere in this user's scope (never received,
         // or only received outside their accessible locations) is distinct
         // from a balance row that's genuinely down to zero — showing "0

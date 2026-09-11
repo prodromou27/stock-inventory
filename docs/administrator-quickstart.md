@@ -104,6 +104,12 @@ assignments, customer deliveries, stock by project reference, temporary assignme
 (with a dedicated view for disposed HDDs), movement history, and low stock (only shown for products you've set a
 threshold on — nothing alerts automatically unless you've configured it).
 
+Use **Reports → Reorder settings** to set a product-wide threshold and optional target stock
+level. For individually tracked equipment such as laptops, availability is calculated separately
+for every country: only **In Stock** and **Returned** units count as available. A Country override
+can set a different threshold or target and also keeps the alert visible when that country reaches
+zero units. For counted stock, location overrides continue to use a Storage Room or Shelf/Rack.
+
 ## Deployment, backup, and security operations
 
 Day-to-day application administration is everything above; server/infrastructure administration (production

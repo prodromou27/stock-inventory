@@ -681,8 +681,8 @@ class GridSelection(UUIDPrimaryKeyModel, TimestampedModel):
 
 
 class ProductLocationThreshold(UUIDPrimaryKeyModel, UserStampedModel):
-    """A per-location override of Product's global reorder fields (target
-    stock level/min reorder quantity/preferred supplier) — sparse config
+    """A per-location override of Product's global reorder fields (low-stock
+    threshold/target stock level/min reorder quantity/preferred supplier) — sparse config
     data an Administrator sets only for the locations that actually need a
     different number than the product-wide default, never touched by any
     ledger operation. Lives here rather than on apps.catalog.Product itself
@@ -690,7 +690,7 @@ class ProductLocationThreshold(UUIDPrimaryKeyModel, UserStampedModel):
     locations (docs/architecture/01-repository-structure.md's dependency
     table) — inventory already depends on both.
 
-    All three override fields are individually optional: a row can override
+    All four override fields are individually optional: a row can override
     just the preferred supplier for this location while still falling back
     to the product's global target_stock_level, for instance.
     """
@@ -699,6 +699,7 @@ class ProductLocationThreshold(UUIDPrimaryKeyModel, UserStampedModel):
         "catalog.Product", on_delete=models.CASCADE, related_name="location_thresholds"
     )
     location = models.ForeignKey("locations.Location", on_delete=models.CASCADE, related_name="+")
+    low_stock_threshold = models.PositiveIntegerField(null=True, blank=True)
     target_stock_level = models.PositiveIntegerField(null=True, blank=True)
     min_reorder_quantity = models.PositiveIntegerField(null=True, blank=True)
     preferred_supplier = models.CharField(max_length=120, blank=True)

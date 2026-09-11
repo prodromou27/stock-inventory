@@ -4,7 +4,7 @@
 
 {% block content %}
   <div class="page-header">
-    <div><p class="workspace-eyebrow">Inventory planning</p><h1>Reorder settings</h1><p class="page-header__subtitle">Configure when counted stock becomes low and how much should be reordered. These settings never create a purchase order automatically.</p></div>
+    <div><p class="workspace-eyebrow">Inventory planning</p><h1>Reorder settings</h1><p class="page-header__subtitle">Configure when stock becomes low and how much should be reordered. Individual assets are counted separately per country. These settings never create a purchase order automatically.</p></div>
     <div class="page-header__actions"><a class="btn" href="{% url 'reporting:reorder_suggestions' %}">View suggestions</a></div>
   </div>
 
@@ -19,7 +19,7 @@
     {% csrf_token %}
     <input type="hidden" name="scope" value="global">
     <div class="card">
-      <h2>Update a counted-stock product</h2>
+      <h2>Update a product</h2>
       {% if form.non_field_errors %}<p class="messages__item messages__item--error">{{ form.non_field_errors|join:" " }}</p>{% endif %}
       {% for field in form %}{% include "_form_field.html" with field=field %}{% endfor %}
       <p class="help-text">Low-stock threshold raises the alert. Target is the desired level after replenishment. Minimum reorder prevents impractically small suggestions.</p>
@@ -32,7 +32,7 @@
     <input type="hidden" name="scope" value="location">
     <div class="card">
       <h2>Location-specific override</h2>
-      <p class="help-text">Override the target, minimum order, or supplier for one stock room or shelf. Blank values continue using the product-wide settings above.</p>
+      <p class="help-text">Override the alert threshold, target, minimum order, or supplier. Unit-tracked assets use a Country; counted stock uses a Storage Room or Shelf/Rack. Blank values continue using the product-wide settings above.</p>
       {% if location_form.non_field_errors %}<p class="messages__item messages__item--error">{{ location_form.non_field_errors|join:" " }}</p>{% endif %}
       {% for field in location_form %}{% include "_form_field.html" with field=field %}{% endfor %}
     </div>
@@ -42,8 +42,8 @@
   <div class="card">
     <h2>Location overrides</h2>
     {% if location_overrides %}
-      <div class="table-scroll"><table><thead><tr><th>Product</th><th>Location</th><th>Target</th><th>Minimum reorder</th><th>Preferred supplier</th><th></th></tr></thead><tbody>
-        {% for override in location_overrides %}<tr><td>{{ override.product }}</td><td>{{ override.location }}</td><td>{{ override.target_stock_level|default_if_none:"Uses global" }}</td><td>{{ override.min_reorder_quantity|default_if_none:"Uses global" }}</td><td>{{ override.preferred_supplier|default:"Uses global" }}</td><td><a class="btn btn--sm" href="?override={{ override.pk }}">Configure</a> <form method="post" action="{% url 'reporting:reorder_settings_reset' override.pk %}" class="inline-form" data-confirm="Reset this location to the product-wide reorder settings?">{% csrf_token %}<button class="btn btn--sm btn--ghost" type="submit">Use global</button></form></td></tr>{% endfor %}
+      <div class="table-scroll"><table><thead><tr><th>Product</th><th>Location</th><th>Low at</th><th>Target</th><th>Minimum reorder</th><th>Preferred supplier</th><th></th></tr></thead><tbody>
+        {% for override in location_overrides %}<tr><td>{{ override.product }}</td><td>{{ override.location }}</td><td>{{ override.low_stock_threshold|default_if_none:"Uses global" }}</td><td>{{ override.target_stock_level|default_if_none:"Uses global" }}</td><td>{{ override.min_reorder_quantity|default_if_none:"Uses global" }}</td><td>{{ override.preferred_supplier|default:"Uses global" }}</td><td><a class="btn btn--sm" href="?override={{ override.pk }}">Configure</a> <form method="post" action="{% url 'reporting:reorder_settings_reset' override.pk %}" class="inline-form" data-confirm="Reset this location to the product-wide reorder settings?">{% csrf_token %}<button class="btn btn--sm btn--ghost" type="submit">Use global</button></form></td></tr>{% endfor %}
       </tbody></table></div>
     {% else %}<p class="empty-state">No location-specific overrides yet.</p>{% endif %}
   </div>
@@ -52,8 +52,8 @@
     <h2>Current configuration</h2>
     {% if products %}
       <div class="table-scroll"><table><thead><tr><th>Product</th><th>Low at</th><th>Target</th><th>Minimum reorder</th><th>Preferred supplier</th><th></th></tr></thead><tbody>
-        {% for product in products %}<tr><td>{{ product }}</td><td>{{ product.low_stock_threshold|default:"—" }}</td><td>{{ product.target_stock_level|default:"—" }}</td><td>{{ product.min_reorder_quantity|default:"—" }}</td><td>{{ product.preferred_supplier|default:"—" }}</td><td><a class="btn btn--sm" href="?product={{ product.pk }}">Configure here</a> <a class="btn btn--sm btn--ghost" href="{% url 'catalog:product_update' product.pk %}#reorder-settings">Full product</a></td></tr>{% endfor %}
+        {% for product in products %}<tr><td>{{ product }}</td><td>{{ product.low_stock_threshold|default_if_none:"—" }}</td><td>{{ product.target_stock_level|default_if_none:"—" }}</td><td>{{ product.min_reorder_quantity|default_if_none:"—" }}</td><td>{{ product.preferred_supplier|default:"—" }}</td><td><a class="btn btn--sm" href="?product={{ product.pk }}">Configure here</a> <a class="btn btn--sm btn--ghost" href="{% url 'catalog:product_update' product.pk %}#reorder-settings">Full product</a></td></tr>{% endfor %}
       </tbody></table></div>
-    {% else %}<p class="empty-state">No counted-stock products exist yet.</p>{% endif %}
+    {% else %}<p class="empty-state">No products exist yet.</p>{% endif %}
   </div>
 {% endblock %}

@@ -349,7 +349,7 @@ All results and exports must enforce user location scope. Use server-side pagina
 
 The disposed-items report must show enough information to identify each HDD and its disposal transaction, including Brand, Model, SKU, serial, Project Reference, Final Customer, disposal date, reason/notes, and authenticated user. Do not implement mandatory sanitization certificates yet, but keep the design extensible.
 
-Optional low-stock thresholds may be configured per quantity-tracked product. If no threshold is configured, show no alert. Do not add email or external notifications.
+Optional low-stock thresholds may be configured per product. Unit-tracked products are counted separately per country (In Stock and Returned are available); quantity-tracked products use available balances. If no threshold is configured, show no alert. Notifications use the later-approved opt-in daily digest and in-app notification design.
 
 Add tests for filters, date boundaries, authorization leakage, normalized exports, disposed HDD reporting, pagination, and representative performance with at least 8,000 seeded records.
 ```

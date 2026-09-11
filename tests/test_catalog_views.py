@@ -421,15 +421,22 @@ class TestProductGridView:
 
 @pytest.mark.django_db
 class TestProductUpdateView:
-    def test_reorder_fields_are_grouped_for_counted_stock(
-        self, client, stock_manager, quantity_product
+    def test_reorder_fields_are_grouped_for_administrator(
+        self, client, administrator, quantity_product
     ):
-        client.force_login(stock_manager)
+        client.force_login(administrator)
         response = client.get(reverse("catalog:product_update", kwargs={"pk": quantity_product.pk}))
         content = response.content.decode()
         assert 'id="reorder-settings"' in content
         assert "Low-stock and reordering" in content
-        assert "Leave the threshold blank to disable low-stock alerts" in content
+        assert "Leave the threshold blank to disable alerts" in content
+
+    def test_reorder_fields_are_hidden_from_stock_manager(
+        self, client, stock_manager, quantity_product
+    ):
+        client.force_login(stock_manager)
+        response = client.get(reverse("catalog:product_update", kwargs={"pk": quantity_product.pk}))
+        assert 'id="reorder-settings"' not in response.content.decode()
 
     def test_read_only_user_cannot_edit(self, client, read_only_user, unit_product):
         client.force_login(read_only_user)

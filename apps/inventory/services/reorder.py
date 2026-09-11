@@ -5,10 +5,10 @@ from apps.audit.models import AuditEvent
 from apps.audit.services import record_event
 from apps.catalog.models import TrackingMethod
 from apps.core.authorization import ADMINISTRATOR, require_role
+from apps.locations.models import Location
 from apps.locations.scoping import (
     accessible_locations,
     require_location_access,
-    require_room_or_below,
 )
 
 from ..models import ProductLocationThreshold
@@ -23,13 +23,24 @@ def location_reorder_settings_for(*, user):
 
 @transaction.atomic
 def update_location_reorder_settings(
-    *, user, product, location, target_stock_level, min_reorder_quantity, preferred_supplier
+    *,
+    user,
+    product,
+    location,
+    low_stock_threshold,
+    target_stock_level,
+    min_reorder_quantity,
+    preferred_supplier,
 ):
     require_role(user, ADMINISTRATOR)
     require_location_access(user, location)
-    require_room_or_below(location)
-    if product.tracking_method != TrackingMethod.QUANTITY:
-        raise ValidationError("Location reorder settings apply only to counted-stock products.")
+    if product.tracking_method == TrackingMethod.UNIT and location.level != Location.Level.COUNTRY:
+        raise ValidationError("Unit-tracked asset thresholds must be configured per country.")
+    if (
+        product.tracking_method == TrackingMethod.QUANTITY
+        and location.level == Location.Level.COUNTRY
+    ):
+        raise ValidationError("Counted-stock overrides must use a Storage Room or Shelf/Rack.")
 
     override = (
         ProductLocationThreshold.objects.select_for_update()
@@ -44,10 +55,12 @@ def update_location_reorder_settings(
         old_values = {}
     else:
         old_values = {
+            "low_stock_threshold": override.low_stock_threshold,
             "target_stock_level": override.target_stock_level,
             "min_reorder_quantity": override.min_reorder_quantity,
             "preferred_supplier": override.preferred_supplier,
         }
+    override.low_stock_threshold = low_stock_threshold
     override.target_stock_level = target_stock_level
     override.min_reorder_quantity = min_reorder_quantity
     override.preferred_supplier = preferred_supplier.strip()
@@ -55,6 +68,7 @@ def update_location_reorder_settings(
     override.full_clean()
     override.save()
     new_values = {
+        "low_stock_threshold": override.low_stock_threshold,
         "target_stock_level": override.target_stock_level,
         "min_reorder_quantity": override.min_reorder_quantity,
         "preferred_supplier": override.preferred_supplier,
@@ -80,6 +94,7 @@ def reset_location_reorder_settings(*, user, override):
     snapshot = {
         "product_id": str(override.product_id),
         "location_id": str(override.location_id),
+        "low_stock_threshold": override.low_stock_threshold,
         "target_stock_level": override.target_stock_level,
         "min_reorder_quantity": override.min_reorder_quantity,
         "preferred_supplier": override.preferred_supplier,

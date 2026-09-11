@@ -57,8 +57,8 @@
               <td><a href="{{ row.product.get_absolute_url }}">{{ row.product }}</a></td>
               <td>{{ row.location }}</td>
               <td>{{ row.available_quantity }}</td>
-              <td>{{ row.target_stock_level|default:"—" }}</td>
-              <td>{{ row.min_reorder_quantity|default:"—" }}</td>
+              <td>{{ row.target_stock_level|default_if_none:"—" }}</td>
+              <td>{{ row.min_reorder_quantity|default_if_none:"—" }}</td>
               <td>
                 {% if row.configuration_required %}
                   <span class="badge badge--warning">Configuration required</span>
@@ -76,8 +76,8 @@
               </td>
               <td>{{ row.last_invoice_number|default:"—" }}</td>
               <td>
-                <a class="btn btn--sm" href="{{ row.balance.get_absolute_url }}">View stock</a>
-                {% if user_is_administrator or "StockManager" in user_role_groups %}
+                <a class="btn btn--sm" href="{{ row.detail_url }}">View stock</a>
+                {% if user_is_administrator %}
                   <a class="btn btn--sm btn--ghost" href="{% url 'catalog:product_update' row.product.pk %}#reorder-settings">Edit settings</a>
                 {% endif %}
               </td>

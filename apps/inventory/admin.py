@@ -95,6 +95,7 @@ class ProductLocationThresholdAdmin(admin.ModelAdmin):
     list_display = (
         "product",
         "location",
+        "low_stock_threshold",
         "target_stock_level",
         "min_reorder_quantity",
         "preferred_supplier",

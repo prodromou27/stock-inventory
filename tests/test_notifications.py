@@ -6,6 +6,7 @@ from django.core.management import call_command
 from django.urls import reverse
 
 from apps.audit.models import AuditEvent
+from apps.catalog.services import update_product
 from apps.inventory.services.assignments import assign_to_employee
 from apps.inventory.services.receipts import receive_stock
 from apps.settings.models import (
@@ -197,6 +198,39 @@ class TestNotificationSubscriptions:
 
 @pytest.mark.django_db
 class TestDailyDigests:
+    def test_unit_asset_low_stock_digest_uses_country_available_count(
+        self, administrator, unit_product, location_tree
+    ):
+        update_product(
+            product=unit_product,
+            user=administrator,
+            brand_name=unit_product.brand.name,
+            model=unit_product.model,
+            product_type_name=unit_product.product_type.name,
+            category=unit_product.category,
+            low_stock_threshold=2,
+        )
+        for index in range(2):
+            receive_stock(
+                user=administrator,
+                product=unit_product,
+                location=location_tree["room"],
+                occurred_at=date.today(),
+                vendor_serial=f"DIGEST-LAPTOP-{index}",
+            )
+        subscription = _subscription(
+            administrator,
+            location_tree["country"],
+            notify_overdue_assignments=False,
+            notify_import_export_failures=False,
+            notify_data_quality=False,
+        )
+
+        body, counts = build_digest(subscription)
+
+        assert counts["low_stock"] == 1
+        assert "2 available at Wonderland (threshold 2)" in body
+
     def test_low_stock_digest_is_sent_once_per_day(
         self, settings, mailoutbox, administrator, quantity_product, location_tree
     ):

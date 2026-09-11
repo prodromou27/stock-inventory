@@ -140,14 +140,16 @@ Keyboard, Accessory, Other.
 | `supplier` | varchar(120), optional | free text, not a master-data FK (spec §2.6) |
 | `default_notes` | text, optional | |
 | `is_active` | boolean, default true | |
-| `low_stock_threshold` | integer, null | only meaningful when `tracking_method='quantity'`; `CHECK` enforces null when unit-tracked |
+| `low_stock_threshold` | integer, null | optional product default; unit stock is evaluated per Country and quantity stock per available balance |
 | `created_by/at`, `updated_by/at` | | |
 
 **Constraints**
 - No DB-level uniqueness on `(brand, model, sku)` — the spec requires duplicates be *detectable and acknowledgeable*,
   not blocked (§2.6, §6). Enforced instead by a service-layer check (see
   [05-tracking-and-duplicates.md](05-tracking-and-duplicates.md)).
-- `CHECK (tracking_method <> 'unit' OR low_stock_threshold IS NULL)`.
+- Unit-tracked low-stock availability includes only `In Stock` and `Returned` assets and is
+  grouped by Country. Reserved or issued assets are excluded. A Country-specific
+  `ProductLocationThreshold` can override the product default and preserves a zero-stock alert.
 - **Tracking-method lock**: once any `UnitAsset` or `StockBalance`/`InventoryTransactionLine` row references this
   product, `ProductService.update()` rejects a `tracking_method` change; only `ProductService.migrate_tracking_method()`
   (Administrator-only, itself a fully audited transaction that converts existing records) may change it, per spec §5.

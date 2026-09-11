@@ -15,7 +15,7 @@ from django.utils.text import slugify
 from django.views import View
 from django.views.generic import ListView
 
-from apps.catalog.models import Product, TrackingMethod
+from apps.catalog.models import Product
 from apps.catalog.services import update_reorder_settings
 from apps.core.authorization import ADMINISTRATOR, RoleRequiredMixin
 from apps.core.csv_export import CSVExportMixin
@@ -324,8 +324,10 @@ class LowStockView(LoginRequiredMixin, ListView):
         self.location = None
         location_id = self.request.GET.get("location")
         if location_id:
-            self.location = Location.objects.filter(pk=location_id).first()
-        return queries.low_stock_balances(self.request.user, location=self.location)
+            self.location = get_object_or_404(
+                accessible_locations(self.request.user), pk=location_id
+            )
+        return queries.low_stock_items(self.request.user, location=self.location)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -349,7 +351,7 @@ class ReorderSuggestionsView(LoginRequiredMixin, View):
     def get(self, request):
         location = None
         if location_id := request.GET.get("location"):
-            location = Location.objects.filter(pk=location_id).first()
+            location = get_object_or_404(accessible_locations(request.user), pk=location_id)
         rows = queries.reorder_suggestions(request.user, location=location)
 
         if request.GET.get("format") == "csv":
@@ -424,9 +426,7 @@ class ReorderSettingsView(LoginRequiredMixin, RoleRequiredMixin, View):
     def get(self, request):
         initial = {}
         if product_id := request.GET.get("product"):
-            product = get_object_or_404(
-                Product, pk=product_id, tracking_method=TrackingMethod.QUANTITY
-            )
+            product = get_object_or_404(Product, pk=product_id)
             initial = {
                 "product": product,
                 "low_stock_threshold": product.low_stock_threshold,
@@ -442,6 +442,7 @@ class ReorderSettingsView(LoginRequiredMixin, RoleRequiredMixin, View):
             location_initial = {
                 "product": override.product,
                 "location": override.location,
+                "low_stock_threshold": override.low_stock_threshold,
                 "target_stock_level": override.target_stock_level,
                 "min_reorder_quantity": override.min_reorder_quantity,
                 "preferred_supplier": override.preferred_supplier,
@@ -482,9 +483,7 @@ class ReorderSettingsView(LoginRequiredMixin, RoleRequiredMixin, View):
         return self._render(request, form, location_form)
 
     def _render(self, request, form, location_form):
-        products = Product.objects.filter(tracking_method=TrackingMethod.QUANTITY).select_related(
-            "brand", "product_type"
-        )
+        products = Product.objects.select_related("brand", "product_type")
         overrides = location_reorder_settings_for(user=request.user)
         if query := request.GET.get("q", "").strip():
             products = products.filter(
@@ -508,7 +507,7 @@ class ReorderSettingsView(LoginRequiredMixin, RoleRequiredMixin, View):
                 "products": products,
                 "location_overrides": overrides,
                 "location_choices": accessible_locations(request.user).filter(
-                    level__in=[Location.Level.STORAGE_ROOM, Location.Level.RACK_SHELF]
+                    level__in=Location.LEVEL_ORDER
                 ),
             },
         )

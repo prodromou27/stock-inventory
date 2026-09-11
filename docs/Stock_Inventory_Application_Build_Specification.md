@@ -114,7 +114,9 @@ The tracking method is selected on the product record and cannot be changed afte
 - Supplier — optional
 - Default notes — optional
 - Active/inactive flag
-- Optional low-stock threshold
+- Optional low-stock threshold. Unit-tracked products are evaluated separately per country;
+  only In Stock and Returned units count as available. Quantity-tracked products continue to
+  use available balance (on hand less reserved).
 
 Brand, Model, and SKU are distinct fields. Product duplicate detection should compare normalized Brand, Model, and SKU, but authorized users may acknowledge and create a legitimate duplicate.
 
@@ -442,7 +444,8 @@ All reports must honor user storage permissions. Exports use a new normalized fo
 
 ## 16. Optional configuration
 
-- Low-stock threshold per quantity-tracked product
+- Low-stock threshold per product. Unit-tracked products are counted separately per country,
+  with optional country overrides; quantity-tracked products use available balance.
 - Low-stock dashboard/report, disabled unless configured
 - Temporary assignment flag and optional expected return date
 - Future HDD sanitization/disposal fields

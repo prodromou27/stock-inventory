@@ -4,7 +4,7 @@ from django.db.models import Q
 
 from apps.audit.models import AuditEvent
 from apps.audit.services import record_event
-from apps.core.authorization import ADMINISTRATOR, STOCK_MANAGER, require_role
+from apps.core.authorization import ADMINISTRATOR, STOCK_MANAGER, is_administrator, require_role
 from apps.core.text import normalize_whitespace
 
 from .models import (
@@ -193,18 +193,18 @@ def create_product(
         raise ValidationError("Unknown category.")
     tracking_method = CATEGORY_TRACKING_METHOD[category]
 
+    if not is_administrator(user):
+        low_stock_threshold = None
+        target_stock_level = None
+        min_reorder_quantity = None
+        preferred_supplier = ""
+
     brand = get_or_create_brand(brand_name, user=user)
     product_type = get_or_create_product_type(product_type_name, user=user)
 
     duplicates = check_duplicate_products(brand=brand, model=model, sku=sku)
     if duplicates.exists() and not duplicate_acknowledged:
         raise DuplicateProductError(duplicates)
-
-    if tracking_method != TrackingMethod.QUANTITY:
-        low_stock_threshold = None
-        target_stock_level = None
-        min_reorder_quantity = None
-        preferred_supplier = ""
 
     product = Product(
         brand=brand,
@@ -415,13 +415,17 @@ def update_product(
         "category": product.category,
         "tracking_method": product.tracking_method,
         "is_active": product.is_active,
+        "low_stock_threshold": product.low_stock_threshold,
+        "target_stock_level": product.target_stock_level,
+        "min_reorder_quantity": product.min_reorder_quantity,
+        "preferred_supplier": product.preferred_supplier,
     }
 
-    if tracking_method != TrackingMethod.QUANTITY:
-        low_stock_threshold = None
-        target_stock_level = None
-        min_reorder_quantity = None
-        preferred_supplier = ""
+    if not is_administrator(user):
+        low_stock_threshold = product.low_stock_threshold
+        target_stock_level = product.target_stock_level
+        min_reorder_quantity = product.min_reorder_quantity
+        preferred_supplier = product.preferred_supplier
 
     # A value stored for a definition that's since gone inactive is left
     # untouched (it wasn't part of this submission — the form only ever
@@ -469,6 +473,10 @@ def update_product(
             "category": product.category,
             "tracking_method": product.tracking_method,
             "is_active": product.is_active,
+            "low_stock_threshold": product.low_stock_threshold,
+            "target_stock_level": product.target_stock_level,
+            "min_reorder_quantity": product.min_reorder_quantity,
+            "preferred_supplier": product.preferred_supplier,
         },
     )
     return product
@@ -484,10 +492,8 @@ def update_reorder_settings(
     min_reorder_quantity,
     preferred_supplier,
 ):
-    """Focused administrator workflow for counted-stock planning settings."""
+    """Focused administrator workflow for product stock-planning settings."""
     require_role(user, ADMINISTRATOR)
-    if product.tracking_method != TrackingMethod.QUANTITY:
-        raise ValidationError("Reorder settings apply only to counted-stock products.")
     old_values = {
         "low_stock_threshold": product.low_stock_threshold,
         "target_stock_level": product.target_stock_level,

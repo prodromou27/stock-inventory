@@ -98,31 +98,65 @@ class ReorderSettingsForm(forms.Form):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["product"].queryset = Product.objects.filter(
-            tracking_method=TrackingMethod.QUANTITY, is_active=True
-        ).select_related("brand", "product_type")
+        self.fields["product"].queryset = Product.objects.filter(is_active=True).select_related(
+            "brand", "product_type"
+        )
 
 
 class LocationReorderSettingsForm(forms.Form):
     product = forms.ModelChoiceField(queryset=Product.objects.none())
-    location = forms.ModelChoiceField(queryset=Product.objects.none(), label="Storage room / Shelf")
+    location = forms.ModelChoiceField(
+        queryset=Product.objects.none(), label="Country / storage location"
+    )
+    low_stock_threshold = forms.IntegerField(min_value=0, required=False)
     target_stock_level = forms.IntegerField(min_value=0, required=False)
     min_reorder_quantity = forms.IntegerField(min_value=0, required=False)
     preferred_supplier = forms.CharField(max_length=120, required=False)
 
     def __init__(self, *args, user, **kwargs):
-        from apps.locations.models import ROOM_OR_BELOW_LEVELS, Location
+        from apps.locations.models import Location
         from apps.locations.scoping import accessible_locations
 
         super().__init__(*args, **kwargs)
-        self.fields["product"].queryset = Product.objects.filter(
-            tracking_method=TrackingMethod.QUANTITY, is_active=True
-        ).select_related("brand", "product_type")
-        self.fields["location"].queryset = accessible_locations(user).filter(
-            level__in=ROOM_OR_BELOW_LEVELS, is_active=True
+        self.fields["product"].queryset = Product.objects.filter(is_active=True).select_related(
+            "brand", "product_type"
         )
-        self.fields["location"].label_from_instance = lambda location: (
-            f"{location.parent.name} / {location.name}"
-            if location.level == Location.Level.RACK_SHELF
-            else str(location)
+        self.fields["location"].queryset = (
+            accessible_locations(user)
+            .filter(level__in=Location.LEVEL_ORDER, is_active=True)
+            .select_related("parent", "parent__parent")
         )
+
+        def location_label(location):
+            if location.level == Location.Level.COUNTRY:
+                return f"{location.name} — Country"
+            if location.level == Location.Level.STORAGE_ROOM:
+                return f"{location.parent.name} / {location.name} — Storage Room"
+            country = location.parent.parent
+            return f"{country.name} / {location.parent.name} / {location.name} — Shelf/Rack"
+
+        self.fields["location"].label_from_instance = location_label
+
+    def clean(self):
+        cleaned = super().clean()
+        product = cleaned.get("product")
+        location = cleaned.get("location")
+        if (
+            product
+            and location
+            and product.tracking_method == TrackingMethod.UNIT
+            and location.level != location.Level.COUNTRY
+        ):
+            self.add_error(
+                "location", "Unit-tracked asset thresholds must be configured per country."
+            )
+        if (
+            product
+            and location
+            and product.tracking_method == TrackingMethod.QUANTITY
+            and location.level == location.Level.COUNTRY
+        ):
+            self.add_error(
+                "location", "Counted-stock overrides must use a Storage Room or Shelf/Rack."
+            )
+        return cleaned

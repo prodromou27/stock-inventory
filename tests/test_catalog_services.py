@@ -65,7 +65,7 @@ class TestCreateProduct:
 
         assert product.low_stock_threshold == 5
 
-    def test_low_stock_threshold_ignored_for_unit_products(self, administrator):
+    def test_low_stock_threshold_persists_for_unit_products(self, administrator):
         product = create_product(
             user=administrator,
             brand_name="Fortinet",
@@ -75,7 +75,41 @@ class TestCreateProduct:
             low_stock_threshold=10,
         )
 
-        assert product.low_stock_threshold is None
+        assert product.low_stock_threshold == 10
+
+    def test_stock_manager_cannot_set_reorder_fields(
+        self, stock_manager, administrator, unit_product
+    ):
+        update_product(
+            product=unit_product,
+            user=administrator,
+            brand_name=unit_product.brand.name,
+            model=unit_product.model,
+            product_type_name=unit_product.product_type.name,
+            category=unit_product.category,
+            low_stock_threshold=2,
+            target_stock_level=10,
+        )
+
+        update_product(
+            product=unit_product,
+            user=stock_manager,
+            brand_name=unit_product.brand.name,
+            model="FG-100F revised",
+            product_type_name=unit_product.product_type.name,
+            category=unit_product.category,
+            low_stock_threshold=99,
+            target_stock_level=100,
+        )
+
+        unit_product.refresh_from_db()
+        assert unit_product.model == "FG-100F revised"
+        assert unit_product.low_stock_threshold == 2
+        assert unit_product.target_stock_level == 10
+        assert any(
+            event.new_values.get("low_stock_threshold") == 2
+            for event in AuditEvent.objects.filter(object_id=str(unit_product.pk))
+        )
 
     def test_duplicate_brand_model_blocked_without_acknowledgement(self, administrator):
         create_product(

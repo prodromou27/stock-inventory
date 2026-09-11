@@ -375,6 +375,49 @@ class TestMovementHistoryReport:
 
 @pytest.mark.django_db
 class TestLowStockReport:
+    def test_unit_asset_alert_is_country_scoped_for_stock_manager(
+        self,
+        client,
+        administrator,
+        stock_manager_with_room_access,
+        unit_product,
+        location_tree,
+        other_room,
+    ):
+        update_product(
+            product=unit_product,
+            user=administrator,
+            brand_name=unit_product.brand.name,
+            model=unit_product.model,
+            product_type_name=unit_product.product_type.name,
+            category=unit_product.category,
+            low_stock_threshold=2,
+        )
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=location_tree["room"],
+            occurred_at=date.today(),
+            vendor_serial="VISIBLE-LAPTOP",
+        )
+        receive_stock(
+            user=administrator,
+            product=unit_product,
+            location=other_room,
+            occurred_at=date.today(),
+            vendor_serial="HIDDEN-LAPTOP",
+        )
+
+        client.force_login(stock_manager_with_room_access)
+        response = client.get(reverse("reporting:low_stock"))
+
+        assert response.status_code == 200
+        rows = list(response.context["balances"])
+        assert len(rows) == 1
+        assert rows[0].location == location_tree["country"]
+        assert rows[0].available_quantity == 1
+        assert "HIDDEN-LAPTOP" not in response.content.decode()
+
     def test_empty_when_no_threshold_configured(self, client, administrator, location_tree):
         from apps.catalog.models import ItemCategory
         from apps.catalog.services import create_product

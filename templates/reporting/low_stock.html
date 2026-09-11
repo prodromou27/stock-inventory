@@ -6,7 +6,7 @@
   <div class="page-header">
     <div>
       <h1>Low stock</h1>
-      <div class="page-header__subtitle">Only products with a low-stock threshold configured are considered.</div>
+      <div class="page-header__subtitle">Counted stock is checked per balance. Individual assets are counted separately in each country.</div>
     </div>
   </div>
 
@@ -33,14 +33,14 @@
       <tbody>
         {% for balance in balances %}
           <tr>
-            <td><a href="{{ balance.get_absolute_url }}">{{ balance.product }}</a></td>
+            <td><a href="{{ balance.product.get_absolute_url }}">{{ balance.product }}</a></td>
             <td>{{ balance.location }}</td>
-            <td>{{ balance.get_stock_purpose_display }}</td>
+            <td>{{ balance.stock_kind }}</td>
             <td>{{ balance.available_quantity }}</td>
-            <td>{{ balance.product.low_stock_threshold }}</td>
+            <td>{{ balance.threshold }}</td>
             <td>
-              <a class="btn btn--sm" href="{{ balance.get_absolute_url }}">View stock</a>
-              {% if user_is_administrator or "StockManager" in user_role_groups %}
+              <a class="btn btn--sm" href="{{ balance.detail_url }}">View stock</a>
+              {% if user_is_administrator %}
                 <a class="btn btn--sm btn--ghost" href="{% url 'catalog:product_update' balance.product.pk %}#reorder-settings">Edit threshold</a>
               {% endif %}
             </td>
@@ -58,10 +58,10 @@
   {% else %}
     <div class="empty-state">
       {% if has_configured_thresholds %}
-        <p>No alerts: every configured counted-stock balance is currently above its threshold.</p>
+        <p>No alerts: all configured stock is currently above its threshold.</p>
       {% else %}
-        <p>No thresholds are configured for counted stock in this scope.</p>
-        {% if user_is_administrator or "StockManager" in user_role_groups %}<a class="btn btn--sm" href="{% url 'catalog:product_list' %}">Choose a product to configure</a>{% endif %}
+        <p>No thresholds are configured for stock in this scope.</p>
+        {% if user_is_administrator %}<a class="btn btn--sm" href="{% url 'reporting:reorder_settings' %}">Configure thresholds</a>{% endif %}
       {% endif %}
     </div>
   {% endif %}

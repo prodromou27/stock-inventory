@@ -147,7 +147,7 @@ item below was actively checked for and found genuinely unimplemented, matching 
 | 6 | Mobile-specific application | Single server-rendered Django app; no separate mobile client or mobile-only API |
 | 7 | Offline operation | No service worker, no offline-first design; every screen requires a live connection to the server |
 | 8 | Automated overdue notifications | `apps/reporting/queries.py`'s `temporary_assignments()` docstring states explicitly: "No overdue automation (spec §9/§16) — expected_return_date is shown [for a human to check], not proactively alerted on" |
-| 9 | Mandatory minimum-stock alerts | `Product.low_stock_threshold` is nullable and opt-in per product; the low-stock report/dashboard is explicitly "disabled unless configured" (spec §16, doc 09's Phase 7 entry) — not automatic or mandatory |
+| 9 | Mandatory minimum-stock alerts | `Product.low_stock_threshold` is nullable and opt-in per product; unit-tracked availability is counted separately per Country and quantity stock uses available balance. The low-stock report/dashboard remains disabled unless configured — alerts are not automatic or mandatory. |
 | 10 | Customer addresses and contacts | `final_customer` is a plain text company-name field; no address/contact sub-model |
 | 11 | Secondary approval workflow | Every movement service (`receive_stock`, `bulk_transfer`, `assign_to_employee`, etc.) writes its `InventoryTransaction` and returns — no pending/approval status exists anywhere in `apps/inventory/transitions.py`'s state model |
 
