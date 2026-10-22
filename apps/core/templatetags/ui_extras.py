@@ -24,6 +24,57 @@ _SECTION_LABELS = {
     "settings": "Settings",
 }
 
+# Views inside the inventory app that the sidebar files under their own
+# entry (Operations / Transactions) — labelled to match, so the breadcrumb
+# and topbar don't say "Inventory" while the sidebar highlights another item.
+_URL_NAME_SECTION_LABELS = {
+    "movements_hub": "Operations",
+    "receive_stock": "Operations",
+    "quick_receive": "Operations",
+    "receive_bulk": "Operations",
+    "transfer": "Operations",
+    "reserve": "Operations",
+    "reservation_list": "Operations",
+    "reservation_detail": "Operations",
+    "assign": "Operations",
+    "deliver": "Operations",
+    "assess_return": "Operations",
+    "mark_damaged": "Operations",
+    "repair_damaged": "Operations",
+    "mark_lost": "Operations",
+    "dispose": "Operations",
+    "put_in_use": "Operations",
+    "remove_from_use": "Operations",
+    "transaction_list": "Transactions",
+    "transaction_detail": "Transactions",
+    "transaction_reverse": "Transactions",
+    "return_stock": "Transactions",
+}
+
+# Movement type -> badge tone (apps.inventory.models.MovementType values).
+# Stock coming in reads as success, stock leaving custody as info, exceptions
+# as warning/danger, and administrative bookkeeping as neutral.
+_MOVEMENT_BADGES = {
+    "receipt": "badge--success",
+    "remove_from_use": "badge--success",
+    "return": "badge--success",
+    "assignment": "badge--info",
+    "delivery": "badge--info",
+    "put_in_use": "badge--info",
+    "reservation": "badge--info",
+    "transfer": "badge--neutral",
+    "reservation_release": "badge--neutral",
+    "return_assessment": "badge--neutral",
+    "purpose_change": "badge--neutral",
+    "install_component": "badge--neutral",
+    "remove_component": "badge--neutral",
+    "mark_damaged": "badge--warning",
+    "correction": "badge--warning",
+    "reversal": "badge--warning",
+    "mark_lost": "badge--danger",
+    "disposal": "badge--danger",
+}
+
 _SUCCESS = (
     "active",
     "available",
@@ -63,6 +114,20 @@ def badge_class(value):
     if any(keyword in text for keyword in _DANGER):
         return "badge--danger"
     return "badge--neutral"
+
+
+@register.filter
+def movement_badge_class(movement_type):
+    """Badge tone for an InventoryTransaction.movement_type code."""
+    return _MOVEMENT_BADGES.get(str(movement_type or ""), "badge--neutral")
+
+
+@register.filter
+def thousands(value):
+    """8025 -> "8,025" for integer counts; anything else passes through."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return value
+    return f"{value:,}"
 
 
 @register.simple_tag(takes_context=True)
@@ -132,4 +197,6 @@ def current_section(context):
     match = getattr(request, "resolver_match", None)
     if match is None:
         return "Invenio"
+    if match.app_name == "inventory" and match.url_name in _URL_NAME_SECTION_LABELS:
+        return _URL_NAME_SECTION_LABELS[match.url_name]
     return _SECTION_LABELS.get(match.app_name, (match.app_name or "Invenio").title())

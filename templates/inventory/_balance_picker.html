@@ -1,11 +1,11 @@
 {% load static ui_extras %}
 {% if balances %}
-  {# Collapsed by default — most deliveries/assignments only ever involve
+  {% comment %} Collapsed by default — most deliveries/assignments only ever involve
      serialized assets (the picker above), so always rendering a second
      full grid here made the page needlessly long for the common case.
      Auto-opens when the URL already implies quantity stock is actually
      wanted (a reservation being converted, or a product-scoped quick
-     action), so that flow isn't hidden behind an extra click. #}
+     action), so that flow isn't hidden behind an extra click. {% endcomment %}
   <details class="card" id="balance-picker-details">
     <summary><h2 class="hub-panel__subheading" style="display: inline;">Select counted stock (optional)</h2></summary>
     <div class="inventory-grid is-hidden">

@@ -74,7 +74,7 @@ progress {
     --color-primary-bg: #eafaf7;
     --color-primary-contrast: #ffffff;
 
-    --color-success: #15803d;
+    --color-success: #137638; /* 5.1:1 on --color-success-bg (was 4.47:1, below WCAG AA for badge-size text) */
     --color-success-bg: #e6f6ea;
     --color-warning: #b45309;
     --color-warning-bg: #fef3dd;
@@ -2651,3 +2651,53 @@ progress {
 .template-editor-layout > div:last-child { top: calc(var(--topbar-height) + 1rem); }
 @media (max-width: 1100px) { .dashboard-actions, .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .room-browser { flex-wrap: wrap; gap: 1rem; } }
 @media (max-width: 700px) { .content { padding: 1.25rem; } .room-switcher { flex-basis: 100%; } .room-browser__controls { flex-wrap: wrap; } .page-header h1 { font-size: 1.5rem; } .delivery-details__fields, .receipt-defaults { grid-template-columns: 1fr; } }
+
+/* Button rows inside forms: the bare `form p` rule above stacks children in
+   a centred column (it's built for label/input pairs), which also caught every
+   <p class="form-actions"> and centred its buttons one per line. */
+form p.form-actions { flex-direction: row; max-width: none; }
+/* Small helper buttons injected after a field (e.g. movement_forms.js's
+   "Today") stay button-sized instead of stretching to the field's width. */
+form p > .btn--sm { align-self: flex-start; }
+
+/* Tile grids draw dividers with a 1px gap over a border-coloured background,
+   so an incomplete last row showed the background as a grey slab. The last
+   tile stretches across whatever columns are left instead. */
+.dashboard-actions > :last-child:nth-child(4n + 1) { grid-column: span 4; }
+.dashboard-actions > :last-child:nth-child(4n + 2) { grid-column: span 3; }
+.dashboard-actions > :last-child:nth-child(4n + 3) { grid-column: span 2; }
+@media (max-width: 1100px) {
+  .dashboard-actions > :last-child:nth-child(n) { grid-column: auto; }
+  .dashboard-actions > :last-child:nth-child(2n + 1) { grid-column: span 2; }
+}
+
+.tabulator .tabulator-footer .tabulator-page-counter { margin-right: 1.25rem; }
+.tabulator .tabulator-footer .tabulator-paginator label { margin-right: 0.4rem; }
+
+/* Movement-type badges sit in table cells; keep them on one line. */
+.badge--movement { white-space: nowrap; text-transform: none; letter-spacing: 0; font-weight: 600; }
+.timestamp { white-space: nowrap; }
+
+/* Reports hub: grouped sections with icons. */
+.report-section { margin-bottom: 2rem; }
+.report-section__title { display: flex; align-items: baseline; gap: 0.6rem; font-size: 1.05rem; margin: 0 0 0.85rem; padding: 0; border: 0; }
+.report-section__title small { font-size: 0.8rem; font-weight: 400; color: var(--color-text-muted); }
+.report-section .card-grid { margin-bottom: 0; }
+.action-card__icon--alert { color: var(--color-danger); }
+
+.list-summary { margin: -0.5rem 0 0.75rem; font-size: 0.85rem; color: var(--color-text-muted); }
+
+/* Success flash messages fade out after a few seconds (app.js). */
+.messages__item.is-dismissing { opacity: 0; transform: translateY(-4px); transition: opacity 0.3s ease, transform 0.3s ease; }
+
+@media (max-width: 900px) {
+  .topbar { gap: 0.5rem; }
+  .topbar__context { display: none; }
+  .topbar__search { flex: 1 1 auto; min-width: 0; max-width: none; }
+  .sidebar-toggle, .theme-toggle, .notification-bell, .user-menu { flex-shrink: 0; }
+}
+
+/* Location tree links were 22px tall — below the 24px WCAG 2.5.8 target size. */
+.location-tree summary a { display: inline-flex; align-items: center; justify-content: center; min-height: 1.75rem; min-width: 1.75rem; padding: 0 0.15rem; }
+/* `.toolbar input { min-width: 11rem }` is meant for text fields; checkboxes kept their native size. */
+.toolbar input[type="checkbox"], .toolbar input[type="radio"] { min-width: 0; }

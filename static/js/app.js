@@ -34,6 +34,26 @@
     button.addEventListener("click", () => button.closest(".messages__item")?.remove());
   });
 
+  // Success confirmations fade out on their own; warnings and errors stay
+  // until dismissed so they can't be missed. Hovering or focusing a message
+  // holds it in place.
+  document.querySelectorAll(".messages__item--success").forEach((item) => {
+    let timer = null;
+    const schedule = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        item.classList.add("is-dismissing");
+        item.addEventListener("transitionend", () => item.remove(), { once: true });
+        window.setTimeout(() => item.remove(), 600);
+      }, 6000);
+    };
+    const hold = () => window.clearTimeout(timer);
+    item.addEventListener("mouseenter", hold);
+    item.addEventListener("focusin", hold);
+    item.addEventListener("mouseleave", schedule);
+    schedule();
+  });
+
   document.querySelectorAll("form[data-confirm]").forEach((form) => {
     form.addEventListener("submit", (event) => {
       if (!window.confirm(form.dataset.confirm)) event.preventDefault();

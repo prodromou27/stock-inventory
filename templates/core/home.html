@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static ui_extras %}
 
 {% block title %}Dashboard — {{ site_name }}{% endblock %}
 
@@ -76,7 +76,7 @@
   <div class="stat-grid">
     {% for card in dashboard_cards %}
       <a class="stat-card{% if card.alert %} stat-card--alert{% endif %}" href="{{ card.url }}">
-        <div class="stat-card__value">{{ card.value }}</div>
+        <div class="stat-card__value">{{ card.value|thousands }}</div>
         <div class="stat-card__label">{{ card.label }}</div>
       </a>
     {% endfor %}
@@ -96,7 +96,7 @@
               <span class="badge badge--neutral">{{ entry.type_label }}</span>
               <a href="{{ entry.object.get_absolute_url }}">{{ entry.object }}</a>
             </span>
-            <span class="text-muted">{{ entry.viewed_at }}</span>
+            <time class="text-muted timestamp" datetime="{{ entry.viewed_at|date:"c" }}" title="{{ entry.viewed_at }}">{{ entry.viewed_at|timesince }} ago</time>
           </li>
         {% endfor %}
       </ul>
@@ -106,7 +106,10 @@
   </div>
 
   {% endif %}
-  <h2>Recent activity</h2>
+  <div class="page-header">
+    <h2>Recent activity</h2>
+    <div class="page-header__actions"><a class="btn btn--sm" href="{% url 'inventory:transaction_list' %}">View all transactions</a></div>
+  </div>
   {% if recent_activity %}
     <div class="table-scroll">
       <table>
@@ -117,8 +120,8 @@
           {% for txn in recent_activity %}
             <tr>
               <td><a href="{{ txn.get_absolute_url }}">{{ txn.transaction_number }}</a></td>
-              <td>{{ txn.get_movement_type_display }}</td>
-              <td>{{ txn.occurred_at }}</td>
+              <td><span class="badge badge--movement {{ txn.movement_type|movement_badge_class }}">{{ txn.get_movement_type_display }}</span></td>
+              <td><time class="timestamp" datetime="{{ txn.occurred_at|date:"Y-m-d" }}">{{ txn.occurred_at|date:"M j, Y" }}</time></td>
               <td>{{ txn.performed_by.get_username }}</td>
             </tr>
           {% endfor %}

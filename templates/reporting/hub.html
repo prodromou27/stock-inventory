@@ -1,78 +1,100 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block title %}Reports — {{ site_name }}{% endblock %}
 
 {% block content %}
   <div class="page-header">
-    <h1>Reports</h1>
+    <div>
+      <h1>Reports</h1>
+      <div class="page-header__subtitle">Every report only includes locations you have access to.</div>
+    </div>
+    <div class="page-header__actions">
+      <a class="btn btn--primary" href="{% url 'reporting:builder_start' %}">Build a custom report</a>
+    </div>
   </div>
 
-  <div class="card-grid">
-    <a class="action-card" href="{% url 'reporting:current_stock' %}">
-      <span class="action-card__title">Current stock</span>
-      <span class="action-card__desc">Units and quantity balances on hand right now.</span>
-    </a>
-    <a class="action-card" href="{% url 'reporting:stock_by_location' %}">
-      <span class="action-card__title">Stock by room/location</span>
-      <span class="action-card__desc">Stock broken down by the location tree.</span>
-    </a>
-    <a class="action-card" href="{% url 'reporting:reserved_stock' %}">
-      <span class="action-card__title">Reserved stock</span>
-      <span class="action-card__desc">Everything currently held by a reservation.</span>
-    </a>
-    <a class="action-card" href="{% url 'reporting:employee_assignments' %}">
-      <span class="action-card__title">Employee assignments</span>
-      <span class="action-card__desc">Assets currently assigned to employees.</span>
-    </a>
-    <a class="action-card" href="{% url 'reporting:customer_deliveries' %}">
-      <span class="action-card__title">Customer deliveries</span>
-      <span class="action-card__desc">Assets delivered to external customers.</span>
-    </a>
-    <a class="action-card" href="{% url 'reporting:stock_by_project_reference' %}">
-      <span class="action-card__title">Stock by Project Reference</span>
-      <span class="action-card__desc">Movements grouped by project reference.</span>
-    </a>
-    <a class="action-card" href="{% url 'reporting:temporary_assignments' %}">
-      <span class="action-card__title">Temporary assignments</span>
-      <span class="action-card__desc">Assignments expected to come back.</span>
-    </a>
-    <a class="action-card" href="{% url 'reporting:damaged_assets' %}">
-      <span class="action-card__title">Damaged assets</span>
-      <span class="action-card__desc">Assets currently flagged as damaged.</span>
-    </a>
-    <a class="action-card" href="{% url 'reporting:lost_assets' %}">
-      <span class="action-card__title">Lost assets</span>
-      <span class="action-card__desc">Assets recorded as lost.</span>
-    </a>
-    <a class="action-card" href="{% url 'reporting:disposed_items' %}">
-      <span class="action-card__title">Disposed items</span>
-      <span class="action-card__desc">Includes disposed HDDs.</span>
-    </a>
-    <a class="action-card" href="{% url 'reporting:movement_history' %}">
-      <span class="action-card__title">Complete movement history</span>
-      <span class="action-card__desc">Every recorded asset movement.</span>
-    </a>
-    <a class="action-card" href="{% url 'reporting:low_stock' %}">
-      <span class="action-card__title">Low stock</span>
-      <span class="action-card__desc">Empty unless a product has a threshold configured.</span>
-    </a>
-    <a class="action-card" href="{% url 'reporting:reorder_suggestions' %}">
-      <span class="action-card__title">Reorder suggestions</span>
-      <span class="action-card__desc">How much to reorder for what's already low — never a purchase order.</span>
-    </a>
-  </div>
+  <section class="report-section" aria-labelledby="reports-stock">
+    <h2 class="report-section__title" id="reports-stock">Stock on hand <small>What is where, right now</small></h2>
+    <div class="card-grid">
+      <a class="action-card" href="{% url 'reporting:current_stock' %}">
+        <span class="action-card__icon"><svg aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#box"></use></svg></span>
+        <span class="action-card__body"><span class="action-card__title">Current stock</span><span class="action-card__desc">Units and quantity balances on hand right now.</span></span>
+      </a>
+      <a class="action-card" href="{% url 'reporting:stock_by_location' %}">
+        <span class="action-card__icon"><svg aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#pin"></use></svg></span>
+        <span class="action-card__body"><span class="action-card__title">Stock by room/location</span><span class="action-card__desc">Stock broken down by the location tree.</span></span>
+      </a>
+      <a class="action-card" href="{% url 'reporting:reserved_stock' %}">
+        <span class="action-card__icon"><svg aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#tag"></use></svg></span>
+        <span class="action-card__body"><span class="action-card__title">Reserved stock</span><span class="action-card__desc">Everything currently held by a reservation.</span></span>
+      </a>
+      <a class="action-card" href="{% url 'reporting:stock_by_project_reference' %}">
+        <span class="action-card__icon"><svg aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#layers"></use></svg></span>
+        <span class="action-card__body"><span class="action-card__title">Stock by Project Reference</span><span class="action-card__desc">Movements grouped by project reference.</span></span>
+      </a>
+    </div>
+  </section>
 
-  <div class="page-header">
-    <h1>Custom reports</h1>
-  </div>
-  <div class="card-grid">
-    <a class="action-card" href="{% url 'reporting:saved_report_list' %}">
-      <span class="action-card__title">My custom reports</span>
-      <span class="action-card__desc">Reports you've built, plus anything shared with everyone.</span>
-    </a>
-    <a class="action-card" href="{% url 'reporting:builder_start' %}">
-      <span class="action-card__title">+ Build a new report</span>
-      <span class="action-card__desc">Pick a data source, choose columns and filters, save it.</span>
-    </a>
-  </div>
+  <section class="report-section" aria-labelledby="reports-custody">
+    <h2 class="report-section__title" id="reports-custody">People &amp; customers <small>Stock that has left the room</small></h2>
+    <div class="card-grid">
+      <a class="action-card" href="{% url 'reporting:employee_assignments' %}">
+        <span class="action-card__icon"><svg aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#users"></use></svg></span>
+        <span class="action-card__body"><span class="action-card__title">Employee assignments</span><span class="action-card__desc">Assets currently assigned to employees.</span></span>
+      </a>
+      <a class="action-card" href="{% url 'reporting:temporary_assignments' %}">
+        <span class="action-card__icon"><svg aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#clock"></use></svg></span>
+        <span class="action-card__body"><span class="action-card__title">Temporary assignments</span><span class="action-card__desc">Assignments expected to come back.</span></span>
+      </a>
+      <a class="action-card" href="{% url 'reporting:customer_deliveries' %}">
+        <span class="action-card__icon"><svg aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#truck"></use></svg></span>
+        <span class="action-card__body"><span class="action-card__title">Customer deliveries</span><span class="action-card__desc">Assets delivered to external customers.</span></span>
+      </a>
+    </div>
+  </section>
+
+  <section class="report-section" aria-labelledby="reports-exceptions">
+    <h2 class="report-section__title" id="reports-exceptions">Exceptions &amp; replenishment <small>What needs attention</small></h2>
+    <div class="card-grid">
+      <a class="action-card" href="{% url 'reporting:low_stock' %}">
+        <span class="action-card__icon action-card__icon--alert"><svg aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#alert"></use></svg></span>
+        <span class="action-card__body"><span class="action-card__title">Low stock</span><span class="action-card__desc">Empty unless a product has a threshold configured.</span></span>
+      </a>
+      <a class="action-card" href="{% url 'reporting:reorder_suggestions' %}">
+        <span class="action-card__icon"><svg aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#cart"></use></svg></span>
+        <span class="action-card__body"><span class="action-card__title">Reorder suggestions</span><span class="action-card__desc">How much to reorder for what's already low — never a purchase order.</span></span>
+      </a>
+      <a class="action-card" href="{% url 'reporting:damaged_assets' %}">
+        <span class="action-card__icon action-card__icon--alert"><svg aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#shield"></use></svg></span>
+        <span class="action-card__body"><span class="action-card__title">Damaged assets</span><span class="action-card__desc">Assets currently flagged as damaged.</span></span>
+      </a>
+      <a class="action-card" href="{% url 'reporting:lost_assets' %}">
+        <span class="action-card__icon action-card__icon--alert"><svg aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#question"></use></svg></span>
+        <span class="action-card__body"><span class="action-card__title">Lost assets</span><span class="action-card__desc">Assets recorded as lost.</span></span>
+      </a>
+      <a class="action-card" href="{% url 'reporting:disposed_items' %}">
+        <span class="action-card__icon"><svg aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#trash"></use></svg></span>
+        <span class="action-card__body"><span class="action-card__title">Disposed items</span><span class="action-card__desc">Includes disposed HDDs.</span></span>
+      </a>
+    </div>
+  </section>
+
+  <section class="report-section" aria-labelledby="reports-history">
+    <h2 class="report-section__title" id="reports-history">History &amp; custom reports</h2>
+    <div class="card-grid">
+      <a class="action-card" href="{% url 'reporting:movement_history' %}">
+        <span class="action-card__icon"><svg aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#history"></use></svg></span>
+        <span class="action-card__body"><span class="action-card__title">Complete movement history</span><span class="action-card__desc">Every recorded asset movement.</span></span>
+      </a>
+      <a class="action-card" href="{% url 'reporting:saved_report_list' %}">
+        <span class="action-card__icon"><svg aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#file"></use></svg></span>
+        <span class="action-card__body"><span class="action-card__title">My custom reports</span><span class="action-card__desc">Reports you've built, plus anything shared with everyone.</span></span>
+      </a>
+      <a class="action-card" href="{% url 'reporting:builder_start' %}">
+        <span class="action-card__icon"><svg aria-hidden="true"><use href="{% static 'icons/sprite.svg' %}#plus"></use></svg></span>
+        <span class="action-card__body"><span class="action-card__title">Build a new report</span><span class="action-card__desc">Pick a data source, choose columns and filters, save it.</span></span>
+      </a>
+    </div>
+  </section>
 {% endblock %}

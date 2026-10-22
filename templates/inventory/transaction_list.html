@@ -21,10 +21,19 @@
     <label>Final customer<input type="text" name="final_customer" value="{{ request.GET.final_customer }}"></label>
     <label>From <input type="date" name="occurred_after" value="{{ request.GET.occurred_after }}"></label>
     <label>To <input type="date" name="occurred_before" value="{{ request.GET.occurred_before }}"></label>
-    <button type="submit" class="btn btn--primary">Filter</button>
+    <div class="form-actions">
+      <button type="submit" class="btn btn--primary">Filter</button>
+      {% if request.GET.movement_type or request.GET.project_reference or request.GET.final_customer or request.GET.occurred_after or request.GET.occurred_before %}
+        <a class="btn btn--ghost" href="{% url 'inventory:transaction_list' %}">Clear filters</a>
+      {% endif %}
+    </div>
   </form>
 
   {% if transactions %}
+    <p class="list-summary">
+      <span>{{ page_obj.paginator.count|thousands }} transaction{{ page_obj.paginator.count|pluralize }}</span>
+    </p>
+    <div class="table-scroll">
     <table>
       <thead>
         <tr>
@@ -40,8 +49,8 @@
         {% for transaction in transactions %}
           <tr>
             <td><a href="{{ transaction.get_absolute_url }}">{{ transaction.transaction_number }}</a></td>
-            <td>{{ transaction.get_movement_type_display }}</td>
-            <td>{{ transaction.occurred_at }}</td>
+            <td><span class="badge badge--movement {{ transaction.movement_type|movement_badge_class }}">{{ transaction.get_movement_type_display }}</span></td>
+            <td><time class="timestamp" datetime="{{ transaction.occurred_at|date:"Y-m-d" }}">{{ transaction.occurred_at|date:"M j, Y" }}</time></td>
             <td>{{ transaction.performed_by }}</td>
             <td>{{ transaction.project_reference }}</td>
             <td>{{ transaction.final_customer }}</td>
@@ -49,14 +58,9 @@
         {% endfor %}
       </tbody>
     </table>
+    </div>
 
-    {% if is_paginated %}
-      <nav class="pagination">
-        {% if page_obj.has_previous %}<a href="{% querystring page=page_obj.previous_page_number %}">Previous</a>{% endif %}
-        <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
-        {% if page_obj.has_next %}<a href="{% querystring page=page_obj.next_page_number %}">Next</a>{% endif %}
-      </nav>
-    {% endif %}
+    {% render_pagination %}
   {% else %}
     <p class="empty-state">No transactions found in your authorized scope.</p>
   {% endif %}
